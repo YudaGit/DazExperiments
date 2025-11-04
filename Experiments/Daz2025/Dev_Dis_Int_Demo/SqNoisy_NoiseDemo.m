@@ -10,6 +10,7 @@ function SqNoisy_NoiseDemo
 % 6) 2-interval diff location (LOW noise): replica at a different angle
 %
 % Now backed up on Github
+% Testing branch
 % ------------------------------------------------------------
 
 % ---------- Setup ----------
