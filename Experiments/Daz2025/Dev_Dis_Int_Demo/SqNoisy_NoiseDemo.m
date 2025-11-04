@@ -8,6 +8,8 @@ function SqNoisy_NoiseDemo
 % 4) 4 items (R,U,L,D), HIGH noise; R & L are exact replicas
 % 5) 2-interval same location (LOW noise): replica after 300 ms ISI
 % 6) 2-interval diff location (LOW noise): replica at a different angle
+%
+% Now backed up on Github
 % ------------------------------------------------------------
 
 % ---------- Setup ----------
