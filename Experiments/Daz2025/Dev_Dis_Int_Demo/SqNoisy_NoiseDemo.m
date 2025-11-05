@@ -38,6 +38,7 @@ P.limitDeg       = 10;       % clamp VM samples to ±10°
 P.durMs          = 400;      % per-stim duration
 P.ISI            = 0.300;    % seconds, stages 5/6
 P.angles4        = [0 90 180 270];  % R,U,L,D (deg)
+P.shotDir = 'stim_captures';
 
 % --- Guard: make sure color wheel exists ---
 if ~isfield(V,'color') || ~isfield(V.color,'map') || isempty(V.color.map)
@@ -95,7 +96,9 @@ end % ------------------------------- end main function ------------------------
 
 function stage_single(V, angleDeg, kappa, P)
 targetHueDeg = randi([0 359]);
-presentNoisySquareAt(V, targetHueDeg, kappa, angleDeg, P.durMs, P.limitDeg, P.cMap360_255, []);
+presentNoisySquareAt( ...
+    V, targetHueDeg, kappa, angleDeg, P.durMs, P.limitDeg, P.cMap360_255, [], ...
+    true, P.shotDir, 'S1', 'stim');   % save each click as cropped stimulus PNG
 end
 
 function stage_four_with_replicas(V, P, kappa)
@@ -214,17 +217,22 @@ end
 
 % ===================== Drawing helpers ======================
 
-function presentNoisySquareAt(V, hueDeg, kappa, angleDeg, durMs, limitDeg, cMap360_255, prePattern)
+function presentNoisySquareAt(V, hueDeg, kappa, angleDeg, durMs, limitDeg, cMap360_255, prePattern, saveShot, shotDir, shotTag, cropMode)
 % Draw one B×B noisy square centered on the 5° circle at angleDeg.
 % - hueDeg: target hue (0..359)
 % - kappa:  VM concentration (larger = narrower = "low noise")
 % - durMs:  on-screen duration in milliseconds
 % - prePattern: optional nTiles×3 (0..1) RGB to reuse (replicas)
 
+if nargin < 9,  saveShot = false; end
+if nargin < 10, shotDir  = 'stim_captures'; end
+if nargin < 11, shotTag  = 'stage'; end
+if nargin < 12, cropMode = 'stim'; end
+
 % --- center on 5° circle (90° = up) ---
 th = deg2rad(angleDeg);
 cx = V.centerX + V.layout.centerRadiusPx * cos(th);
-cy = V.centerY - V.layout.centerRadiusPx * sin(th);   % NOTE the minus sign (screen y down)
+cy = V.centerY - V.layout.centerRadiusPx * sin(th);   % screen y grows downward
 
 % --- geometry ---
 side   = V.square.side_px_full;
@@ -239,21 +247,37 @@ if nargin >= 8 && ~isempty(prePattern)
 else
     rgb01 = makeNoisyPattern(V, hueDeg, kappa, limitDeg, cMap360_255);  % nTiles×3
 end
-% PTB expects colors as 3×N
 rgb3xN = permute(rgb01, [2 1]);                 % 3×nTiles
 
 % --- duration control ---
 ifi = Screen('GetFlipInterval', V.window);
 nF  = max(1, round((durMs/1000) / ifi));
 
-% Draw & hold for nF frames
-% Frame 1
+% Frame 1: draw -> flip -> (optionally) capture front buffer
 FillBG(V);
 drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
 Screen('FillRect', V.window, rgb3xN, tileRects);
 vbl = Screen('Flip', V.window);
 
-% Frames 2..nF (redraw same content each refresh)
+% ---- optional capture of what is on-screen now ----
+if saveShot
+    try
+        ensureDir(shotDir);
+        if strcmpi(cropMode,'stim')
+            grabRect = round(outer + [-5 -5 5 5]);  % small pad around stimulus
+        else
+            grabRect = [];                           % full screen
+        end
+        img = Screen('GetImage', V.window, grabRect, 'frontBuffer');  % capture what the user sees
+        tstamp = datestr(now,'yyyymmdd_HHMMSS_FFF');
+        fname  = sprintf('%s_h%03d_k%.2f_%s.png', shotTag, round(mod(hueDeg,360)), kappa, tstamp);
+        imwrite(img, fullfile(shotDir, fname));
+    catch ME
+        fprintf(2,'[saveShot] Failed: %s\n', ME.message);
+    end
+end
+
+% Frames 2..nF: redraw same content to hold for duration
 for f = 2:nF
     FillBG(V);
     drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
@@ -738,4 +762,8 @@ function drawHUD(V, msg)
 % Draw HUD text near the bottom (or top if you prefer)
 Screen('TextSize', V.window, 26);
 DrawFormattedText(V.window, msg, 'center', V.windowRect(4)*0.90, [1 1 1]); % 90% down
+end
+
+function ensureDir(d)
+if ~exist(d,'dir'), mkdir(d); end
 end
