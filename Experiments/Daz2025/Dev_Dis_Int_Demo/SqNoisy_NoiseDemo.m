@@ -40,6 +40,8 @@ P.ISI            = 0.300;    % seconds, stages 5/6
 P.angles4        = [0 90 180 270];  % R,U,L,D (deg)
 P.shotDir = 'stim_captures';
 
+logMsg('--- SqNoisy_NoiseDemo start ---');
+
 % --- Guard: make sure color wheel exists ---
 if ~isfield(V,'color') || ~isfield(V.color,'map') || isempty(V.color.map)
     error('V.color.map is missing. Make sure your initiate() builds the OKLab/LAB color wheel before calling this demo.');
@@ -63,28 +65,54 @@ if WaitForMouseClickOrEsc() < 0, cleanup(); return; end
 stage = 1;
 keepGoing = true;
 while keepGoing
+    logMsg(sprintf('Stage loop iteration, stage=%d', stage));
     switch stage
         case 1
-            action = stage_click_to_repeat(win, @() stage_single(V, 90,  P.kappaLowNoise,  P));
+            info = sprintf(['Stage 1: Single Stimulus\n' ...
+                            'Noise: Low (kappa = %.2f)\n' ...
+                            'Set Size: 1'], P.kappaLowNoise);
+            action = stage_click_to_repeat(win, @() stage_single(V, 90,  P.kappaLowNoise,  P), info);
         case 2
-            action = stage_click_to_repeat(win, @() stage_single(V, 90,  P.kappaHighNoise, P));
+            info = sprintf(['Stage 2: Single Stimulus\n' ...
+                            'Noise: High (kappa = %.2f)\n' ...
+                            'Set Size: 1'], P.kappaHighNoise);
+            action = stage_click_to_repeat(win, @() stage_single(V, 90,  P.kappaHighNoise, P), info);
         case 3
-            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, P.kappaLowNoise));
+            info = sprintf(['Stage 3: Four Stimuli with Replicas\n' ...
+                            'Noise: Low (kappa = %.2f)\n' ...
+                            'Set Size: 4'], P.kappaLowNoise);
+            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, P.kappaLowNoise), info);
         case 4
-            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, P.kappaHighNoise));
+            info = sprintf(['Stage 4: Four Stimuli with Replicas\n' ...
+                            'Noise: High (kappa = %.2f)\n' ...
+                            'Set Size: 4'], P.kappaHighNoise);
+            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, P.kappaHighNoise), info);
         case 5
-            action = stage_click_to_repeat(win, @() stage_two_interval_same_loc(V, 90, P.kappaLowNoise, P));
+            info = sprintf(['Stage 5: Two-Interval Same Location\n' ...
+                            'Noise: Low (kappa = %.2f)\n' ...
+                            'Set Size: 1 (two intervals)'], P.kappaLowNoise);
+            action = stage_click_to_repeat(win, @() stage_two_interval_same_loc(V, 90, P.kappaLowNoise, P), info);
         case 6
-            action = stage_click_to_repeat(win, @() stage_two_interval_diff_loc(V, 90, 270, P.kappaLowNoise, P));
+            info = sprintf(['Stage 6: Two-Interval Different Location\n' ...
+                            'Noise: Low (kappa = %.2f)\n' ...
+                            'Set Size: 1 (two intervals)'], P.kappaLowNoise);
+            action = stage_click_to_repeat(win, @() stage_two_interval_diff_loc(V, 90, 270, P.kappaLowNoise, P), info);
         otherwise
             action = 'quit';
     end
 
     switch action
-        case 'next', stage = min(stage+1, 6);
-        case 'prev', stage = max(stage-1, 1);
-        case 'again' % do nothing; user can click again in same stage
-        case 'quit', keepGoing = false;
+        case 'next'
+            stage = min(stage+1, 6);
+            logMsg(sprintf('Stage advanced to %d', stage));
+        case 'prev'
+            stage = max(stage-1, 1);
+            logMsg(sprintf('Stage went back to %d', stage));
+        case 'again'
+            % do nothing; user can click again in same stage
+        case 'quit'
+            logMsg('Quit requested');
+            keepGoing = false;
     end
 end
 
@@ -96,9 +124,9 @@ end % ------------------------------- end main function ------------------------
 
 function stage_single(V, angleDeg, kappa, P)
 targetHueDeg = randi([0 359]);
-presentNoisySquareAt( ...
-    V, targetHueDeg, kappa, angleDeg, P.durMs, P.limitDeg, P.cMap360_255, [], ...
-    true, P.shotDir, 'S1', 'stim');   % save each click as cropped stimulus PNG
+% deferFlip=false means it will flip immediately and show for durMs
+% saveShot=false disabled for now (was causing issues)
+presentNoisySquareAt(V, targetHueDeg, kappa, angleDeg, P.durMs, P.limitDeg, P.cMap360_255, [], false, false);
 end
 
 function stage_four_with_replicas(V, P, kappa)
@@ -124,8 +152,7 @@ pat = makeNoisyPattern(V, hue, kappa, P.limitDeg, P.cMap360_255);
 
 % interval 1
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-presentNoisySquareAt(V, hue, kappa, angleDeg, P.durMs, P.limitDeg, P.cMap360_255, pat, true);
-Screen('Flip', V.window); WaitSecs(P.durMs/1000);
+presentNoisySquareAt(V, hue, kappa, angleDeg, P.durMs, P.limitDeg, P.cMap360_255, pat, false);
 
 % ISI
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
@@ -133,8 +160,7 @@ Screen('Flip', V.window); WaitSecs(P.ISI);
 
 % interval 2 (replica)
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-presentNoisySquareAt(V, hue, kappa, angleDeg, P.durMs, P.limitDeg, P.cMap360_255, pat, true);
-Screen('Flip', V.window); WaitSecs(P.durMs/1000);
+presentNoisySquareAt(V, hue, kappa, angleDeg, P.durMs, P.limitDeg, P.cMap360_255, pat, false);
 end
 
 function stage_two_interval_diff_loc(V, angle1, angle2, kappa, P)
@@ -143,8 +169,7 @@ pat = makeNoisyPattern(V, hue, kappa, P.limitDeg, P.cMap360_255);
 
 % interval 1
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-presentNoisySquareAt(V, hue, kappa, angle1, P.durMs, P.limitDeg, P.cMap360_255, pat, true);
-Screen('Flip', V.window); WaitSecs(P.durMs/1000);
+presentNoisySquareAt(V, hue, kappa, angle1, P.durMs, P.limitDeg, P.cMap360_255, pat, false);
 
 % ISI
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
@@ -152,14 +177,13 @@ Screen('Flip', V.window); WaitSecs(P.ISI);
 
 % interval 2 at different angle (replica)
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-presentNoisySquareAt(V, hue, kappa, angle2, P.durMs, P.limitDeg, P.cMap360_255, pat, true);
-Screen('Flip', V.window); WaitSecs(P.durMs/1000);
+presentNoisySquareAt(V, hue, kappa, angle2, P.durMs, P.limitDeg, P.cMap360_255, pat, false);
 end
 
 
 % ===================== Stage driver / UI ======================
 
-function action = stage_click_to_repeat(win, doOnceFcn)
+function action = stage_click_to_repeat(win, doOnceFcn, infoText)
 % Returns one of: 'next' | 'prev' | 'quit' | 'again'
 % - Click: run doOnceFcn() then return 'again'
 % - F:     return 'next'
@@ -168,21 +192,44 @@ function action = stage_click_to_repeat(win, doOnceFcn)
 global V
 action = 'again';
 
+if ~exist('infoText','var') || isempty(infoText)
+    infoText = '';
+end
+
 % Debounce: wait until no mouse button is down
 while any(GetMouseButtons()), WaitSecs(0.01); end
 
 while true
     FillBG(V);
     drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
+    drawStageInfo(V, infoText);
     drawHUD(V, 'Click = show  |  F = next  |  B = back  |  ESC = quit');
     Screen('Flip', win);
 
     % Keyboard first so F/B don't also click
     [down,~,kc] = KbCheck;
     if down
-        if kc(KbName('ESCAPE')), action = 'quit'; return; end
-        if kc(KbName('f')) || kc(KbName('F')), action = 'next'; WaitKeyRelease(); return; end
-        if kc(KbName('b')) || kc(KbName('B')), action = 'prev'; WaitKeyRelease(); return; end
+        escKey = KbName('ESCAPE');
+        if kc(escKey)
+            action = 'quit';
+            logMsg('Keypress detected: ESC (quit)');
+            WaitSecs(0.1); % Brief debounce
+            return;
+        end
+        fKey = KbName('f');
+        if kc(fKey)
+            action = 'next';
+            logMsg('Keypress detected: F (next stage)');
+            WaitSecs(0.1); % Brief debounce
+            return;
+        end
+        bKey = KbName('b');
+        if kc(bKey)
+            action = 'prev';
+            logMsg('Keypress detected: B (previous stage)');
+            WaitSecs(0.1); % Brief debounce
+            return;
+        end
     end
 
     % Mouse: show once then return
@@ -191,6 +238,7 @@ while true
         doOnceFcn();
         WaitForMouseRelease();
         action = 'again';
+        logMsg('Mouse click: stimulus presented');
         return;
     end
 
@@ -198,92 +246,96 @@ while true
 end
 end
 
-function WaitKeyRelease()
-% simple key debounce
-while KbCheck, WaitSecs(0.01); end
-end
-
-function newStage = update_stage(curStage)
-[down,~,kc] = KbCheck;
-if down && (kc(KbName('b')) || kc(KbName('B')))
-    newStage = max(1, curStage - 1);
-elseif down && (kc(KbName('f')) || kc(KbName('F')))
-    newStage = curStage + 1;
+function WaitKeyRelease(targetKeys)
+% Wait until specified keys (or all keys) are released
+if nargin < 1 || isempty(targetKeys)
+    targetKeys = [];
 else
-    newStage = curStage;
-end
+    targetKeys = unique(targetKeys(:)');
 end
 
+while true
+    [down,~,kc] = KbCheck;
+    if ~down
+        break;
+    end
+    if ~isempty(targetKeys)
+        if ~any(kc(targetKeys))
+            break;
+        end
+    end
+    WaitSecs(0.01);
+end
+end
 
 % ===================== Drawing helpers ======================
 
-function presentNoisySquareAt(V, hueDeg, kappa, angleDeg, durMs, limitDeg, cMap360_255, prePattern, saveShot, shotDir, shotTag, cropMode)
-% Draw one B×B noisy square centered on the 5° circle at angleDeg.
-% - hueDeg: target hue (0..359)
-% - kappa:  VM concentration (larger = narrower = "low noise")
-% - durMs:  on-screen duration in milliseconds
-% - prePattern: optional nTiles×3 (0..1) RGB to reuse (replicas)
+function presentNoisySquareAt(V, hueDeg, kappa, angleDeg, durMs, limitDeg, cMap360_255, prePattern, deferFlip, saveShot, shotDir, shotTag, cropMode)
+% Draw one B×B noisy square at a given polar angle on the 5° circle.
+% If prePattern is provided, reuse it (for replicas). If deferFlip=true, do not flip.
+% Based on original working version from SqNoisyStim_Demo1.m
 
-if nargin < 9,  saveShot = false; end
-if nargin < 10, shotDir  = 'stim_captures'; end
-if nargin < 11, shotTag  = 'stage'; end
-if nargin < 12, cropMode = 'stim'; end
+if nargin < 9 || isempty(deferFlip), deferFlip = false; end
+if nargin < 10, saveShot = false; end
+if nargin < 11, shotDir = 'stim_captures'; end
+if nargin < 12, shotTag = 'stage'; end
+if nargin < 13, cropMode = 'stim'; end
 
-% --- center on 5° circle (90° = up) ---
+logMsg(sprintf('presentNoisySquareAt start: angle=%.1f, kappa=%.2f, durMs=%d, deferFlip=%d', angleDeg, kappa, durMs, deferFlip));
+
+% center position on your 5° circle
 th = deg2rad(angleDeg);
 cx = V.centerX + V.layout.centerRadiusPx * cos(th);
-cy = V.centerY - V.layout.centerRadiusPx * sin(th);   % screen y grows downward
+cy = V.centerY - V.layout.centerRadiusPx * sin(th);
 
-% --- geometry ---
 side   = V.square.side_px_full;
 B      = V.square.B;
 tilePx = V.square.tile_px;
-outer  = CenterRectOnPointd([0 0 side side], cx, cy);
-tileRects = buildTileRects(outer, B, tilePx);
+rect   = CenterRectOnPointd([0 0 side side], cx, cy);
+tileRects = buildTileRects(rect, B, tilePx);
 
-% --- per-tile colors ---
-if nargin >= 8 && ~isempty(prePattern)
-    rgb01 = prePattern;                         % nTiles×3 (0..1)
+if isempty(prePattern)
+    rgb01 = makeNoisyPattern(V, hueDeg, kappa, limitDeg, cMap360_255);
 else
-    rgb01 = makeNoisyPattern(V, hueDeg, kappa, limitDeg, cMap360_255);  % nTiles×3
-end
-rgb3xN = permute(rgb01, [2 1]);                 % 3×nTiles
-
-% --- duration control ---
-ifi = Screen('GetFlipInterval', V.window);
-nF  = max(1, round((durMs/1000) / ifi));
-
-% Frame 1: draw -> flip -> (optionally) capture front buffer
-FillBG(V);
-drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-Screen('FillRect', V.window, rgb3xN, tileRects);
-vbl = Screen('Flip', V.window);
-
-% ---- optional capture of what is on-screen now ----
-if saveShot
-    try
-        ensureDir(shotDir);
-        if strcmpi(cropMode,'stim')
-            grabRect = round(outer + [-5 -5 5 5]);  % small pad around stimulus
-        else
-            grabRect = [];                           % full screen
-        end
-        img = Screen('GetImage', V.window, grabRect, 'frontBuffer');  % capture what the user sees
-        tstamp = datestr(now,'yyyymmdd_HHMMSS_FFF');
-        fname  = sprintf('%s_h%03d_k%.2f_%s.png', shotTag, round(mod(hueDeg,360)), kappa, tstamp);
-        imwrite(img, fullfile(shotDir, fname));
-    catch ME
-        fprintf(2,'[saveShot] Failed: %s\n', ME.message);
-    end
+    rgb01 = prePattern;  % reuse exact tiles/colors
 end
 
-% Frames 2..nF: redraw same content to hold for duration
-for f = 2:nF
-    FillBG(V);
+% Convert to appropriate color format based on window mode
+if ~(isfield(V, 'useFloat') && V.useFloat)
+    % Standard mode: convert 0-1 to 0-255
+    rgb01 = rgb01 * 255;
+end
+
+Screen('FillRect', V.window, rgb01', tileRects);
+
+if ~deferFlip
     drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-    Screen('FillRect', V.window, rgb3xN, tileRects);
-    vbl = Screen('Flip', V.window, vbl + 0.5*ifi);   % keep cadence
+    vbl = Screen('Flip', V.window);
+
+    % Optional screen capture (only if saveShot enabled)
+    if saveShot
+        try
+            ensureDir(shotDir);
+            if strcmpi(cropMode,'stim')
+                grabRect = round(rect + [-5 -5 5 5]);
+            else
+                grabRect = [];
+            end
+            img = Screen('GetImage', V.window, grabRect);
+            tstamp = datestr(now,'yyyymmdd_HHMMSS');
+            tstamp = sprintf('%s_%03d', tstamp, round(rem(now*86400000, 1000)));
+            fname = sprintf('%s_h%03d_k%.2f_%s.png', shotTag, round(mod(hueDeg,360)), kappa, tstamp);
+            imwrite(img, fullfile(shotDir, fname));
+        catch ME
+            fprintf(2,'[saveShot] Failed: %s\n', ME.message);
+        end
+    end
+
+    % Hold the stimulus on screen for the requested duration
+    WaitSecs('UntilTime', vbl + durMs/1000);
 end
+
+logMsg('presentNoisySquareAt end');
 end
 
 
@@ -346,17 +398,30 @@ r = (1 + b^2) / (2*b);
 
 out = zeros(1,n);
 i = 1;
+attempts = 0;
+maxAttempts = 2000;
 while i <= n
     U1 = rand;  z  = cos(pi*U1);
     f  = (1 + r*z) / (r + z);
     c  = kappa * (r - f);
     U2 = rand;
+    attempts = attempts + 1;
+    if attempts > maxAttempts
+        % Fallback to uniform sample around mean if rejection keeps failing
+        logMsg(sprintf('VonMises sampler fallback triggered (kappa=%.2f)', kappa));
+        out(i) = mu + (rand*2*pi - pi);
+        i = i + 1;
+        attempts = 0;
+        continue;
+    end
     if U2 < c*(2 - c) || U2 <= c*exp(1 - c)
         U3 = rand;
-        theta = acos(f);
+    f = max(min(f, 1), -1);  % numerical guard
+    theta = acos(f);
         if U3 > 0.5, theta = -theta; end
         out(i) = mu + theta;
         i = i + 1;
+        attempts = 0;
     end
 end
 out = angle(exp(1i*out));                 % wrap to (-pi,pi]
@@ -372,12 +437,41 @@ end
 
 
 function DrawCenteredText(win, msg, pts, col01)
+% Draw centered text with color format handling
+global V
+if isfield(V, 'useFloat') && V.useFloat
+    % Floating point mode: use normalized colors as-is
+    textCol = col01;
+else
+    % Standard mode: convert normalized to 0-255 if needed
+    if max(col01) <= 1
+        textCol = col01 * 255;
+    else
+        textCol = col01; % Already in 0-255 format
+    end
+end
 Screen('TextSize', win, pts);
-DrawFormattedText(win, msg, 'center', 'center', col01);
+DrawFormattedText(win, msg, 'center', 'center', textCol);
 end
 
 function FillBG(V)
-Screen('FillRect', V.window, V.bg01);
+% Fill background with appropriate color format based on window mode
+% Ensure V.bg01 exists (defensive programming)
+if ~isfield(V, 'bg01')
+    V.bg01 = [0.5 0.5 0.5]; % Default normalized gray
+end
+if ~isfield(V, 'patch') || ~isfield(V.patch, 'bg')
+    V.patch.bg = 0.5 * 255; % Default 0-255 gray
+end
+
+if isfield(V, 'useFloat') && V.useFloat
+    % Floating point mode: use normalized 0-1 colors
+    bgColor = V.bg01;
+else
+    % Standard mode: use 0-255 colors
+    bgColor = [V.patch.bg V.patch.bg V.patch.bg];
+end
+Screen('FillRect', V.window, bgColor);
 end
 
 function r = WaitForMouseClickOrEsc()
@@ -402,8 +496,17 @@ function b = GetMouseButtons()
 end
 
 function drawFixation(V, lineCol, innerCol)
+% Draw fixation cross with colors that work in both float and standard modes
+% lineCol and innerCol are expected in normalized 0-1 format
 len = 10;  lw = 2;
 xy  = [-len, len, 0, 0; 0, 0, -len, len];
+
+% Convert normalized colors if in standard mode
+if ~(isfield(V, 'useFloat') && V.useFloat)
+    lineCol = lineCol * 255;
+    innerCol = innerCol * 255;
+end
+
 Screen('DrawLines', V.window, xy, lw, lineCol, [V.centerX, V.centerY]);
 r1 = CenterRectOnPointd([0 0 len*2 len*2], V.centerX, V.centerY);
 Screen('FrameOval', V.window, lineCol, r1, lw);
@@ -412,6 +515,7 @@ Screen('FrameOval', V.window, innerCol, r2, lw);
 end
 
 function cleanup()
+logMsg('Cleanup called');
 sca; disp('Demo ended.');
 end
 
@@ -423,25 +527,40 @@ sca;
 Screen('CloseAll');    
 WaitSecs(0.5);
 
-v.patch.bg = .5 * 255; % Background gray
+% Background color: store both 0-255 and 0-1 formats for compatibility
+v.patch.bg = 0.5 * 255; % Background gray (0-255 range)
+v.bg01 = [0.5 0.5 0.5]; % Normalized background (0-1 range) for floating point mode
+
 Screen('Preference', 'SkipSyncTests', 1);
 Screen('Preference', 'VisualDebugLevel', 0); % Minimal feedback
 PsychDefaultSetup(2);
-PsychImaging('PrepareConfiguration');
-PsychImaging('AddTask','General','FloatingPoint32BitIfPossible'); % 16/32-bit FB
-PsychImaging('AddTask','General','EnableNative10BitFramebuffer'); % if GPU/OS/display allow
-% [v.window, v.windowRect] = PsychImaging('OpenWindow', max(Screen('Screens')), [v.patch.bg v.patch.bg v.patch.bg]);
-% Screen('BlendFunction', v.window, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); % can use alpha values
-[v.window, v.windowRect] = PsychImaging('OpenWindow', max(Screen('Screens')), [v.patch.bg v.patch.bg v.patch.bg]);
+
+% Try floating point mode, fall back gracefully if it fails
+try
+    PsychImaging('PrepareConfiguration');
+    PsychImaging('AddTask','General','FloatingPoint32BitIfPossible'); % 16/32-bit FB
+    PsychImaging('AddTask','General','EnableNative10BitFramebuffer'); % if GPU/OS/display allow
+    [v.window, v.windowRect] = PsychImaging('OpenWindow', max(Screen('Screens')), v.bg01);
+    v.useFloat = true; % Flag to remember we're in float mode
+catch ME
+    % Fallback to standard 8-bit mode
+    warning('Floating point mode failed, using standard 8-bit: %s', ME.message);
+    [v.window, v.windowRect] = Screen('OpenWindow', max(Screen('Screens')), [v.patch.bg v.patch.bg v.patch.bg]);
+    v.useFloat = false;
+end
+
 Screen('BlendFunction', v.window, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 Screen('Flip', v.window);
 [v.centerX, v.centerY] = RectCenter(v.windowRect);
 
- % Warm-up background flip
-    v.bg01 = repmat(max(min(double(v.patch.bg)/255, 1), 0), 1, 3);
+% Warm-up background flip
+if v.useFloat
     Screen('FillRect', v.window, v.bg01);
-    Screen('Flip', v.window);
-    WaitSecs(0.1);
+else
+    Screen('FillRect', v.window, [v.patch.bg v.patch.bg v.patch.bg]);
+end
+Screen('Flip', v.window);
+WaitSecs(0.1);
 
     % Warm-up font engine (PTB loads fonts lazily)
     Screen('TextSize', v.window, 36);
@@ -549,8 +668,8 @@ function fiveDegVA_in_pixels = calibrateMonitor()
         WaitSecs(1);
         blank(0);
     
-        leftLineX = V.cx - V.cx * .33;
-        rightLineX = V.cx + V.cx * .33;
+        leftLineX = V.centerX - V.centerX * .33;
+        rightLineX = V.centerX + V.centerX * .33;
         currentLine = 'left';
     
         done = false;
@@ -759,11 +878,67 @@ function v = ResponseKeys()
 end
 
 function drawHUD(V, msg)
-% Draw HUD text near the bottom (or top if you prefer)
+% Draw HUD text near the bottom with proper color format
 Screen('TextSize', V.window, 26);
-DrawFormattedText(V.window, msg, 'center', V.windowRect(4)*0.90, [1 1 1]); % 90% down
+if isfield(V, 'useFloat') && V.useFloat
+    hudCol = [1 1 1]; % Normalized for float mode
+else
+    hudCol = [255 255 255]; % 0-255 for standard mode
+end
+DrawFormattedText(V.window, msg, 'center', V.windowRect(4)*0.90, hudCol); % 90% down
+end
+
+function drawStageInfo(V, msg)
+if isempty(msg)
+    return;
+end
+Screen('TextSize', V.window, 24);
+if isfield(V, 'useFloat') && V.useFloat
+    infoCol = [1 1 1];
+else
+    infoCol = [255 255 255];
+end
+DrawFormattedText(V.window, msg, 50, 50, infoCol);
 end
 
 function ensureDir(d)
 if ~exist(d,'dir'), mkdir(d); end
+end
+
+function logMsg(msg)
+persistent fid
+try
+    if isempty(fid) || fid == -1
+        fid = fopen('SqNoisyDemo.log','a');
+        if fid == -1
+            return;
+        end
+    end
+    fprintf(fid, '[%s] %s\n', datestr(now,'yyyy-mm-dd HH:MM:SS.FFF'), msg);
+    fflush(fid);
+catch
+    % swallow logging errors to avoid impacting experiment
+end
+end
+
+function [] = blank(duration)
+% Blank screen with optional wait duration
+global V
+Screen('FillRect', V.window, V.bg01);
+Screen('Flip', V.window);
+if nargin > 0 && duration > 0
+    WaitSecs(duration);
+end
+end
+
+function [] = QuitButtonsPressed()
+% Clean exit handler when Ctrl+L is pressed
+global V
+try
+    sca;
+    Screen('CloseAll');
+catch
+end
+disp('Experiment terminated by user.');
+error('Experiment terminated by user (Ctrl+L).');
 end
