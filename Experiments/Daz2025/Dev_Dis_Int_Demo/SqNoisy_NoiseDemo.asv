@@ -11,6 +11,17 @@ function SqNoisy_NoiseDemo
 %
 % Now backed up on Github
 % Testing branch
+% 
+% don't cut tail 
+% integral equations for the model work, integral says, rather than
+% computing the drift  rate with brownien motion at every step, that should
+% produce a PDF for where it hits the boundary, can directly and
+% analytically say what the PDF for the hitting function be, rather than
+% simulate every step.
+% 
+% when hear about fitting with kernals (not k density), K describes the
+% likelihood of something over param space.
+% 
 % ------------------------------------------------------------
 
 % ---------- Setup ----------
@@ -34,10 +45,15 @@ fprintf('Refresh: %.2f Hz (%.3f ms/frame)\n', 1/ifi, ifi*1000);
 % ---------- Parameters ----------
 P.kappaLowNoise  = 20;       % narrow VM (high evidence)
 P.kappaHighNoise =  1;       % wide VM (low evidence)
+P.limitDegLow    = 15;       % clipping window for low noise (±15°)
+P.limitDegHigh   = 40;       % clipping window for high noise (±40°)
 P.durMs          = 500;      % per-stim duration
 P.ISI            = 0.300;    % seconds, stages 5/6
 P.angles4        = [0 90 180 270];  % R,U,L,D (deg)
 P.shotDir = 'stim_captures';
+% Optional: add saturation variation for high noise to increase salience
+P.addSaturationNoise = true;  % Add lightness/saturation variation for high noise
+P.satNoiseLevel = 0.15;        % ±15% variation in lightness/saturation
 
 logMsg('--- SqNoisy_NoiseDemo start ---');
 
@@ -123,9 +139,15 @@ end % ------------------------------- end main function ------------------------
 
 function stage_single(V, angleDeg, kappa, P)
 targetHueDeg = randi([0 359]);
+% Use appropriate limitDeg based on noise level
+if kappa == P.kappaLowNoise
+    limitDeg = P.limitDegLow;
+else
+    limitDeg = P.limitDegHigh;
+end
 % deferFlip=false means it will flip immediately and show for durMs
 % saveShot=false disabled for now (was causing issues)
-presentNoisySquareAt(V, targetHueDeg, kappa, angleDeg, P.durMs, [], P.cMap360_255, [], false, false);
+presentNoisySquareAt(V, targetHueDeg, kappa, angleDeg, P.durMs, limitDeg, P.cMap360_255, [], false, false, [], [], [], P);
 end
 
 function stage_four_with_replicas(V, P, kappa)
@@ -134,43 +156,37 @@ baseHue    = randi([0 359]);                % hue used for replicas
 uniqueHue1 = mod(baseHue + 60,  360);
 uniqueHue2 = mod(baseHue + 180, 360);
 
-repPattern = makeNoisyPattern(V, baseHue, kappa, [], P.cMap360_255);
-
-FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-presentNoisySquareAt(V, baseHue,    kappa, angles(1), P.durMs, [], P.cMap360_255, repPattern, true, false); % R replica
-presentNoisySquareAt(V, uniqueHue1, kappa, angles(2), P.durMs, [], P.cMap360_255, [],         true, false); % U new
-presentNoisySquareAt(V, baseHue,    kappa, angles(3), P.durMs, [], P.cMap360_255, repPattern, true, false); % L replica
-presentNoisySquareAt(V, uniqueHue2, kappa, angles(4), P.durMs, [], P.cMap360_255, [],         true, false); % D new
-Screen('Flip', V.window);
-WaitSecs(P.durMs/1000);
+% Use appropriate limitDeg based on noise level
+if kappa == P.kappaLowNoise
+    limitDeg = P.limitDegLow;
+else
+    limitDeg = P.limitDegHigh;
 end
 
-function stage_two_interval_diff_loc(V, angle1, angle2, kappa, P)
-hue = randi([0 359]);
-pat = makeNoisyPattern(V, hue, kappa, [], P.cMap360_255);
+repPattern = makeNoisyPattern(V, baseHue, kappa, limitDeg, P.cMap360_255, P);
 
-% interval 1
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-presentNoisySquareAt(V, hue, kappa, angle1, P.durMs, [], P.cMap360_255, pat, false, false);
-WaitSecs(P.durMs/1000);
-
-% ISI
-FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-Screen('Flip', V.window); WaitSecs(P.ISI);
-
-% interval 2 at different angle (replica)
-FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-presentNoisySquareAt(V, hue, kappa, angle2, P.durMs, [], P.cMap360_255, pat, false, false);
+presentNoisySquareAt(V, baseHue,    kappa, angles(1), P.durMs, limitDeg, P.cMap360_255, repPattern, true, false, [], [], [], P); % R replica
+presentNoisySquareAt(V, uniqueHue1, kappa, angles(2), P.durMs, limitDeg, P.cMap360_255, [],         true, false, [], [], [], P); % U new
+presentNoisySquareAt(V, baseHue,    kappa, angles(3), P.durMs, limitDeg, P.cMap360_255, repPattern, true, false, [], [], [], P); % L replica
+presentNoisySquareAt(V, uniqueHue2, kappa, angles(4), P.durMs, limitDeg, P.cMap360_255, [],         true, false, [], [], [], P); % D new
+Screen('Flip', V.window);
 WaitSecs(P.durMs/1000);
 end
 
 function stage_two_interval_same_loc(V, angleDeg, kappa, P)
 hue = randi([0 359]);
-pat = makeNoisyPattern(V, hue, kappa, [], P.cMap360_255);
+% Use appropriate limitDeg based on noise level
+if kappa == P.kappaLowNoise
+    limitDeg = P.limitDegLow;
+else
+    limitDeg = P.limitDegHigh;
+end
+pat = makeNoisyPattern(V, hue, kappa, limitDeg, P.cMap360_255, P);
 
 % interval 1
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-presentNoisySquareAt(V, hue, kappa, angleDeg, P.durMs, [], P.cMap360_255, pat, false, false);
+presentNoisySquareAt(V, hue, kappa, angleDeg, P.durMs, limitDeg, P.cMap360_255, pat, false, false, [], [], [], P);
 WaitSecs(P.durMs/1000);
 
 % ISI
@@ -179,7 +195,32 @@ Screen('Flip', V.window); WaitSecs(P.ISI);
 
 % interval 2 (replica)
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-presentNoisySquareAt(V, hue, kappa, angleDeg, P.durMs, [], P.cMap360_255, pat, false, false);
+presentNoisySquareAt(V, hue, kappa, angleDeg, P.durMs, limitDeg, P.cMap360_255, pat, false, false, [], [], [], P);
+WaitSecs(P.durMs/1000);
+end
+
+function stage_two_interval_diff_loc(V, angle1, angle2, kappa, P)
+hue = randi([0 359]);
+% Use appropriate limitDeg based on noise level
+if kappa == P.kappaLowNoise
+    limitDeg = P.limitDegLow;
+else
+    limitDeg = P.limitDegHigh;
+end
+pat = makeNoisyPattern(V, hue, kappa, limitDeg, P.cMap360_255, P);
+
+% interval 1
+FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
+presentNoisySquareAt(V, hue, kappa, angle1, P.durMs, limitDeg, P.cMap360_255, pat, false, false, [], [], [], P);
+WaitSecs(P.durMs/1000);
+
+% ISI
+FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
+Screen('Flip', V.window); WaitSecs(P.ISI);
+
+% interval 2 at different angle (replica)
+FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
+presentNoisySquareAt(V, hue, kappa, angle2, P.durMs, limitDeg, P.cMap360_255, pat, false, false, [], [], [], P);
 WaitSecs(P.durMs/1000);
 end
 
@@ -273,7 +314,7 @@ end
 
 % ===================== Drawing helpers ======================
 
-function presentNoisySquareAt(V, hueDeg, kappa, angleDeg, durMs, limitDeg, cMap360_255, prePattern, deferFlip, saveShot, shotDir, shotTag, cropMode)
+function presentNoisySquareAt(V, hueDeg, kappa, angleDeg, durMs, limitDeg, cMap360_255, prePattern, deferFlip, saveShot, shotDir, shotTag, cropMode, P)
 % Draw one B×B noisy square at a given polar angle on the 5° circle.
 % If prePattern is provided, reuse it (for replicas). If deferFlip=true, do not flip.
 % Based on original working version from SqNoisyStim_Demo1.m
@@ -298,7 +339,7 @@ rect   = CenterRectOnPointd([0 0 side side], cx, cy);
 tileRects = buildTileRects(rect, B, tilePx);
 
 if isempty(prePattern)
-    rgb01 = makeNoisyPattern(V, hueDeg, kappa, limitDeg, cMap360_255);
+    rgb01 = makeNoisyPattern(V, hueDeg, kappa, limitDeg, cMap360_255, P);
 else
     rgb01 = prePattern;  % reuse exact tiles/colors
 end
@@ -342,8 +383,9 @@ logMsg('presentNoisySquareAt end');
 end
 
 
-function rgb01 = makeNoisyPattern(V, hueDeg, kappa, limitDeg, cMap360_255)
+function rgb01 = makeNoisyPattern(V, hueDeg, kappa, limitDeg, cMap360_255, P)
 % Returns nTiles×3 double in [0,1]
+% P is optional parameter struct for saturation noise control
 B      = V.square.B;
 nTiles = B * B;
 
@@ -357,6 +399,21 @@ end
 
 % Convert each hue to RGB from your wheel
 rgb01 = wheelRGB01_fromDegrees(huesDeg, cMap360_255);   % n×3, 0..1
+
+% Optional: Add saturation/lightness variation for high noise conditions
+% This increases perceptual difference by making high noise look "messier"
+if nargin >= 6 && ~isempty(P) && isfield(P, 'addSaturationNoise') && P.addSaturationNoise
+    if kappa == P.kappaHighNoise  % Only for high noise
+        % Convert RGB to HSV, add noise to S and V, convert back
+        hsv = rgb2hsv(rgb01);
+        % Add random variation to saturation (S) and value (V)
+        noiseS = (rand(nTiles, 1) - 0.5) * 2 * P.satNoiseLevel;  % ±satNoiseLevel
+        noiseV = (rand(nTiles, 1) - 0.5) * 2 * P.satNoiseLevel * 0.5;  % ±satNoiseLevel/2 (less variation in brightness)
+        hsv(:,2) = max(0, min(1, hsv(:,2) + noiseS));  % Clamp saturation
+        hsv(:,3) = max(0, min(1, hsv(:,3) + noiseV));  % Clamp value
+        rgb01 = hsv2rgb(hsv);
+    end
+end
 end
 
 
