@@ -1,6 +1,7 @@
-function SqNoisy_NoiseDemo
+function NoiseDemo_QuantileBin
 % ------------------------------------------------------------
 % Demo: Low vs High noise color square stimuli (B×B tiles)
+% Sampling Method: Quantile Bin (replaces Von Mises)
 % Stages:
 % 1) single low-noise @ 12 o'clock (click to replay; F next; B back)
 % 2) single high-noise @ 12 o'clock
@@ -8,20 +9,15 @@ function SqNoisy_NoiseDemo
 % 4) 4 items (R,U,L,D), HIGH noise; R & L are exact replicas
 % 5) 2-interval same location (LOW noise): replica after 300 ms ISI
 % 6) 2-interval diff location (LOW noise): replica at a different angle
+% 7) 2-interval same location (HIGH noise): replica after 300 ms ISI
+% 8) 2-interval diff location (HIGH noise): replica at a different angle
 %
-% Now backed up on Github
-% Testing branch
-% 
-% don't cut tail 
-% integral equations for the model work, integral says, rather than
-% computing the drift  rate with brownien motion at every step, that should
-% produce a PDF for where it hits the boundary, can directly and
-% analytically say what the PDF for the hitting function be, rather than
-% simulate every step.
-% 
-% when hear about fitting with kernals (not k density), K describes the
-% likelihood of something over param space.
-% 
+% Quantile Bin Method:
+% - Inner bin: [H-X, H+X] degrees → 50% of tiles
+% - Outer left: [H-X-Y, H-X] degrees → 25% of tiles
+% - Outer right: [H+X, H+X+Y] degrees → 25% of tiles
+% - Low noise: smaller X and Y values
+% - High noise: larger X and Y values
 % ------------------------------------------------------------
 
 % ---------- Setup ----------
@@ -43,19 +39,19 @@ ifi = Screen('GetFlipInterval', win);
 fprintf('Refresh: %.2f Hz (%.3f ms/frame)\n', 1/ifi, ifi*1000);
 
 % ---------- Parameters ----------
-P.kappaLowNoise  = 20;       % narrow VM (high evidence)
-P.kappaHighNoise =  1;       % wide VM (low evidence)
-P.limitDegLow    = 15;       % clipping window for low noise (±15°)
-P.limitDegHigh   = 40;       % clipping window for high noise (±40°)
+% Quantile bin parameters (replaces kappa)
+% Inner bin: [H-X, H+X] degrees (50% of tiles)
+% Outer bins: [H-X-Y, H-X] and [H+X, H+X+Y] degrees (25% each)
+P.X_LowNoise     = 5;        % inner range half-width for low noise (degrees)
+P.Y_LowNoise     = 10;       % outer range extension for low noise (degrees)
+P.X_HighNoise    = 8;       % inner range half-width for high noise (degrees)
+P.Y_HighNoise    = 30;       % outer range extension for high noise (degrees)
 P.durMs          = 500;      % per-stim duration
 P.ISI            = 0.300;    % seconds, stages 5/6
 P.angles4        = [0 90 180 270];  % R,U,L,D (deg)
 P.shotDir = 'stim_captures';
-% Optional: add saturation variation for high noise to increase salience
-P.addSaturationNoise = true;  % Add lightness/saturation variation for high noise
-P.satNoiseLevel = 0.15;        % ±15% variation in lightness/saturation
 
-logMsg('--- SqNoisy_NoiseDemo start ---');
+logMsg('--- NoiseDemo_QuantileBin start ---');
 
 % --- Guard: make sure color wheel exists ---
 if ~isfield(V,'color') || ~isfield(V.color,'map') || isempty(V.color.map)
@@ -84,41 +80,51 @@ while keepGoing
     switch stage
         case 1
             info = sprintf(['Stage 1: Single Stimulus\n' ...
-                            'Noise: Low (kappa = %.2f)\n' ...
-                            'Set Size: 1'], P.kappaLowNoise);
-            action = stage_click_to_repeat(win, @() stage_single(V, 90,  P.kappaLowNoise,  P), info);
+                            'Noise: Low (X=%.1f°, Y=%.1f°)\n' ...
+                            'Set Size: 1'], P.X_LowNoise, P.Y_LowNoise);
+            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'low',  P), info);
         case 2
             info = sprintf(['Stage 2: Single Stimulus\n' ...
-                            'Noise: High (kappa = %.2f)\n' ...
-                            'Set Size: 1'], P.kappaHighNoise);
-            action = stage_click_to_repeat(win, @() stage_single(V, 90,  P.kappaHighNoise, P), info);
+                            'Noise: High (X=%.1f°, Y=%.1f°)\n' ...
+                            'Set Size: 1'], P.X_HighNoise, P.Y_HighNoise);
+            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'high', P), info);
         case 3
             info = sprintf(['Stage 3: Four Stimuli with Replicas\n' ...
-                            'Noise: Low (kappa = %.2f)\n' ...
-                            'Set Size: 4'], P.kappaLowNoise);
-            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, P.kappaLowNoise), info);
+                            'Noise: Low (X=%.1f°, Y=%.1f°)\n' ...
+                            'Set Size: 4'], P.X_LowNoise, P.Y_LowNoise);
+            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'low'), info);
         case 4
             info = sprintf(['Stage 4: Four Stimuli with Replicas\n' ...
-                            'Noise: High (kappa = %.2f)\n' ...
-                            'Set Size: 4'], P.kappaHighNoise);
-            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, P.kappaHighNoise), info);
+                            'Noise: High (X=%.1f°, Y=%.1f°)\n' ...
+                            'Set Size: 4'], P.X_HighNoise, P.Y_HighNoise);
+            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'high'), info);
         case 5
             info = sprintf(['Stage 5: Two-Interval Same Location\n' ...
-                            'Noise: Low (kappa = %.2f)\n' ...
-                            'Set Size: 1 (two intervals)'], P.kappaLowNoise);
-            action = stage_click_to_repeat(win, @() stage_two_interval_same_loc(V, 90, P.kappaLowNoise, P), info);
+                            'Noise: Low (X=%.1f°, Y=%.1f°)\n' ...
+                            'Set Size: 1 (two intervals)'], P.X_LowNoise, P.Y_LowNoise);
+            action = stage_click_to_repeat(win, @() stage_two_interval_same_loc(V, 90, 'low', P), info);
         case 6
             info = sprintf(['Stage 6: Two-Interval Different Location\n' ...
-                            'Noise: Low (kappa = %.2f)\n' ...
-                            'Set Size: 1 (two intervals)'], P.kappaLowNoise);
-            action = stage_click_to_repeat(win, @() stage_two_interval_diff_loc(V, 90, 270, P.kappaLowNoise, P), info);
+                            'Noise: Low (X=%.1f°, Y=%.1f°)\n' ...
+                            'Set Size: 1 (two intervals)'], P.X_LowNoise, P.Y_LowNoise);
+            action = stage_click_to_repeat(win, @() stage_two_interval_diff_loc(V, 90, 270, 'low', P), info);
+        case 7
+            info = sprintf(['Stage 7: Two-Interval Same Location\n' ...
+                            'Noise: High (X=%.1f°, Y=%.1f°)\n' ...
+                            'Set Size: 1 (two intervals)'], P.X_HighNoise, P.Y_HighNoise);
+            action = stage_click_to_repeat(win, @() stage_two_interval_same_loc(V, 90, 'high', P), info);
+        case 8
+            info = sprintf(['Stage 8: Two-Interval Different Location\n' ...
+                            'Noise: High (X=%.1f°, Y=%.1f°)\n' ...
+                            'Set Size: 1 (two intervals)'], P.X_HighNoise, P.Y_HighNoise);
+            action = stage_click_to_repeat(win, @() stage_two_interval_diff_loc(V, 90, 270, 'high', P), info);
         otherwise
             action = 'quit';
     end
 
     switch action
         case 'next'
-            stage = min(stage+1, 6);
+            stage = min(stage+1, 8);
             logMsg(sprintf('Stage advanced to %d', stage));
         case 'prev'
             stage = max(stage-1, 1);
@@ -137,82 +143,38 @@ end % ------------------------------- end main function ------------------------
 
 % ===================== Stage bodies ======================
 
-function stage_single(V, angleDeg, kappa, P)
+function stage_single(V, angleDeg, noiseLevel, P)
 targetHueDeg = randi([0 359]);
-% Use appropriate limitDeg based on noise level
-if kappa == P.kappaLowNoise
-    limitDeg = P.limitDegLow;
-else
-    limitDeg = P.limitDegHigh;
-end
 % deferFlip=false means it will flip immediately and show for durMs
 % saveShot=false disabled for now (was causing issues)
-presentNoisySquareAt(V, targetHueDeg, kappa, angleDeg, P.durMs, limitDeg, P.cMap360_255, [], false, false, [], [], [], P);
+presentNoisySquareAt(V, targetHueDeg, noiseLevel, angleDeg, P.durMs, P, [], false, false);
 end
 
-function stage_four_with_replicas(V, P, kappa)
+function stage_four_with_replicas(V, P, noiseLevel)
 angles = P.angles4;                         % [R U L D]
 baseHue    = randi([0 359]);                % hue used for replicas
 uniqueHue1 = mod(baseHue + 60,  360);
 uniqueHue2 = mod(baseHue + 180, 360);
 
-% Use appropriate limitDeg based on noise level
-if kappa == P.kappaLowNoise
-    limitDeg = P.limitDegLow;
-else
-    limitDeg = P.limitDegHigh;
-end
-
-repPattern = makeNoisyPattern(V, baseHue, kappa, limitDeg, P.cMap360_255, P);
+repPattern = makeNoisyPattern(V, baseHue, noiseLevel, P);
 
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-presentNoisySquareAt(V, baseHue,    kappa, angles(1), P.durMs, limitDeg, P.cMap360_255, repPattern, true, false, [], [], [], P); % R replica
-presentNoisySquareAt(V, uniqueHue1, kappa, angles(2), P.durMs, limitDeg, P.cMap360_255, [],         true, false, [], [], [], P); % U new
-presentNoisySquareAt(V, baseHue,    kappa, angles(3), P.durMs, limitDeg, P.cMap360_255, repPattern, true, false, [], [], [], P); % L replica
-presentNoisySquareAt(V, uniqueHue2, kappa, angles(4), P.durMs, limitDeg, P.cMap360_255, [],         true, false, [], [], [], P); % D new
+presentNoisySquareAt(V, baseHue,    noiseLevel, angles(1), P.durMs, P, repPattern, true, false); % R replica
+presentNoisySquareAt(V, uniqueHue1, noiseLevel, angles(2), P.durMs, P, [],         true, false); % U new
+presentNoisySquareAt(V, baseHue,    noiseLevel, angles(3), P.durMs, P, repPattern, true, false); % L replica
+presentNoisySquareAt(V, uniqueHue2, noiseLevel, angles(4), P.durMs, P, [],         true, false); % D new
 Screen('Flip', V.window);
 WaitSecs(P.durMs/1000);
 end
 
-function stage_two_interval_same_loc(V, angleDeg, kappa, P)
+function stage_two_interval_diff_loc(V, angle1, angle2, noiseLevel, P)
 hue = randi([0 359]);
-% Use appropriate limitDeg based on noise level
-if kappa == P.kappaLowNoise
-    limitDeg = P.limitDegLow;
-else
-    limitDeg = P.limitDegHigh;
-end
-pat = makeNoisyPattern(V, hue, kappa, limitDeg, P.cMap360_255, P);
+pat = makeNoisyPattern(V, hue, noiseLevel, P);
 
 % interval 1
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-presentNoisySquareAt(V, hue, kappa, angleDeg, P.durMs, limitDeg, P.cMap360_255, pat, false, false, [], [], [], P);
-WaitSecs(P.durMs/1000);
-
-% ISI
-FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-Screen('Flip', V.window); WaitSecs(P.ISI);
-
-% interval 2 (replica)
-FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-presentNoisySquareAt(V, hue, kappa, angleDeg, P.durMs, limitDeg, P.cMap360_255, pat, false, false, [], [], [], P);
-WaitSecs(P.durMs/1000);
-end
-
-function stage_two_interval_diff_loc(V, angle1, angle2, kappa, P)
-hue = randi([0 359]);
-% Use appropriate limitDeg based on noise level
-if kappa == P.kappaLowNoise
-    limitDeg = P.limitDegLow;
-else
-    limitDeg = P.limitDegHigh;
-end
-pat = makeNoisyPattern(V, hue, kappa, limitDeg, P.cMap360_255, P);
-
-% interval 1
-FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-presentNoisySquareAt(V, hue, kappa, angle1, P.durMs, limitDeg, P.cMap360_255, pat, false, false, [], [], [], P);
-WaitSecs(P.durMs/1000);
+presentNoisySquareAt(V, hue, noiseLevel, angle1, P.durMs, P, pat, false, false);
+% Note: presentNoisySquareAt already waits for P.durMs internally, no extra WaitSecs needed
 
 % ISI
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
@@ -220,8 +182,27 @@ Screen('Flip', V.window); WaitSecs(P.ISI);
 
 % interval 2 at different angle (replica)
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-presentNoisySquareAt(V, hue, kappa, angle2, P.durMs, limitDeg, P.cMap360_255, pat, false, false, [], [], [], P);
-WaitSecs(P.durMs/1000);
+presentNoisySquareAt(V, hue, noiseLevel, angle2, P.durMs, P, pat, false, false);
+% Note: presentNoisySquareAt already waits for P.durMs internally, no extra WaitSecs needed
+end
+
+function stage_two_interval_same_loc(V, angleDeg, noiseLevel, P)
+hue = randi([0 359]);
+pat = makeNoisyPattern(V, hue, noiseLevel, P);
+
+% interval 1
+FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
+presentNoisySquareAt(V, hue, noiseLevel, angleDeg, P.durMs, P, pat, false, false);
+% Note: presentNoisySquareAt already waits for P.durMs internally, no extra WaitSecs needed
+
+% ISI
+FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
+Screen('Flip', V.window); WaitSecs(P.ISI);
+
+% interval 2 (replica)
+FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
+presentNoisySquareAt(V, hue, noiseLevel, angleDeg, P.durMs, P, pat, false, false);
+% Note: presentNoisySquareAt already waits for P.durMs internally, no extra WaitSecs needed
 end
 
 
@@ -314,18 +295,19 @@ end
 
 % ===================== Drawing helpers ======================
 
-function presentNoisySquareAt(V, hueDeg, kappa, angleDeg, durMs, limitDeg, cMap360_255, prePattern, deferFlip, saveShot, shotDir, shotTag, cropMode, P)
+function presentNoisySquareAt(V, hueDeg, noiseLevel, angleDeg, durMs, P, prePattern, deferFlip, saveShot, shotDir, shotTag, cropMode)
 % Draw one B×B noisy square at a given polar angle on the 5° circle.
+% noiseLevel: 'low' or 'high' (determines X and Y quantile bin parameters)
 % If prePattern is provided, reuse it (for replicas). If deferFlip=true, do not flip.
 % Based on original working version from SqNoisyStim_Demo1.m
 
-if nargin < 9 || isempty(deferFlip), deferFlip = false; end
-if nargin < 10, saveShot = false; end
-if nargin < 11, shotDir = 'stim_captures'; end
-if nargin < 12, shotTag = 'stage'; end
-if nargin < 13, cropMode = 'stim'; end
+if nargin < 7 || isempty(deferFlip), deferFlip = false; end
+if nargin < 8, saveShot = false; end
+if nargin < 9, shotDir = 'stim_captures'; end
+if nargin < 10, shotTag = 'stage'; end
+if nargin < 11, cropMode = 'stim'; end
 
-logMsg(sprintf('presentNoisySquareAt start: angle=%.1f, kappa=%.2f, durMs=%d, deferFlip=%d', angleDeg, kappa, durMs, deferFlip));
+logMsg(sprintf('presentNoisySquareAt start: angle=%.1f, noiseLevel=%s, durMs=%d, deferFlip=%d', angleDeg, noiseLevel, durMs, deferFlip));
 
 % center position on your 5° circle
 th = deg2rad(angleDeg);
@@ -339,7 +321,7 @@ rect   = CenterRectOnPointd([0 0 side side], cx, cy);
 tileRects = buildTileRects(rect, B, tilePx);
 
 if isempty(prePattern)
-    rgb01 = makeNoisyPattern(V, hueDeg, kappa, limitDeg, cMap360_255, P);
+    rgb01 = makeNoisyPattern(V, hueDeg, noiseLevel, P);
 else
     rgb01 = prePattern;  % reuse exact tiles/colors
 end
@@ -368,7 +350,7 @@ if ~deferFlip
             img = Screen('GetImage', V.window, grabRect);
             tstamp = datestr(now,'yyyymmdd_HHMMSS');
             tstamp = sprintf('%s_%03d', tstamp, round(rem(now*86400000, 1000)));
-            fname = sprintf('%s_h%03d_k%.2f_%s.png', shotTag, round(mod(hueDeg,360)), kappa, tstamp);
+            fname = sprintf('%s_h%03d_%s_%s.png', shotTag, round(mod(hueDeg,360)), noiseLevel, tstamp);
             imwrite(img, fullfile(shotDir, fname));
         catch ME
             fprintf(2,'[saveShot] Failed: %s\n', ME.message);
@@ -383,37 +365,28 @@ logMsg('presentNoisySquareAt end');
 end
 
 
-function rgb01 = makeNoisyPattern(V, hueDeg, kappa, limitDeg, cMap360_255, P)
+function rgb01 = makeNoisyPattern(V, hueDeg, noiseLevel, P)
 % Returns nTiles×3 double in [0,1]
-% P is optional parameter struct for saturation noise control
+% noiseLevel: 'low' or 'high' (determines X and Y parameters)
 B      = V.square.B;
 nTiles = B * B;
 
-% Sample hues around target with VM
-huesDeg = sampleVonMisesDegrees(hueDeg, kappa, nTiles);
-
-% Optional clamp to ±limitDeg around target
-if ~isempty(limitDeg) && isfinite(limitDeg) && limitDeg > 0
-    huesDeg = circClipToWindow(huesDeg, hueDeg, limitDeg);
+% Get X and Y parameters based on noise level
+if strcmpi(noiseLevel, 'low')
+    X = P.X_LowNoise;
+    Y = P.Y_LowNoise;
+elseif strcmpi(noiseLevel, 'high')
+    X = P.X_HighNoise;
+    Y = P.Y_HighNoise;
+else
+    error('noiseLevel must be ''low'' or ''high''');
 end
+
+% Sample hues using quantile bin method
+huesDeg = sampleQuantileBins(hueDeg, X, Y, nTiles);
 
 % Convert each hue to RGB from your wheel
-rgb01 = wheelRGB01_fromDegrees(huesDeg, cMap360_255);   % n×3, 0..1
-
-% Optional: Add saturation/lightness variation for high noise conditions
-% This increases perceptual difference by making high noise look "messier"
-if nargin >= 6 && ~isempty(P) && isfield(P, 'addSaturationNoise') && P.addSaturationNoise
-    if kappa == P.kappaHighNoise  % Only for high noise
-        % Convert RGB to HSV, add noise to S and V, convert back
-        hsv = rgb2hsv(rgb01);
-        % Add random variation to saturation (S) and value (V)
-        noiseS = (rand(nTiles, 1) - 0.5) * 2 * P.satNoiseLevel;  % ±satNoiseLevel
-        noiseV = (rand(nTiles, 1) - 0.5) * 2 * P.satNoiseLevel * 0.5;  % ±satNoiseLevel/2 (less variation in brightness)
-        hsv(:,2) = max(0, min(1, hsv(:,2) + noiseS));  % Clamp saturation
-        hsv(:,3) = max(0, min(1, hsv(:,3) + noiseV));  % Clamp value
-        rgb01 = hsv2rgb(hsv);
-    end
-end
+rgb01 = wheelRGB01_fromDegrees(huesDeg, P.cMap360_255);   % n×3, 0..1
 end
 
 
@@ -445,54 +418,55 @@ idx = round(mod(deg, 360)); idx(idx==0) = 360;   % map 0→360th row
 rgb01 = double(cMap360_255(idx, :)) / 255;       % N×3 in [0,1]
 end
 
-function huesDeg = sampleVonMisesDegrees(muDeg, kappa, n)
-% Best-effort rejection sampler (fast enough for n<=few thousand, Best & Fisher, 1979)
-mu = deg2rad(muDeg);
-if kappa < 1e-8
-    huesDeg = rand(1,n) * 360; return;
+function huesDeg = sampleQuantileBins(hueDeg, X, Y, n)
+% Quantile bin sampling method for stable noise levels
+% hueDeg: target hue (0-360 degrees)
+% X: inner bin half-width (degrees) - defines [H-X, H+X] range
+% Y: outer bin extension (degrees) - defines outer ranges
+% n: number of samples to generate
+%
+% Bin structure:
+% - Inner bin: [H-X, H+X] degrees → 50% of samples
+% - Outer left: [H-X-Y, H-X] degrees → 25% of samples
+% - Outer right: [H+X, H+X+Y] degrees → 25% of samples
+%
+% All sampling within each bin is uniform.
+
+% Ensure X and Y are positive
+X = abs(X);
+Y = abs(Y);
+
+% Calculate number of samples per bin
+nInner = round(n * 0.5);      % 50% in inner bin
+nOuterLeft = round(n * 0.25); % 25% in outer left
+nOuterRight = n - nInner - nOuterLeft; % Remaining in outer right (ensures total = n)
+
+% Initialize output
+huesDeg = zeros(1, n);
+
+% Sample from inner bin: [H-X, H+X]
+if nInner > 0
+    innerSamples = hueDeg - X + (2*X) * rand(1, nInner);
+    huesDeg(1:nInner) = innerSamples;
 end
 
-a = 1 + sqrt(1 + 4*kappa^2);
-b = (a - sqrt(2*a)) / (2*kappa);
-r = (1 + b^2) / (2*b);
-
-out = zeros(1,n);
-i = 1;
-attempts = 0;
-maxAttempts = 2000;
-while i <= n
-    U1 = rand;  z  = cos(pi*U1);
-    f  = (1 + r*z) / (r + z);
-    c  = kappa * (r - f);
-    U2 = rand;
-    attempts = attempts + 1;
-    if attempts > maxAttempts
-        % Fallback to uniform sample around mean if rejection keeps failing
-        logMsg(sprintf('VonMises sampler fallback triggered (kappa=%.2f)', kappa));
-        out(i) = mu + (rand*2*pi - pi);
-        i = i + 1;
-        attempts = 0;
-        continue;
-    end
-    if U2 < c*(2 - c) || U2 <= c*exp(1 - c)
-        U3 = rand;
-    f = max(min(f, 1), -1);  % numerical guard
-    theta = acos(f);
-        if U3 > 0.5, theta = -theta; end
-        out(i) = mu + theta;
-        i = i + 1;
-        attempts = 0;
-    end
-end
-out = angle(exp(1i*out));                 % wrap to (-pi,pi]
-huesDeg = mod(rad2deg(out), 360);         % 0..360
+% Sample from outer left bin: [H-X-Y, H-X]
+if nOuterLeft > 0
+    outerLeftSamples = hueDeg - X - Y + Y * rand(1, nOuterLeft);
+    huesDeg(nInner + (1:nOuterLeft)) = outerLeftSamples;
 end
 
-function huesClipped = circClipToWindow(hues, muDeg, limitDeg)
-% Move any sample outside ±limitDeg back to that window, circularly
-d = mod(hues - muDeg + 180, 360) - 180;               % signed shortest diff (-180..180]
-d = max(min(d, limitDeg), -limitDeg);                 % clamp
-huesClipped = mod(muDeg + d, 360);
+% Sample from outer right bin: [H+X, H+X+Y]
+if nOuterRight > 0
+    outerRightSamples = hueDeg + X + Y * rand(1, nOuterRight);
+    huesDeg(nInner + nOuterLeft + (1:nOuterRight)) = outerRightSamples;
+end
+
+% Wrap all samples to [0, 360) range
+huesDeg = mod(huesDeg, 360);
+
+% Shuffle to randomize order (so bins aren't spatially clustered)
+huesDeg = huesDeg(randperm(n));
 end
 
 
@@ -834,7 +808,7 @@ V.stim.positionradius  = round(degpx * 1.82);   % legacy ring (unused here but k
 % ---- Square stimulus spec (upright) ----
 V.square.R_deg         = 0.80;      % inscribing circle radius in deg (≈ your 0.8° size)
 V.square.coverage_c    = 1.00;      % 1.00 => corners touch the inscribing circle
-V.square.B             = 12;        % B×B tiles
+V.square.B             = 8;        % B×B tiles
 
 side_deg_full          = V.square.coverage_c * sqrt(2) * V.square.R_deg;
 side_px_full           = max(V.square.B, round(side_deg_full * V.pxPerDeg));

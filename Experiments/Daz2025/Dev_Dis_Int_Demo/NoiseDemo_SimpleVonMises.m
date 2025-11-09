@@ -1,6 +1,7 @@
-function SqNoisy_NoiseDemo
+function NoiseDemo_SimpleVonMises
 % ------------------------------------------------------------
 % Demo: Low vs High noise color square stimuli (B×B tiles)
+% Sampling Method: Von Mises distribution
 % Stages:
 % 1) single low-noise @ 12 o'clock (click to replay; F next; B back)
 % 2) single high-noise @ 12 o'clock
@@ -8,6 +9,8 @@ function SqNoisy_NoiseDemo
 % 4) 4 items (R,U,L,D), HIGH noise; R & L are exact replicas
 % 5) 2-interval same location (LOW noise): replica after 300 ms ISI
 % 6) 2-interval diff location (LOW noise): replica at a different angle
+% 7) 2-interval same location (HIGH noise): replica after 300 ms ISI
+% 8) 2-interval diff location (HIGH noise): replica at a different angle
 %
 % Now backed up on Github
 % Testing branch
