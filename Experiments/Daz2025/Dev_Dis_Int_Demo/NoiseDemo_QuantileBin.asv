@@ -1,7 +1,7 @@
 function NoiseDemo_QuantileBin
 % ------------------------------------------------------------
 % Demo: Low vs High noise color square stimuli (B×B tiles)
-% Sampling Method: Sampling Bins (6) Design
+% Sampling Method: Quantile Bins
 % Stages:
 % 1) single low-noise @ 12 o'clock (click to replay; F next; B back)
 % 2) single high-noise @ 12 o'clock
@@ -63,11 +63,11 @@ fprintf('Refresh: %.2f Hz (%.3f ms/frame)\n', 1/ifi, ifi*1000);
 %   Bin 3: [H-5, H], Bin 4: [H, H+5]
 %   Bin 2: [H-10, H-5], Bin 5: [H+5, H+10]
 %   Bin 1: [H-15, H-10], Bin 6: [H+10, H+15]
-P.X_LowNoise     = 2;        % distance from 0 to outer edge of bins 3 & 4 for low noise (degrees)
-P.Y_LowNoise     = 5;        % distance from 0 to outer edge of bins 2 & 5 for low noise (degrees)
+P.X_LowNoise     = 3;        % distance from 0 to outer edge of bins 3 & 4 for low noise (degrees)
+P.Y_LowNoise     = 8;        % distance from 0 to outer edge of bins 2 & 5 for low noise (degrees)
 P.Z_LowNoise     = 25;       % distance from 0 to outer edge of bins 1 & 6 for low noise (degrees)
-P.X_HighNoise    = 12;        % distance from 0 to outer edge of bins 3 & 4 for high noise (degrees)
-P.Y_HighNoise    = 20;       % distance from 0 to outer edge of bins 2 & 5 for high noise (degrees)
+P.X_HighNoise    = 10;        % distance from 0 to outer edge of bins 3 & 4 for high noise (degrees)
+P.Y_HighNoise    = 16;       % distance from 0 to outer edge of bins 2 & 5 for high noise (degrees)
 P.Z_HighNoise    = 25;       % distance from 0 to outer edge of bins 1 & 6 for high noise (degrees)
 P.durMs          = 500;      % per-stim duration
 P.ISI            = 0.300;    % seconds, stages 5/6
