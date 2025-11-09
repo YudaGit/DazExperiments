@@ -36,6 +36,8 @@ Screen('Preference','SkipSyncTests',1);
 Screen('Preference','VisualDebugLevel',1);
 
 global V
+global storedStimData
+storedStimData = [];  % Initialize global variable for storing stimulus data
 V = initiate();
 win = V.window;
 
@@ -105,42 +107,50 @@ while keepGoing
             info = sprintf(['Stage 1: Single Stimulus\n' ...
                             'Noise: Low (X=%.1f°, Y=%.1f°, Z=%.1f°)\n' ...
                             'Set Size: 1'], P.X_LowNoise, P.Y_LowNoise, P.Z_LowNoise);
-            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'low',  P), info);
+            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'low',  P), info, ...
+                @() generateTargetOffset_single(V, 90, 'low', P));
         case 2
             info = sprintf(['Stage 2: Single Stimulus\n' ...
                             'Noise: High (X=%.1f°, Y=%.1f°, Z=%.1f°)\n' ...
                             'Set Size: 1'], P.X_HighNoise, P.Y_HighNoise, P.Z_HighNoise);
-            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'high', P), info);
+            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'high', P), info, ...
+                @() generateTargetOffset_single(V, 90, 'high', P));
         case 3
             info = sprintf(['Stage 3: Four Stimuli with Replicas\n' ...
                             'Noise: Low (X=%.1f°, Y=%.1f°, Z=%.1f°)\n' ...
                             'Set Size: 4'], P.X_LowNoise, P.Y_LowNoise, P.Z_LowNoise);
-            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'low'), info);
+            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'low'), info, ...
+                @() generateTargetOffset_four(V, P, 'low'));
         case 4
             info = sprintf(['Stage 4: Four Stimuli with Replicas\n' ...
                             'Noise: High (X=%.1f°, Y=%.1f°, Z=%.1f°)\n' ...
                             'Set Size: 4'], P.X_HighNoise, P.Y_HighNoise, P.Z_HighNoise);
-            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'high'), info);
+            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'high'), info, ...
+                @() generateTargetOffset_four(V, P, 'high'));
         case 5
             info = sprintf(['Stage 5: Two-Interval Same Location\n' ...
                             'Noise: Low (X=%.1f°, Y=%.1f°, Z=%.1f°)\n' ...
                             'Set Size: 1 (two intervals)'], P.X_LowNoise, P.Y_LowNoise, P.Z_LowNoise);
-            action = stage_click_to_repeat(win, @() stage_two_interval_same_loc(V, 90, 'low', P), info);
+            action = stage_click_to_repeat(win, @() stage_two_interval_same_loc(V, 90, 'low', P), info, ...
+                @() generateTargetOffset_single(V, 90, 'low', P));
         case 6
             info = sprintf(['Stage 6: Two-Interval Different Location\n' ...
                             'Noise: Low (X=%.1f°, Y=%.1f°, Z=%.1f°)\n' ...
                             'Set Size: 1 (two intervals)'], P.X_LowNoise, P.Y_LowNoise, P.Z_LowNoise);
-            action = stage_click_to_repeat(win, @() stage_two_interval_diff_loc(V, 90, 270, 'low', P), info);
+            action = stage_click_to_repeat(win, @() stage_two_interval_diff_loc(V, 90, 270, 'low', P), info, ...
+                @() generateTargetOffset_single(V, 90, 'low', P));
         case 7
             info = sprintf(['Stage 7: Two-Interval Same Location\n' ...
                             'Noise: High (X=%.1f°, Y=%.1f°, Z=%.1f°)\n' ...
                             'Set Size: 1 (two intervals)'], P.X_HighNoise, P.Y_HighNoise, P.Z_HighNoise);
-            action = stage_click_to_repeat(win, @() stage_two_interval_same_loc(V, 90, 'high', P), info);
+            action = stage_click_to_repeat(win, @() stage_two_interval_same_loc(V, 90, 'high', P), info, ...
+                @() generateTargetOffset_single(V, 90, 'high', P));
         case 8
             info = sprintf(['Stage 8: Two-Interval Different Location\n' ...
                             'Noise: High (X=%.1f°, Y=%.1f°, Z=%.1f°)\n' ...
                             'Set Size: 1 (two intervals)'], P.X_HighNoise, P.Y_HighNoise, P.Z_HighNoise);
-            action = stage_click_to_repeat(win, @() stage_two_interval_diff_loc(V, 90, 270, 'high', P), info);
+            action = stage_click_to_repeat(win, @() stage_two_interval_diff_loc(V, 90, 270, 'high', P), info, ...
+                @() generateTargetOffset_single(V, 90, 'high', P));
         otherwise
             action = 'quit';
     end
@@ -166,33 +176,89 @@ end % ------------------------------- end main function ------------------------
 
 % ===================== Stage bodies ======================
 
-function stage_single(V, angleDeg, noiseLevel, P)
-targetHueDeg = randi([0 359]);
+function [targetDeg, meanOffset] = stage_single(V, angleDeg, noiseLevel, P)
+% Get stored target from generateTargetOffset_single (via global)
+global storedStimData
+if ~isempty(storedStimData) && isfield(storedStimData, 'target') && ~isempty(storedStimData.target)
+    % Use stored values
+    targetHueDeg = storedStimData.target;
+    rgb01 = storedStimData.pattern;
+    huesDeg = storedStimData.hues;
+    meanOffset = storedStimData.meanOffset;
+    % Clear after use
+    storedStimData = [];
+else
+    % Fallback: generate new if not set
+    targetHueDeg = randi([0 359]);
+    [rgb01, huesDeg] = makeNoisyPattern(V, targetHueDeg, noiseLevel, P);
+    meanOffset = calculateMeanOffset(huesDeg, targetHueDeg);
+end
 % deferFlip=false means it will flip immediately and show for durMs
 % saveShot=false disabled for now (was causing issues)
-presentNoisySquareAt(V, targetHueDeg, noiseLevel, angleDeg, P.durMs, P, [], false, false);
+presentNoisySquareAt(V, targetHueDeg, noiseLevel, angleDeg, P.durMs, P, rgb01, false, false);
+targetDeg = targetHueDeg;
 end
 
-function stage_four_with_replicas(V, P, noiseLevel)
+function [targetDegs, meanOffsets] = stage_four_with_replicas(V, P, noiseLevel)
+% Get stored values from generateTargetOffset_four (via global)
+global storedStimData
+if ~isempty(storedStimData) && isfield(storedStimData, 'baseHue') && ~isempty(storedStimData.baseHue)
+    % Use stored values
+    baseHue = storedStimData.baseHue;
+    uniqueHue1 = storedStimData.uniqueHue1;
+    uniqueHue2 = storedStimData.uniqueHue2;
+    repPattern = storedStimData.repPattern;
+    repHues = storedStimData.repHues;
+    uniqueHues1 = storedStimData.uniqueHues1;
+    uniqueHues2 = storedStimData.uniqueHues2;
+    meanOffsets = storedStimData.meanOffsets;
+    % Clear after use
+    storedStimData = [];
+else
+    % Fallback: generate new if not set
+    baseHue    = randi([0 359]);
+    uniqueHue1 = mod(baseHue + 60,  360);
+    uniqueHue2 = mod(baseHue + 180, 360);
+    [repPattern, repHues] = makeNoisyPattern(V, baseHue, noiseLevel, P);
+    [~, uniqueHues1] = makeNoisyPattern(V, uniqueHue1, noiseLevel, P);
+    [~, uniqueHues2] = makeNoisyPattern(V, uniqueHue2, noiseLevel, P);
+    meanOffsets = [calculateMeanOffset(repHues, baseHue), ...
+                   calculateMeanOffset(uniqueHues1, uniqueHue1), ...
+                   calculateMeanOffset(repHues, baseHue), ...
+                   calculateMeanOffset(uniqueHues2, uniqueHue2)];
+end
+targetDegs = [baseHue, uniqueHue1, baseHue, uniqueHue2];
 angles = P.angles4;                         % [R U L D]
-baseHue    = randi([0 359]);                % hue used for replicas
-uniqueHue1 = mod(baseHue + 60,  360);
-uniqueHue2 = mod(baseHue + 180, 360);
-
-repPattern = makeNoisyPattern(V, baseHue, noiseLevel, P);
 
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
+% Convert stored hues to RGB patterns for unique stimuli
+uniquePattern1 = wheelRGB01_fromDegrees(uniqueHues1, P.cMap360_255);
+uniquePattern2 = wheelRGB01_fromDegrees(uniqueHues2, P.cMap360_255);
 presentNoisySquareAt(V, baseHue,    noiseLevel, angles(1), P.durMs, P, repPattern, true, false); % R replica
-presentNoisySquareAt(V, uniqueHue1, noiseLevel, angles(2), P.durMs, P, [],         true, false); % U new
+presentNoisySquareAt(V, uniqueHue1, noiseLevel, angles(2), P.durMs, P, uniquePattern1, true, false); % U new
 presentNoisySquareAt(V, baseHue,    noiseLevel, angles(3), P.durMs, P, repPattern, true, false); % L replica
-presentNoisySquareAt(V, uniqueHue2, noiseLevel, angles(4), P.durMs, P, [],         true, false); % D new
+presentNoisySquareAt(V, uniqueHue2, noiseLevel, angles(4), P.durMs, P, uniquePattern2, true, false); % D new
 Screen('Flip', V.window);
 WaitSecs(P.durMs/1000);
 end
 
-function stage_two_interval_diff_loc(V, angle1, angle2, noiseLevel, P)
-hue = randi([0 359]);
-pat = makeNoisyPattern(V, hue, noiseLevel, P);
+function [targetDeg, meanOffset] = stage_two_interval_diff_loc(V, angle1, angle2, noiseLevel, P)
+% Get stored target from generateTargetOffset_single (via global)
+global storedStimData
+if ~isempty(storedStimData) && isfield(storedStimData, 'target') && ~isempty(storedStimData.target)
+    % Use stored values
+    hue = storedStimData.target;
+    pat = storedStimData.pattern;
+    huesDeg = storedStimData.hues;
+    meanOffset = storedStimData.meanOffset;
+    % Clear after use
+    storedStimData = [];
+else
+    % Fallback: generate new if not set
+    hue = randi([0 359]);
+    [pat, huesDeg] = makeNoisyPattern(V, hue, noiseLevel, P);
+    meanOffset = calculateMeanOffset(huesDeg, hue);
+end
 
 % interval 1
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
@@ -207,11 +273,26 @@ Screen('Flip', V.window); WaitSecs(P.ISI);
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
 presentNoisySquareAt(V, hue, noiseLevel, angle2, P.durMs, P, pat, false, false);
 % Note: presentNoisySquareAt already waits for P.durMs internally, no extra WaitSecs needed
+targetDeg = hue;
 end
 
-function stage_two_interval_same_loc(V, angleDeg, noiseLevel, P)
-hue = randi([0 359]);
-pat = makeNoisyPattern(V, hue, noiseLevel, P);
+function [targetDeg, meanOffset] = stage_two_interval_same_loc(V, angleDeg, noiseLevel, P)
+% Get stored target from generateTargetOffset_single (via global)
+global storedStimData
+if ~isempty(storedStimData) && isfield(storedStimData, 'target') && ~isempty(storedStimData.target)
+    % Use stored values
+    hue = storedStimData.target;
+    pat = storedStimData.pattern;
+    huesDeg = storedStimData.hues;
+    meanOffset = storedStimData.meanOffset;
+    % Clear after use
+    storedStimData = [];
+else
+    % Fallback: generate new if not set
+    hue = randi([0 359]);
+    [pat, huesDeg] = makeNoisyPattern(V, hue, noiseLevel, P);
+    meanOffset = calculateMeanOffset(huesDeg, hue);
+end
 
 % interval 1
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
@@ -226,17 +307,20 @@ Screen('Flip', V.window); WaitSecs(P.ISI);
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
 presentNoisySquareAt(V, hue, noiseLevel, angleDeg, P.durMs, P, pat, false, false);
 % Note: presentNoisySquareAt already waits for P.durMs internally, no extra WaitSecs needed
+targetDeg = hue;
 end
 
 
 % ===================== Stage driver / UI ======================
 
-function action = stage_click_to_repeat(win, doOnceFcn, infoText)
+function action = stage_click_to_repeat(win, doOnceFcn, infoText, getTargetOffsetFcn)
 % Returns one of: 'next' | 'prev' | 'quit' | 'again'
 % - Click: run doOnceFcn() then return 'again'
 % - F:     return 'next'
 % - B:     return 'prev'
 % - ESC:   return 'quit'
+% getTargetOffsetFcn: function that returns [targetDeg, meanOffset] or cell array for multiple stimuli
+%   This function should also store the target in a way that doOnceFcn can access it
 global V
 action = 'again';
 
@@ -247,10 +331,36 @@ end
 % Debounce: wait until no mouse button is down
 while any(GetMouseButtons()), WaitSecs(0.01); end
 
+% Generate initial target/offset for display
+if exist('getTargetOffsetFcn', 'var') && ~isempty(getTargetOffsetFcn)
+    targetOffsetInfo = getTargetOffsetFcn();
+else
+    targetOffsetInfo = [];
+end
+
 while true
     FillBG(V);
     drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-    drawStageInfo(V, infoText);
+    
+    % Build display text with target and mean offset
+    displayText = infoText;
+    if ~isempty(targetOffsetInfo)
+        if iscell(targetOffsetInfo) && length(targetOffsetInfo) == 2
+            % Multiple stimuli (stage 3/4)
+            targetDegs = targetOffsetInfo{1};
+            meanOffsets = targetOffsetInfo{2};
+            offsetStr = sprintf('Targets: %s\nMean Offsets: %s', ...
+                mat2str(round(targetDegs)), mat2str(round(meanOffsets*10)/10));
+        else
+            % Single stimulus
+            targetDeg = targetOffsetInfo(1);
+            meanOffset = targetOffsetInfo(2);
+            offsetStr = sprintf('Target: %d°\nMean Offset: %.2f°', round(targetDeg), meanOffset);
+        end
+        displayText = sprintf('%s\n\n%s', infoText, offsetStr);
+    end
+    
+    drawStageInfo(V, displayText);
     drawHUD(V, 'Click = show  |  F = next  |  B = back  |  ESC = quit');
     Screen('Flip', win);
 
@@ -285,6 +395,12 @@ while true
     if buttons(1)
         doOnceFcn();
         WaitForMouseRelease();
+        
+        % Generate new target/offset for next stimulus
+        if exist('getTargetOffsetFcn', 'var') && ~isempty(getTargetOffsetFcn)
+            targetOffsetInfo = getTargetOffsetFcn();
+        end
+        
         action = 'again';
         logMsg('Mouse click: stimulus presented');
         return;
@@ -388,8 +504,8 @@ logMsg('presentNoisySquareAt end');
 end
 
 
-function rgb01 = makeNoisyPattern(V, hueDeg, noiseLevel, P)
-% Returns nTiles×3 double in [0,1]
+function [rgb01, huesDeg] = makeNoisyPattern(V, hueDeg, noiseLevel, P)
+% Returns nTiles×3 double in [0,1] and nTiles×1 hue degrees
 % noiseLevel: 'low' or 'high' (determines X and Y parameters)
 B      = V.square.B;
 nTiles = B * B;
@@ -412,6 +528,61 @@ huesDeg = sampleQuantileBins(hueDeg, X, Y, Z, nTiles);
 
 % Convert each hue to RGB from your wheel
 rgb01 = wheelRGB01_fromDegrees(huesDeg, P.cMap360_255);   % n×3, 0..1
+end
+
+function meanOffset = calculateMeanOffset(huesDeg, targetHueDeg)
+% Calculate mean offset from target using shortest angular distance
+% huesDeg: vector of hue values in degrees (0-360)
+% targetHueDeg: target hue in degrees (0-360)
+% Returns: mean offset in degrees (can be negative or positive)
+
+% Convert to offsets using shortest angular distance
+offsets = mod(huesDeg - targetHueDeg + 180, 360) - 180;
+meanOffset = mean(offsets);
+end
+
+function targetOffset = generateTargetOffset_single(V, angleDeg, noiseLevel, P)
+% Generate target and mean offset for single stimulus (for display before showing)
+% Also stores values in global storedStimData for stage_single to use
+global storedStimData
+targetHueDeg = randi([0 359]);
+[rgb01, huesDeg] = makeNoisyPattern(V, targetHueDeg, noiseLevel, P);
+meanOffset = calculateMeanOffset(huesDeg, targetHueDeg);
+targetOffset = [targetHueDeg, meanOffset];
+% Store for stage_single to use
+storedStimData.target = targetHueDeg;
+storedStimData.pattern = rgb01;
+storedStimData.hues = huesDeg;
+storedStimData.meanOffset = meanOffset;
+end
+
+function targetOffset = generateTargetOffset_four(V, P, noiseLevel)
+% Generate target and mean offset for four stimuli (for display before showing)
+% Also stores values in global storedStimData for stage_four_with_replicas to use
+global storedStimData
+baseHue    = randi([0 359]);
+uniqueHue1 = mod(baseHue + 60,  360);
+uniqueHue2 = mod(baseHue + 180, 360);
+
+[repPattern, repHues] = makeNoisyPattern(V, baseHue, noiseLevel, P);
+[~, uniqueHues1] = makeNoisyPattern(V, uniqueHue1, noiseLevel, P);
+[~, uniqueHues2] = makeNoisyPattern(V, uniqueHue2, noiseLevel, P);
+
+targetDegs = [baseHue, uniqueHue1, baseHue, uniqueHue2];
+meanOffsets = [calculateMeanOffset(repHues, baseHue), ...
+               calculateMeanOffset(uniqueHues1, uniqueHue1), ...
+               calculateMeanOffset(repHues, baseHue), ...
+               calculateMeanOffset(uniqueHues2, uniqueHue2)];
+targetOffset = {targetDegs, meanOffsets};
+% Store for stage_four_with_replicas to use
+storedStimData.baseHue = baseHue;
+storedStimData.repPattern = repPattern;
+storedStimData.repHues = repHues;
+storedStimData.uniqueHue1 = uniqueHue1;
+storedStimData.uniqueHues1 = uniqueHues1;
+storedStimData.uniqueHue2 = uniqueHue2;
+storedStimData.uniqueHues2 = uniqueHues2;
+storedStimData.meanOffsets = meanOffsets;
 end
 
 
