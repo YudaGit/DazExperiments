@@ -107,13 +107,13 @@ while keepGoing
             info = sprintf(['Stage 1: Single Stimulus\n' ...
                             'Noise: Low (X=%.1f°, Y=%.1f°, Z=%.1f°)\n' ...
                             'Set Size: 1'], P.X_LowNoise, P.Y_LowNoise, P.Z_LowNoise);
-            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'low',  P), info, ...
+            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'low',  P, true, 'stage1'), info, ...
                 @() generateTargetOffset_single(V, 90, 'low', P));
         case 2
             info = sprintf(['Stage 2: Single Stimulus\n' ...
                             'Noise: High (X=%.1f°, Y=%.1f°, Z=%.1f°)\n' ...
                             'Set Size: 1'], P.X_HighNoise, P.Y_HighNoise, P.Z_HighNoise);
-            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'high', P), info, ...
+            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'high', P, true, 'stage2'), info, ...
                 @() generateTargetOffset_single(V, 90, 'high', P));
         case 3
             info = sprintf(['Stage 3: Four Stimuli with Replicas\n' ...
@@ -176,9 +176,14 @@ end % ------------------------------- end main function ------------------------
 
 % ===================== Stage bodies ======================
 
-function [targetDeg, meanOffset] = stage_single(V, angleDeg, noiseLevel, P)
+function [targetDeg, meanOffset] = stage_single(V, angleDeg, noiseLevel, P, saveShot, shotTag)
 % Get stored target from generateTargetOffset_single (via global)
+% saveShot: enable screen capture (default: false)
+% shotTag: tag for screenshot filename (default: 'stage1' or 'stage2' based on noiseLevel)
 global storedStimData
+if nargin < 5, saveShot = false; end
+if nargin < 6, shotTag = sprintf('stage%d', strcmpi(noiseLevel, 'high') + 1); end
+
 if ~isempty(storedStimData) && isfield(storedStimData, 'target') && ~isempty(storedStimData.target)
     % Use stored values
     targetHueDeg = storedStimData.target;
@@ -194,8 +199,7 @@ else
     meanOffset = calculateMeanOffset(huesDeg, targetHueDeg);
 end
 % deferFlip=false means it will flip immediately and show for durMs
-% saveShot=false disabled for now (was causing issues)
-presentNoisySquareAt(V, targetHueDeg, noiseLevel, angleDeg, P.durMs, P, rgb01, false, false);
+presentNoisySquareAt(V, targetHueDeg, noiseLevel, angleDeg, P.durMs, P, rgb01, false, saveShot, P.shotDir, shotTag);
 targetDeg = targetHueDeg;
 end
 
@@ -440,11 +444,11 @@ function presentNoisySquareAt(V, hueDeg, noiseLevel, angleDeg, durMs, P, prePatt
 % If prePattern is provided, reuse it (for replicas). If deferFlip=true, do not flip.
 % Based on original working version from SqNoisyStim_Demo1.m
 
-if nargin < 7 || isempty(deferFlip), deferFlip = false; end
-if nargin < 8, saveShot = false; end
-if nargin < 9, shotDir = 'stim_captures'; end
-if nargin < 10, shotTag = 'stage'; end
-if nargin < 11, cropMode = 'stim'; end
+if nargin < 8 || isempty(deferFlip), deferFlip = false; end
+if nargin < 9 || isempty(saveShot), saveShot = false; end
+if nargin < 10 || isempty(shotDir), shotDir = 'stim_captures'; end
+if nargin < 11 || isempty(shotTag), shotTag = 'stage'; end
+if nargin < 12 || isempty(cropMode), cropMode = 'stim'; end
 
 logMsg(sprintf('presentNoisySquareAt start: angle=%.1f, noiseLevel=%s, durMs=%d, deferFlip=%d', angleDeg, noiseLevel, durMs, deferFlip));
 
@@ -490,9 +494,12 @@ if ~deferFlip
             tstamp = datestr(now,'yyyymmdd_HHMMSS');
             tstamp = sprintf('%s_%03d', tstamp, round(rem(now*86400000, 1000)));
             fname = sprintf('%s_h%03d_%s_%s.png', shotTag, round(mod(hueDeg,360)), noiseLevel, tstamp);
-            imwrite(img, fullfile(shotDir, fname));
+            fullPath = fullfile(shotDir, fname);
+            imwrite(img, fullPath, 'png');
+            fprintf('[saveShot] Saved: %s\n', fname);
         catch ME
             fprintf(2,'[saveShot] Failed: %s\n', ME.message);
+            fprintf(2,'[saveShot] Stack: %s\n', getReport(ME));
         end
     end
 
