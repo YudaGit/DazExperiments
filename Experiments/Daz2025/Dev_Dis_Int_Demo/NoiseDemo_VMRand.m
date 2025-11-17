@@ -12,14 +12,15 @@ function NoiseDemo_VMRand
 % 7) 2-interval same location (HIGH noise): redundant items (same target, independent samples)
 % 8) 2-interval diff location (HIGH noise): redundant items (same target, independent samples)
 %
-% Two-Component Von Mises Mixture Method:
-% - Samples from a mixture: A * vonMises(κ=K) + (1-A) * vonMises(κ=K_W)
-% - K: concentration parameter for tight component (high K = narrow distribution)
-% - A: weight/amplitude for tight component (0-1, where 1-A is weight for wide)
-% - K_W: concentration parameter for wide component (low K_W = very wide)
-% - Low noise: high A, high K, moderate K_W → most samples near target
-% - High noise: low A, moderate K, low K_W → more samples far from target
-% - Setting A=1.0 makes it pure von Mises with κ=K (wide component = 0)
+% Truncated Von Mises Method:
+% - Samples from vonMises(μ=target, κ=K) but truncated to ±maxDeviation
+% - K: concentration parameter (high K = narrow, low K = wide)
+% - maxDeviation: hard limit on how far samples can deviate from target (degrees)
+% - All samples are guaranteed to stay within ±maxDeviation of target
+% - Distribution is normalized so area under curve within truncation window is equal
+%   for both noise levels (ensures fair comparison)
+% - Low noise: high K, small maxDeviation → tight, concentrated samples
+% - High noise: low K, large maxDeviation → wide, spread out samples
 %
 % Redundant Design
 % - Let redudant items to be only rooted in the same original color, then
@@ -48,24 +49,23 @@ ifi = Screen('GetFlipInterval', win);
 fprintf('Refresh: %.2f Hz (%.3f ms/frame)\n', 1/ifi, ifi*1000);
 
 % ---------- Parameters ----------
-% Two-component von Mises mixture parameters
-% Mixture: A * vonMises(μ=target, κ=K) + (1-A) * vonMises(μ=target, κ=K_W)
+% Truncated von Mises parameters
+% Samples from vonMises(μ=target, κ=K) but truncated to ±maxDeviation
+% Normalized so area under curve within truncation window is equal for both noise levels
 % 
 % Low noise parameters:
-P.K_LowNoise      = 35;       % concentration for tight component (high = narrow)
-P.A_LowNoise      = 0.95;     % weight/amplitude for tight component (0-1)
-P.KW_LowNoise     = 2;        % concentration for wide component (low = wide)
+P.K_LowNoise      = 30;       % concentration parameter (high = narrow distribution)
+P.maxDev_LowNoise = 8;        % maximum deviation from target in degrees (truncation limit)
 
 % High noise parameters:
-P.K_HighNoise     = 5;        % concentration for tight component
-P.A_HighNoise     = 0.5;     % weight/amplitude for tight component (lower = more wide component)
-P.KW_HighNoise    = 2;      % concentration for wide component
+P.K_HighNoise     = 5;        % concentration parameter (lower = wider distribution)
+P.maxDev_HighNoise = 25;      % maximum deviation from target in degrees (truncation limit)
 P.durMs          = 500;      % per-stim duration
 P.ISI            = 0.300;    % seconds, stages 5/6
 P.angles4        = [0 90 180 270];  % R,U,L,D (deg)
 P.shotDir = 'stim_captures';
 
-logMsg('--- NoiseDemo_VMRand (Two-Component Von Mises) start ---');
+logMsg('--- NoiseDemo_VMRand (Truncated Von Mises) start ---');
 
 % --- Guard: make sure color wheel exists ---
 if ~isfield(V,'color') || ~isfield(V.color,'map') || isempty(V.color.map)
@@ -94,50 +94,50 @@ while keepGoing
     switch stage
         case 1
             info = sprintf(['Stage 1: Single Stimulus\n' ...
-                            'Noise: Low (K=%.1f, A=%.2f, KW=%.1f)\n' ...
-                            'Set Size: 1'], P.K_LowNoise, P.A_LowNoise, P.KW_LowNoise);
+                            'Noise: Low (K=%.1f, maxDev=%.1f°)\n' ...
+                            'Set Size: 1'], P.K_LowNoise, P.maxDev_LowNoise);
             action = stage_click_to_repeat(win, @() stage_single(V, 90,  'low',  P, false, 'stage1'), info, ...
                 @() generateTargetOffset_single(V, 90, 'low', P));
         case 2
             info = sprintf(['Stage 2: Single Stimulus\n' ...
-                            'Noise: High (K=%.1f, A=%.2f, KW=%.1f)\n' ...
-                            'Set Size: 1'], P.K_HighNoise, P.A_HighNoise, P.KW_HighNoise);
+                            'Noise: High (K=%.1f, maxDev=%.1f°)\n' ...
+                            'Set Size: 1'], P.K_HighNoise, P.maxDev_HighNoise);
             action = stage_click_to_repeat(win, @() stage_single(V, 90,  'high', P, false, 'stage2'), info, ...
                 @() generateTargetOffset_single(V, 90, 'high', P));
         case 3
             info = sprintf(['Stage 3: Four Stimuli with Replicas\n' ...
-                            'Noise: Low (K=%.1f, A=%.2f, KW=%.1f)\n' ...
-                            'Set Size: 4'], P.K_LowNoise, P.A_LowNoise, P.KW_LowNoise);
+                            'Noise: Low (K=%.1f, maxDev=%.1f°)\n' ...
+                            'Set Size: 4'], P.K_LowNoise, P.maxDev_LowNoise);
             action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'low'), info, ...
                 @() generateTargetOffset_four(V, P, 'low'));
         case 4
             info = sprintf(['Stage 4: Four Stimuli with Replicas\n' ...
-                            'Noise: High (K=%.1f, A=%.2f, KW=%.1f)\n' ...
-                            'Set Size: 4'], P.K_HighNoise, P.A_HighNoise, P.KW_HighNoise);
+                            'Noise: High (K=%.1f, maxDev=%.1f°)\n' ...
+                            'Set Size: 4'], P.K_HighNoise, P.maxDev_HighNoise);
             action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'high'), info, ...
                 @() generateTargetOffset_four(V, P, 'high'));
         case 5
             info = sprintf(['Stage 5: Two-Interval Same Location\n' ...
-                            'Noise: Low (K=%.1f, A=%.2f, KW=%.1f)\n' ...
-                            'Set Size: 1 (two intervals)'], P.K_LowNoise, P.A_LowNoise, P.KW_LowNoise);
+                            'Noise: Low (K=%.1f, maxDev=%.1f°)\n' ...
+                            'Set Size: 1 (two intervals)'], P.K_LowNoise, P.maxDev_LowNoise);
             action = stage_click_to_repeat(win, @() stage_two_interval_same_loc(V, 90, 'low', P), info, ...
                 @() generateTargetOffset_single(V, 90, 'low', P));
         case 6
             info = sprintf(['Stage 6: Two-Interval Different Location\n' ...
-                            'Noise: Low (K=%.1f, A=%.2f, KW=%.1f)\n' ...
-                            'Set Size: 1 (two intervals)'], P.K_LowNoise, P.A_LowNoise, P.KW_LowNoise);
+                            'Noise: Low (K=%.1f, maxDev=%.1f°)\n' ...
+                            'Set Size: 1 (two intervals)'], P.K_LowNoise, P.maxDev_LowNoise);
             action = stage_click_to_repeat(win, @() stage_two_interval_diff_loc(V, 90, 270, 'low', P), info, ...
                 @() generateTargetOffset_single(V, 90, 'low', P));
         case 7
             info = sprintf(['Stage 7: Two-Interval Same Location\n' ...
-                            'Noise: High (K=%.1f, A=%.2f, KW=%.1f)\n' ...
-                            'Set Size: 1 (two intervals)'], P.K_HighNoise, P.A_HighNoise, P.KW_HighNoise);
+                            'Noise: High (K=%.1f, maxDev=%.1f°)\n' ...
+                            'Set Size: 1 (two intervals)'], P.K_HighNoise, P.maxDev_HighNoise);
             action = stage_click_to_repeat(win, @() stage_two_interval_same_loc(V, 90, 'high', P), info, ...
                 @() generateTargetOffset_single(V, 90, 'high', P));
         case 8
             info = sprintf(['Stage 8: Two-Interval Different Location\n' ...
-                            'Noise: High (K=%.1f, A=%.2f, KW=%.1f)\n' ...
-                            'Set Size: 1 (two intervals)'], P.K_HighNoise, P.A_HighNoise, P.KW_HighNoise);
+                            'Noise: High (K=%.1f, maxDev=%.1f°)\n' ...
+                            'Set Size: 1 (two intervals)'], P.K_HighNoise, P.maxDev_HighNoise);
             action = stage_click_to_repeat(win, @() stage_two_interval_diff_loc(V, 90, 270, 'high', P), info, ...
                 @() generateTargetOffset_single(V, 90, 'high', P));
         otherwise
@@ -516,25 +516,23 @@ end
 
 function [rgb01, huesDeg] = makeNoisyPattern(V, hueDeg, noiseLevel, P)
 % Returns nTiles×3 double in [0,1] and nTiles×1 hue degrees
-% noiseLevel: 'low' or 'high' (determines von Mises mixture parameters)
+% noiseLevel: 'low' or 'high' (determines truncated von Mises parameters)
 B      = V.square.B;
 nTiles = B * B;
 
-% Get von Mises mixture parameters based on noise level
+% Get truncated von Mises parameters based on noise level
 if strcmpi(noiseLevel, 'low')
     K = P.K_LowNoise;
-    A = P.A_LowNoise;
-    KW = P.KW_LowNoise;
+    maxDev = P.maxDev_LowNoise;
 elseif strcmpi(noiseLevel, 'high')
     K = P.K_HighNoise;
-    A = P.A_HighNoise;
-    KW = P.KW_HighNoise;
+    maxDev = P.maxDev_HighNoise;
 else
     error('noiseLevel must be ''low'' or ''high''');
 end
 
-% Sample hues using two-component von Mises mixture
-huesDeg = sampleVonMisesMixture(hueDeg, K, A, KW, nTiles);
+% Sample hues using truncated von Mises
+huesDeg = sampleTruncatedVonMises(hueDeg, K, maxDev, nTiles);
 
 % Convert each hue to RGB from your wheel
 rgb01 = wheelRGB01_fromDegrees(huesDeg, P.cMap360_255);   % n×3, 0..1
@@ -625,42 +623,49 @@ idx = round(mod(deg, 360)); idx(idx==0) = 360;   % map 0→360th row
 rgb01 = double(cMap360_255(idx, :)) / 255;       % N×3 in [0,1]
 end
 
-function huesDeg = sampleVonMisesMixture(muDeg, K, A, KW, n)
-% Sample from two-component von Mises mixture
-% Mixture: A * vonMises(μ=muDeg, κ=K) + (1-A) * vonMises(μ=muDeg, κ=KW)
+function huesDeg = sampleTruncatedVonMises(muDeg, kappa, maxDevDeg, n)
+% Sample from truncated von Mises distribution
+% Samples from vonMises(μ=muDeg, κ=kappa) but rejects samples outside ±maxDevDeg
 % 
 % Inputs:
 %   muDeg: target hue in degrees (0-360)
-%   K: concentration for tight component (high = narrow)
-%   A: weight for tight component (0-1)
-%   KW: concentration for wide component (low = wide)
+%   kappa: concentration parameter (high = narrow)
+%   maxDevDeg: maximum allowed deviation from target in degrees
 %   n: number of samples to generate
 %
 % Output:
-%   huesDeg: n×1 vector of hue values in degrees (0-360)
+%   huesDeg: n×1 vector of hue values in degrees (0-360), all within ±maxDevDeg
 
-% Determine how many samples from each component
-% Use binomial sampling: each sample has probability A of coming from tight component
-nTight = sum(rand(1, n) < A);  % Number from tight component
-nWide = n - nTight;            % Remaining from wide component
+maxDevRad = deg2rad(maxDevDeg);
+huesDeg = zeros(1, n);
+i = 1;
+attempts = 0;
+maxAttempts = 10000;  % Increased for truncation rejection
 
-% Sample from tight component
-if nTight > 0
-    tightSamples = sampleVonMisesDegrees(muDeg, K, nTight);
-else
-    tightSamples = [];
+while i <= n
+    % Sample from von Mises
+    sample = sampleVonMisesDegrees(muDeg, kappa, 1);
+    
+    % Calculate angular distance from target (shortest path around circle)
+    diff = mod(sample - muDeg + 180, 360) - 180;  % Signed difference in [-180, 180]
+    
+    % Check if within truncation limit
+    if abs(diff) <= maxDevDeg
+        huesDeg(i) = sample;
+        i = i + 1;
+        attempts = 0;
+    else
+        attempts = attempts + 1;
+        if attempts > maxAttempts
+            % Fallback: if rejection keeps failing, use uniform within limits
+            logMsg(sprintf('TruncatedVonMises: max attempts reached, using uniform fallback (kappa=%.2f, maxDev=%.1f)', kappa, maxDevDeg));
+            offset = (rand - 0.5) * 2 * maxDevDeg;
+            huesDeg(i) = mod(muDeg + offset, 360);
+            i = i + 1;
+            attempts = 0;
+        end
+    end
 end
-
-% Sample from wide component
-if nWide > 0
-    wideSamples = sampleVonMisesDegrees(muDeg, KW, nWide);
-else
-    wideSamples = [];
-end
-
-% Combine and shuffle
-huesDeg = [tightSamples, wideSamples];
-huesDeg = huesDeg(randperm(n));  % Randomize order
 end
 
 function huesDeg = sampleVonMisesDegrees(muDeg, kappa, n)
