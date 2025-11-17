@@ -52,14 +52,14 @@ fprintf('Refresh: %.2f Hz (%.3f ms/frame)\n', 1/ifi, ifi*1000);
 % Mixture: A * vonMises(μ=target, κ=K) + (1-A) * vonMises(μ=target, κ=K_W)
 % 
 % Low noise parameters:
-P.K_LowNoise      = 30;       % concentration for tight component (high = narrow)
+P.K_LowNoise      = 35;       % concentration for tight component (high = narrow)
 P.A_LowNoise      = 0.95;     % weight/amplitude for tight component (0-1)
-P.KW_LowNoise     = 5;        % concentration for wide component (low = wide)
+P.KW_LowNoise     = 2;        % concentration for wide component (low = wide)
 
 % High noise parameters:
-P.K_HighNoise     = 8;        % concentration for tight component
-P.A_HighNoise     = 0.45;     % weight/amplitude for tight component (lower = more wide component)
-P.KW_HighNoise    = 5;      % concentration for wide component
+P.K_HighNoise     = 5;        % concentration for tight component
+P.A_HighNoise     = 0.5;     % weight/amplitude for tight component (lower = more wide component)
+P.KW_HighNoise    = 2;      % concentration for wide component
 P.durMs          = 500;      % per-stim duration
 P.ISI            = 0.300;    % seconds, stages 5/6
 P.angles4        = [0 90 180 270];  % R,U,L,D (deg)
