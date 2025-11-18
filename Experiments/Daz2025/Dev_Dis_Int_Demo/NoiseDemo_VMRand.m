@@ -49,23 +49,28 @@ ifi = Screen('GetFlipInterval', win);
 fprintf('Refresh: %.2f Hz (%.3f ms/frame)\n', 1/ifi, ifi*1000);
 
 % ---------- Parameters ----------
-% Truncated von Mises parameters
-% Samples from vonMises(μ=target, κ=K) but truncated to ±maxDeviation
-% Normalized so area under curve within truncation window is equal for both noise levels
+% Quantile-based Von Mises sampling
+% Uses inverse transform sampling from Von Mises CDF for consistent variance
+% No truncation needed - distribution naturally bounded by kappa parameter
 % 
 % Low noise parameters:
-P.K_LowNoise      = 30;       % concentration parameter (high = narrow distribution)
-P.maxDev_LowNoise = 8;        % maximum deviation from target in degrees (truncation limit)
+P.K_LowNoise      = 50;       % concentration parameter (high = narrow distribution)
+                                % Higher kappa = tighter clustering around target
+                                % Typical range: 20-100 for low noise
 
 % High noise parameters:
-P.K_HighNoise     = 5;        % concentration parameter (lower = wider distribution)
-P.maxDev_HighNoise = 25;      % maximum deviation from target in degrees (truncation limit)
+P.K_HighNoise     = 2;         % concentration parameter (lower = wider distribution)
+                                % Lower kappa = wider spread around target
+                                % Typical range: 1-10 for high noise
+                                
+% Note: For better discriminability, aim for kappa ratio > 10:1
+%       (e.g., Low=50, High=3 gives ~17:1 ratio)
 P.durMs          = 500;      % per-stim duration
 P.ISI            = 0.300;    % seconds, stages 5/6
 P.angles4        = [0 90 180 270];  % R,U,L,D (deg)
 P.shotDir = 'stim_captures';
 
-logMsg('--- NoiseDemo_VMRand (Truncated Von Mises) start ---');
+logMsg('--- NoiseDemo_VMRand (Quantile-Based Von Mises) start ---');
 
 % --- Guard: make sure color wheel exists ---
 if ~isfield(V,'color') || ~isfield(V.color,'map') || isempty(V.color.map)
@@ -94,50 +99,50 @@ while keepGoing
     switch stage
         case 1
             info = sprintf(['Stage 1: Single Stimulus\n' ...
-                            'Noise: Low (K=%.1f, maxDev=%.1f°)\n' ...
-                            'Set Size: 1'], P.K_LowNoise, P.maxDev_LowNoise);
-            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'low',  P, false, 'stage1'), info, ...
+                            'Noise: Low (K=%.1f)\n' ...
+                            'Set Size: 1'], P.K_LowNoise);
+            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'low',  P, true, 'stage1'), info, ...
                 @() generateTargetOffset_single(V, 90, 'low', P));
         case 2
             info = sprintf(['Stage 2: Single Stimulus\n' ...
-                            'Noise: High (K=%.1f, maxDev=%.1f°)\n' ...
-                            'Set Size: 1'], P.K_HighNoise, P.maxDev_HighNoise);
-            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'high', P, false, 'stage2'), info, ...
+                            'Noise: High (K=%.1f)\n' ...
+                            'Set Size: 1'], P.K_HighNoise);
+            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'high', P, true, 'stage2'), info, ...
                 @() generateTargetOffset_single(V, 90, 'high', P));
         case 3
             info = sprintf(['Stage 3: Four Stimuli with Replicas\n' ...
-                            'Noise: Low (K=%.1f, maxDev=%.1f°)\n' ...
-                            'Set Size: 4'], P.K_LowNoise, P.maxDev_LowNoise);
-            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'low'), info, ...
+                            'Noise: Low (K=%.1f)\n' ...
+                            'Set Size: 4'], P.K_LowNoise);
+            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'low', true, 'stage3'), info, ...
                 @() generateTargetOffset_four(V, P, 'low'));
         case 4
             info = sprintf(['Stage 4: Four Stimuli with Replicas\n' ...
-                            'Noise: High (K=%.1f, maxDev=%.1f°)\n' ...
-                            'Set Size: 4'], P.K_HighNoise, P.maxDev_HighNoise);
-            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'high'), info, ...
+                            'Noise: High (K=%.1f)\n' ...
+                            'Set Size: 4'], P.K_HighNoise);
+            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'high', true, 'stage4'), info, ...
                 @() generateTargetOffset_four(V, P, 'high'));
         case 5
             info = sprintf(['Stage 5: Two-Interval Same Location\n' ...
-                            'Noise: Low (K=%.1f, maxDev=%.1f°)\n' ...
-                            'Set Size: 1 (two intervals)'], P.K_LowNoise, P.maxDev_LowNoise);
+                            'Noise: Low (K=%.1f)\n' ...
+                            'Set Size: 1 (two intervals)'], P.K_LowNoise);
             action = stage_click_to_repeat(win, @() stage_two_interval_same_loc(V, 90, 'low', P), info, ...
                 @() generateTargetOffset_single(V, 90, 'low', P));
         case 6
             info = sprintf(['Stage 6: Two-Interval Different Location\n' ...
-                            'Noise: Low (K=%.1f, maxDev=%.1f°)\n' ...
-                            'Set Size: 1 (two intervals)'], P.K_LowNoise, P.maxDev_LowNoise);
+                            'Noise: Low (K=%.1f)\n' ...
+                            'Set Size: 1 (two intervals)'], P.K_LowNoise);
             action = stage_click_to_repeat(win, @() stage_two_interval_diff_loc(V, 90, 270, 'low', P), info, ...
                 @() generateTargetOffset_single(V, 90, 'low', P));
         case 7
             info = sprintf(['Stage 7: Two-Interval Same Location\n' ...
-                            'Noise: High (K=%.1f, maxDev=%.1f°)\n' ...
-                            'Set Size: 1 (two intervals)'], P.K_HighNoise, P.maxDev_HighNoise);
+                            'Noise: High (K=%.1f)\n' ...
+                            'Set Size: 1 (two intervals)'], P.K_HighNoise);
             action = stage_click_to_repeat(win, @() stage_two_interval_same_loc(V, 90, 'high', P), info, ...
                 @() generateTargetOffset_single(V, 90, 'high', P));
         case 8
             info = sprintf(['Stage 8: Two-Interval Different Location\n' ...
-                            'Noise: High (K=%.1f, maxDev=%.1f°)\n' ...
-                            'Set Size: 1 (two intervals)'], P.K_HighNoise, P.maxDev_HighNoise);
+                            'Noise: High (K=%.1f)\n' ...
+                            'Set Size: 1 (two intervals)'], P.K_HighNoise);
             action = stage_click_to_repeat(win, @() stage_two_interval_diff_loc(V, 90, 270, 'high', P), info, ...
                 @() generateTargetOffset_single(V, 90, 'high', P));
         otherwise
@@ -188,14 +193,19 @@ else
     meanOffset = calculateMeanOffset(huesDeg, targetHueDeg);
 end
 % deferFlip=false means it will flip immediately and show for durMs
-presentNoisySquareAt(V, targetHueDeg, noiseLevel, angleDeg, P.durMs, P, rgb01, false, saveShot, P.shotDir, shotTag);
+% Pass huesDeg for visualization
+presentNoisySquareAt(V, targetHueDeg, noiseLevel, angleDeg, P.durMs, P, rgb01, false, saveShot, P.shotDir, shotTag, 'stim', huesDeg);
 targetDeg = targetHueDeg;
 end
 
-function [targetDegs, meanOffsets] = stage_four_with_replicas(V, P, noiseLevel)
+function [targetDegs, meanOffsets] = stage_four_with_replicas(V, P, noiseLevel, saveShot, shotTag)
 % Get stored values from generateTargetOffset_four (via global)
 % Redundant items (R & L) share the same baseHue target but are sampled independently
+% saveShot: enable screen capture (default: false)
+% shotTag: tag for screenshot filename (default: 'stage3' or 'stage4' based on noiseLevel)
 global storedStimData
+if nargin < 4, saveShot = false; end
+if nargin < 5, shotTag = sprintf('stage%d', strcmpi(noiseLevel, 'high') + 3); end
 if ~isempty(storedStimData) && isfield(storedStimData, 'baseHue') && ~isempty(storedStimData.baseHue)
     % Use stored values
     baseHue = storedStimData.baseHue;
@@ -243,7 +253,50 @@ presentNoisySquareAt(V, baseHue,    noiseLevel, angles(1), P.durMs, P, repPatter
 presentNoisySquareAt(V, uniqueHue1, noiseLevel, angles(2), P.durMs, P, uniquePattern1, true, false); % U unique
 presentNoisySquareAt(V, baseHue,    noiseLevel, angles(3), P.durMs, P, repPatternL, true, false); % L redundant (independent sample)
 presentNoisySquareAt(V, uniqueHue2, noiseLevel, angles(4), P.durMs, P, uniquePattern2, true, false); % D unique
-Screen('Flip', V.window);
+
+% Flip to show all 4 stimuli
+vbl = Screen('Flip', V.window);
+
+% Screen capture for all 4 stimuli (if enabled)
+if saveShot
+    try
+        ensureDir(P.shotDir);
+        % Calculate bounding box that includes all 4 stimuli
+        % Stimuli are at angles [0, 90, 180, 270] on the 5° circle
+        side = V.square.side_px_full;
+        margin = 20;  % Extra margin around stimuli
+        
+        % Get positions of all 4 stimuli
+        rects = zeros(4, 4);
+        for i = 1:4
+            th = deg2rad(angles(i));
+            cx = V.centerX + V.layout.centerRadiusPx * cos(th);
+            cy = V.centerY - V.layout.centerRadiusPx * sin(th);
+            rects(i, :) = CenterRectOnPointd([0 0 side side], cx, cy);
+        end
+        
+        % Calculate bounding box
+        minX = min(rects(:, 1)) - margin;
+        minY = min(rects(:, 2)) - margin;
+        maxX = max(rects(:, 3)) + margin;
+        maxY = max(rects(:, 4)) + margin;
+        
+        grabRect = round([minX, minY, maxX, maxY]);
+        
+        % Capture the screen
+        img = Screen('GetImage', V.window, grabRect);
+        tstamp = datestr(now,'yyyymmdd_HHMMSS');
+        tstamp = sprintf('%s_%03d', tstamp, round(rem(now*86400000, 1000)));
+        fname = sprintf('%s_%s_%s.png', shotTag, noiseLevel, tstamp);
+        fullPath = fullfile(P.shotDir, fname);
+        imwrite(img, fullPath, 'png');
+        fprintf('[saveShot] Saved: %s\n', fname);
+    catch ME
+        fprintf(2,'[saveShot] Failed: %s\n', ME.message);
+        fprintf(2,'[saveShot] Stack: %s\n', getReport(ME));
+    end
+end
+
 WaitSecs(P.durMs/1000);
 end
 
@@ -441,10 +494,11 @@ end
 
 % ===================== Drawing helpers ======================
 
-function presentNoisySquareAt(V, hueDeg, noiseLevel, angleDeg, durMs, P, prePattern, deferFlip, saveShot, shotDir, shotTag, cropMode)
+function presentNoisySquareAt(V, hueDeg, noiseLevel, angleDeg, durMs, P, prePattern, deferFlip, saveShot, shotDir, shotTag, cropMode, huesDegForViz)
 % Draw one B×B noisy square at a given polar angle on the 5° circle.
-% noiseLevel: 'low' or 'high' (determines X and Y quantile bin parameters)
+% noiseLevel: 'low' or 'high' (determines Von Mises kappa parameter)
 % If prePattern is provided, reuse it (for replicas). If deferFlip=true, do not flip.
+% huesDegForViz: optional hue values for distribution visualization
 % Based on original working version from SqNoisyStim_Demo1.m
 
 if nargin < 8 || isempty(deferFlip), deferFlip = false; end
@@ -452,6 +506,7 @@ if nargin < 9 || isempty(saveShot), saveShot = false; end
 if nargin < 10 || isempty(shotDir), shotDir = 'stim_captures'; end
 if nargin < 11 || isempty(shotTag), shotTag = 'stage'; end
 if nargin < 12 || isempty(cropMode), cropMode = 'stim'; end
+if nargin < 13, huesDegForViz = []; end
 
 logMsg(sprintf('presentNoisySquareAt start: angle=%.1f, noiseLevel=%s, durMs=%d, deferFlip=%d', angleDeg, noiseLevel, durMs, deferFlip));
 
@@ -482,6 +537,12 @@ Screen('FillRect', V.window, rgb01', tileRects);
 
 if ~deferFlip
     drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
+    
+    % Draw distribution visualization if hue data provided
+    if ~isempty(huesDegForViz)
+        drawDistributionViz(V, huesDegForViz, hueDeg, noiseLevel, P);
+    end
+    
     vbl = Screen('Flip', V.window);
 
     % Optional screen capture (only if saveShot enabled)
@@ -516,23 +577,22 @@ end
 
 function [rgb01, huesDeg] = makeNoisyPattern(V, hueDeg, noiseLevel, P)
 % Returns nTiles×3 double in [0,1] and nTiles×1 hue degrees
-% noiseLevel: 'low' or 'high' (determines truncated von Mises parameters)
+% noiseLevel: 'low' or 'high' (determines Von Mises kappa parameter)
+% Uses quantile-based sampling for consistent variance
 B      = V.square.B;
 nTiles = B * B;
 
-% Get truncated von Mises parameters based on noise level
+% Get Von Mises kappa parameter based on noise level
 if strcmpi(noiseLevel, 'low')
     K = P.K_LowNoise;
-    maxDev = P.maxDev_LowNoise;
 elseif strcmpi(noiseLevel, 'high')
     K = P.K_HighNoise;
-    maxDev = P.maxDev_HighNoise;
 else
     error('noiseLevel must be ''low'' or ''high''');
 end
 
-% Sample hues using truncated von Mises
-huesDeg = sampleTruncatedVonMises(hueDeg, K, maxDev, nTiles);
+% Sample hues using quantile-based Von Mises (no truncation needed)
+huesDeg = sampleVonMisesQuantiles(hueDeg, K, nTiles);
 
 % Convert each hue to RGB from your wheel
 rgb01 = wheelRGB01_fromDegrees(huesDeg, P.cMap360_255);   % n×3, 0..1
@@ -623,49 +683,139 @@ idx = round(mod(deg, 360)); idx(idx==0) = 360;   % map 0→360th row
 rgb01 = double(cMap360_255(idx, :)) / 255;       % N×3 in [0,1]
 end
 
-function huesDeg = sampleTruncatedVonMises(muDeg, kappa, maxDevDeg, n)
-% Sample from truncated von Mises distribution
-% Samples from vonMises(μ=muDeg, κ=kappa) but rejects samples outside ±maxDevDeg
+function huesDeg = sampleVonMisesQuantiles(muDeg, kappa, n)
+% Sample from Von Mises distribution using quantile-based inverse transform sampling
+% This ensures consistent variance across trials and eliminates rejection sampling inefficiency
 % 
+% METHOD: Quantile-Based Inverse Transform Sampling
+% 1. Generate n uniform quantiles: [0.5/n, 1.5/n, 2.5/n, ..., (n-0.5)/n]
+% 2. Map each quantile to an angle using inverse Von Mises CDF
+% 3. Shuffle to avoid spatial clustering in the grid
+%
+% IMPORTANT: The sampling method is IDENTICAL for all noise levels.
+%            The ONLY difference is the kappa parameter, which controls distribution width.
+%            - High kappa (low noise): narrow distribution → fewer histogram bins populated
+%            - Low kappa (high noise): wide distribution → more histogram bins populated
+%            This is EXPECTED behavior reflecting the true distribution difference.
+%
 % Inputs:
 %   muDeg: target hue in degrees (0-360)
-%   kappa: concentration parameter (high = narrow)
-%   maxDevDeg: maximum allowed deviation from target in degrees
+%   kappa: concentration parameter (high = narrow distribution)
+%          - kappa → 0: uniform distribution
+%          - kappa → ∞: delta function (all samples = muDeg)
 %   n: number of samples to generate
 %
 % Output:
-%   huesDeg: n×1 vector of hue values in degrees (0-360), all within ±maxDevDeg
+%   huesDeg: n×1 vector of hue values in degrees (0-360)
+%            Distribution has consistent variance determined by kappa
 
-maxDevRad = deg2rad(maxDevDeg);
-huesDeg = zeros(1, n);
-i = 1;
-attempts = 0;
-maxAttempts = 10000;  % Increased for truncation rejection
+if kappa < 1e-8
+    % Effectively uniform: sample uniformly around circle
+    huesDeg = mod(muDeg + (rand(1,n) - 0.5) * 360, 360);
+    return;
+end
 
-while i <= n
-    % Sample from von Mises
-    sample = sampleVonMisesDegrees(muDeg, kappa, 1);
+% Generate uniform quantiles (centered quantiles for better coverage)
+quantiles = ((1:n) - 0.5) / n;  % [0.5/n, 1.5/n, ..., (n-0.5)/n]
+
+% Map quantiles to angles using inverse Von Mises CDF
+% Von Mises CDF: F(θ) = ∫[0 to θ] f(φ) dφ where f is Von Mises PDF
+% We use numerical inversion via interpolation of precomputed CDF
+huesDeg = vonMisesQuantile(muDeg, kappa, quantiles);
+
+% Shuffle to avoid spatial clustering in grid
+huesDeg = huesDeg(randperm(n));
+end
+
+function anglesDeg = vonMisesQuantile(muDeg, kappa, quantiles)
+% Compute quantiles of Von Mises distribution using inverse CDF
+% Uses precomputed CDF table for efficiency
+%
+% Inputs:
+%   muDeg: mean direction in degrees (0-360)
+%   kappa: concentration parameter
+%   quantiles: vector of quantile values in [0, 1]
+%
+% Output:
+%   anglesDeg: quantile angles in degrees (0-360)
+
+persistent cdfTable kappaTable angleRangeTable
+
+% Precompute CDF table if not already done (cached for performance)
+if isempty(cdfTable) || isempty(kappaTable)
+    % Build CDF lookup table for common kappa values
+    % We'll compute CDF for angles from -180° to +180° relative to mean
+    nAngles = 2000;  % Resolution: 0.18° per bin (higher resolution for accuracy)
+    angleRangeRad = linspace(-pi, pi, nAngles);
+    kappaList = [0.5, 1, 2, 3, 5, 10, 20, 30, 50, 100];  % Common kappa values
     
-    % Calculate angular distance from target (shortest path around circle)
-    diff = mod(sample - muDeg + 180, 360) - 180;  % Signed difference in [-180, 180]
+    kappaTable = kappaList;
+    cdfTable = zeros(length(kappaList), nAngles);
+    angleRangeTable = rad2deg(angleRangeRad);
     
-    % Check if within truncation limit
-    if abs(diff) <= maxDevDeg
-        huesDeg(i) = sample;
-        i = i + 1;
-        attempts = 0;
+    for ki = 1:length(kappaList)
+        k = kappaList(ki);
+        % Compute CDF: F(θ) = ∫[-π to θ] f(φ) dφ
+        % Von Mises PDF: f(θ) = exp(κ*cos(θ)) / (2π*I₀(κ))
+        % Note: Von Mises is symmetric, so we integrate from -π to θ
+        I0 = besseli(0, k);
+        pdfVals = exp(k * cos(angleRangeRad)) / (2*pi*I0);
+        
+        % Numerically integrate PDF to get CDF
+        % Use trapezoidal rule for better accuracy
+        dTheta = angleRangeRad(2) - angleRangeRad(1);
+        cdfVals = zeros(size(pdfVals));
+        cdfVals(1) = 0;  % CDF at -π is 0
+        for i = 2:nAngles
+            % Trapezoidal integration: ∫[θᵢ₋₁ to θᵢ] ≈ (f(θᵢ₋₁) + f(θᵢ))/2 * dθ
+            cdfVals(i) = cdfVals(i-1) + (pdfVals(i-1) + pdfVals(i))/2 * dTheta;
+        end
+        % Normalize to [0,1] (CDF at +π should be 1)
+        cdfVals = cdfVals / cdfVals(end);
+        cdfTable(ki, :) = cdfVals;
+    end
+end
+
+% Find closest kappa in table
+if kappa <= kappaTable(1)
+    ki = 1;
+elseif kappa >= kappaTable(end)
+    ki = length(kappaTable);
+else
+    [~, ki] = min(abs(kappaTable - kappa));
+end
+
+% Get CDF for this kappa
+cdfVals = cdfTable(ki, :);
+angleRange = angleRangeTable;
+
+% For each quantile, find corresponding angle via inverse CDF (interpolate for accuracy)
+anglesDeg = zeros(size(quantiles));
+for i = 1:length(quantiles)
+    q = quantiles(i);
+    % Find indices where CDF brackets the quantile
+    idx = find(cdfVals >= q, 1, 'first');
+    if isempty(idx)
+        % Quantile is at or beyond maximum (shouldn't happen, but handle gracefully)
+        anglesDeg(i) = angleRange(end);
+    elseif idx == 1
+        % Quantile is at or below minimum
+        anglesDeg(i) = angleRange(1);
     else
-        attempts = attempts + 1;
-        if attempts > maxAttempts
-            % Fallback: if rejection keeps failing, use uniform within limits
-            logMsg(sprintf('TruncatedVonMises: max attempts reached, using uniform fallback (kappa=%.2f, maxDev=%.1f)', kappa, maxDevDeg));
-            offset = (rand - 0.5) * 2 * maxDevDeg;
-            huesDeg(i) = mod(muDeg + offset, 360);
-            i = i + 1;
-            attempts = 0;
+        % Linear interpolation between bracketing CDF values
+        qLow = cdfVals(idx-1);
+        qHigh = cdfVals(idx);
+        if abs(qHigh - qLow) < 1e-10
+            anglesDeg(i) = angleRange(idx);
+        else
+            t = (q - qLow) / (qHigh - qLow);
+            anglesDeg(i) = angleRange(idx-1) + t * (angleRange(idx) - angleRange(idx-1));
         end
     end
 end
+
+% Convert to absolute angles and wrap to [0, 360)
+anglesDeg = mod(muDeg + anglesDeg, 360);
 end
 
 function huesDeg = sampleVonMisesDegrees(muDeg, kappa, n)
@@ -1238,4 +1388,119 @@ catch
 end
 disp('Experiment terminated by user.');
 error('Experiment terminated by user (Ctrl+L).');
+end
+
+function drawDistributionViz(V, huesDeg, targetHueDeg, noiseLevel, P)
+% Draw distribution histogram and statistics on screen
+% Shows hue distribution around target with variance statistics
+%
+% Inputs:
+%   V: global visual structure
+%   huesDeg: vector of sampled hue values (degrees, 0-360)
+%   targetHueDeg: target hue (degrees, 0-360)
+%   noiseLevel: 'low' or 'high'
+%   P: parameter structure
+
+% Get kappa for this noise level
+if strcmpi(noiseLevel, 'low')
+    kappa = P.K_LowNoise;
+else
+    kappa = P.K_HighNoise;
+end
+
+% Calculate statistics
+offsets = mod(huesDeg - targetHueDeg + 180, 360) - 180;  % Signed offsets in [-180, 180]
+meanOffset = mean(offsets);
+stdOffset = std(offsets);
+circularStd = sqrt(mean(offsets.^2));  % Circular standard deviation approximation
+
+% Calculate effective range (95% of samples within this range)
+sortedOffsets = sort(abs(offsets));
+percentile95Idx = round(0.95 * length(sortedOffsets));
+effectiveRange95 = sortedOffsets(percentile95Idx);
+
+% Count how many bins have non-zero counts (for diagnostic)
+% Change nBins to adjust histogram resolution (bins will cover whole circle)
+nBins = 36; 
+binEdges = linspace(-180, 180, nBins+1);
+counts = histcounts(offsets, binEdges);
+nPopulatedBins = sum(counts > 0);
+
+% Position: top-right corner
+winRect = V.windowRect;
+vizX = winRect(3) - 300;  % 300px from right edge
+vizY = 50;  % 50px from top
+vizW = 280;
+vizH = 220;  % Increased height to accommodate diagnostic info
+
+% Background box
+bgRect = [vizX-10, vizY-10, vizX+vizW+10, vizY+vizH+10];
+if isfield(V, 'useFloat') && V.useFloat
+    bgCol = [0.1 0.1 0.1 0.8];  % Semi-transparent dark
+    textCol = [1 1 1];
+else
+    bgCol = [25 25 25];
+    textCol = [255 255 255];
+end
+Screen('FillRect', V.window, bgCol, bgRect);
+Screen('FrameRect', V.window, textCol, bgRect, 2);
+
+% Draw histogram (using precomputed binEdges and counts from above)
+binCenters = (binEdges(1:end-1) + binEdges(2:end)) / 2;
+maxCount = max(counts);
+if maxCount > 0
+    counts = counts / maxCount;  % Normalize to [0,1]
+end
+
+histX = vizX + 20;
+histY = vizY + 70;  % Moved up slightly to accommodate more text
+histW = vizW - 40;
+histH = 80;
+
+% Draw histogram bars
+for i = 1:nBins
+    barH = counts(i) * histH;
+    barX = histX + (i-1) * histW / nBins;
+    barW = histW / nBins - 1;
+    barRect = [barX, histY + histH - barH, barX + barW, histY + histH];
+    if isfield(V, 'useFloat') && V.useFloat
+        barCol = [0.3 0.6 1.0];  % Blue bars
+    else
+        barCol = [77 153 255];
+    end
+    Screen('FillRect', V.window, barCol, barRect);
+end
+
+% Draw target line (at 0 offset)
+targetX = histX + histW/2;
+Screen('DrawLine', V.window, textCol, targetX, histY, targetX, histY+histH, 2);
+
+% Draw mean offset line
+if abs(meanOffset) > 0.1
+    meanX = histX + (meanOffset + 180) / 360 * histW;
+    if meanX >= histX && meanX <= histX + histW
+        Screen('DrawLine', V.window, [1 0.5 0.5], meanX, histY, meanX, histY+histH, 1);
+    end
+end
+
+% Draw title
+Screen('TextSize', V.window, 16);
+titleText = sprintf('%s Noise Distribution', [upper(noiseLevel(1)) noiseLevel(2:end)]);
+DrawFormattedText(V.window, titleText, vizX+10, vizY+10, textCol);
+
+% Draw statistics text
+Screen('TextSize', V.window, 14);
+statsText = sprintf('K=%.1f | Mean: %.1f° | Std: %.1f°', kappa, meanOffset, stdOffset);
+DrawFormattedText(V.window, statsText, vizX+10, vizY+30, textCol);
+
+% Draw additional diagnostic info
+Screen('TextSize', V.window, 12);
+rangeText = sprintf('95%% range: ±%.1f° | Active bins: %d/%d', effectiveRange95, nPopulatedBins, nBins);
+DrawFormattedText(V.window, rangeText, vizX+10, vizY+50, textCol);
+
+% Draw axis labels
+Screen('TextSize', V.window, 12);
+DrawFormattedText(V.window, '-180', histX-25, histY+histH+5, textCol);
+DrawFormattedText(V.window, '0', histX+histW/2-5, histY+histH+5, textCol);
+DrawFormattedText(V.window, '+180', histX+histW-25, histY+histH+5, textCol);
 end

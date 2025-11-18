@@ -7090,3 +7090,750 @@
 [2025-11-17 17:08:31.254] Keypress detected: ESC (quit)
 [2025-11-17 17:08:31.359] Quit requested
 [2025-11-17 17:08:31.363] Cleanup called
+[2025-11-18 11:23:25.497] --- NoiseDemo_VMRand (Quantile-Based Von Mises) start ---
+[2025-11-18 11:23:26.655] Stage loop iteration, stage=1
+[2025-11-18 11:23:27.336] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:27.918] presentNoisySquareAt end
+[2025-11-18 11:23:27.924] Mouse click: stimulus presented
+[2025-11-18 11:23:27.932] Stage loop iteration, stage=1
+[2025-11-18 11:23:28.339] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:28.852] presentNoisySquareAt end
+[2025-11-18 11:23:28.855] Mouse click: stimulus presented
+[2025-11-18 11:23:28.855] Stage loop iteration, stage=1
+[2025-11-18 11:23:29.164] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:29.677] presentNoisySquareAt end
+[2025-11-18 11:23:31.498] Mouse click: stimulus presented
+[2025-11-18 11:23:31.499] Stage loop iteration, stage=1
+[2025-11-18 11:23:31.768] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:32.280] presentNoisySquareAt end
+[2025-11-18 11:23:32.988] Mouse click: stimulus presented
+[2025-11-18 11:23:32.989] Stage loop iteration, stage=1
+[2025-11-18 11:23:33.219] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:33.738] presentNoisySquareAt end
+[2025-11-18 11:23:33.774] Mouse click: stimulus presented
+[2025-11-18 11:23:33.775] Stage loop iteration, stage=1
+[2025-11-18 11:23:33.999] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:34.507] presentNoisySquareAt end
+[2025-11-18 11:23:34.508] Mouse click: stimulus presented
+[2025-11-18 11:23:34.509] Stage loop iteration, stage=1
+[2025-11-18 11:23:34.733] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:35.246] presentNoisySquareAt end
+[2025-11-18 11:23:35.249] Mouse click: stimulus presented
+[2025-11-18 11:23:35.249] Stage loop iteration, stage=1
+[2025-11-18 11:23:35.445] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:35.953] presentNoisySquareAt end
+[2025-11-18 11:23:35.955] Mouse click: stimulus presented
+[2025-11-18 11:23:35.955] Stage loop iteration, stage=1
+[2025-11-18 11:23:36.199] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:36.706] presentNoisySquareAt end
+[2025-11-18 11:23:36.718] Mouse click: stimulus presented
+[2025-11-18 11:23:36.718] Stage loop iteration, stage=1
+[2025-11-18 11:23:36.904] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:37.414] presentNoisySquareAt end
+[2025-11-18 11:23:37.416] Mouse click: stimulus presented
+[2025-11-18 11:23:37.416] Stage loop iteration, stage=1
+[2025-11-18 11:23:37.510] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:38.017] presentNoisySquareAt end
+[2025-11-18 11:23:38.020] Mouse click: stimulus presented
+[2025-11-18 11:23:38.021] Stage loop iteration, stage=1
+[2025-11-18 11:23:38.147] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:38.672] presentNoisySquareAt end
+[2025-11-18 11:23:38.673] Mouse click: stimulus presented
+[2025-11-18 11:23:38.674] Stage loop iteration, stage=1
+[2025-11-18 11:23:39.082] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:39.589] presentNoisySquareAt end
+[2025-11-18 11:23:39.591] Mouse click: stimulus presented
+[2025-11-18 11:23:39.592] Stage loop iteration, stage=1
+[2025-11-18 11:23:39.685] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:40.195] presentNoisySquareAt end
+[2025-11-18 11:23:40.198] Mouse click: stimulus presented
+[2025-11-18 11:23:40.199] Stage loop iteration, stage=1
+[2025-11-18 11:23:40.345] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:40.873] presentNoisySquareAt end
+[2025-11-18 11:23:40.875] Mouse click: stimulus presented
+[2025-11-18 11:23:40.875] Stage loop iteration, stage=1
+[2025-11-18 11:23:40.950] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:41.470] presentNoisySquareAt end
+[2025-11-18 11:23:41.472] Mouse click: stimulus presented
+[2025-11-18 11:23:41.474] Stage loop iteration, stage=1
+[2025-11-18 11:23:41.557] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:42.073] presentNoisySquareAt end
+[2025-11-18 11:23:42.079] Mouse click: stimulus presented
+[2025-11-18 11:23:42.080] Stage loop iteration, stage=1
+[2025-11-18 11:23:42.137] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:42.665] presentNoisySquareAt end
+[2025-11-18 11:23:42.667] Mouse click: stimulus presented
+[2025-11-18 11:23:42.668] Stage loop iteration, stage=1
+[2025-11-18 11:23:42.764] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:43.290] presentNoisySquareAt end
+[2025-11-18 11:23:43.292] Mouse click: stimulus presented
+[2025-11-18 11:23:43.293] Stage loop iteration, stage=1
+[2025-11-18 11:23:43.420] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:43.929] presentNoisySquareAt end
+[2025-11-18 11:23:43.931] Mouse click: stimulus presented
+[2025-11-18 11:23:43.932] Stage loop iteration, stage=1
+[2025-11-18 11:23:44.073] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:44.581] presentNoisySquareAt end
+[2025-11-18 11:23:44.582] Mouse click: stimulus presented
+[2025-11-18 11:23:44.583] Stage loop iteration, stage=1
+[2025-11-18 11:23:46.333] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:46.840] presentNoisySquareAt end
+[2025-11-18 11:23:46.841] Mouse click: stimulus presented
+[2025-11-18 11:23:46.842] Stage loop iteration, stage=1
+[2025-11-18 11:23:47.168] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:47.678] presentNoisySquareAt end
+[2025-11-18 11:23:47.681] Mouse click: stimulus presented
+[2025-11-18 11:23:47.682] Stage loop iteration, stage=1
+[2025-11-18 11:23:47.981] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:48.489] presentNoisySquareAt end
+[2025-11-18 11:23:48.492] Mouse click: stimulus presented
+[2025-11-18 11:23:48.493] Stage loop iteration, stage=1
+[2025-11-18 11:23:48.901] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:49.409] presentNoisySquareAt end
+[2025-11-18 11:23:49.413] Mouse click: stimulus presented
+[2025-11-18 11:23:49.415] Stage loop iteration, stage=1
+[2025-11-18 11:23:49.660] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:50.166] presentNoisySquareAt end
+[2025-11-18 11:23:50.167] Mouse click: stimulus presented
+[2025-11-18 11:23:50.168] Stage loop iteration, stage=1
+[2025-11-18 11:23:50.364] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:50.874] presentNoisySquareAt end
+[2025-11-18 11:23:50.875] Mouse click: stimulus presented
+[2025-11-18 11:23:50.875] Stage loop iteration, stage=1
+[2025-11-18 11:23:51.055] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:23:51.565] presentNoisySquareAt end
+[2025-11-18 11:23:51.569] Mouse click: stimulus presented
+[2025-11-18 11:23:51.570] Stage loop iteration, stage=1
+[2025-11-18 11:23:51.862] Keypress detected: F (next stage)
+[2025-11-18 11:23:51.964] Stage advanced to 2
+[2025-11-18 11:23:51.966] Stage loop iteration, stage=2
+[2025-11-18 11:23:52.967] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 11:23:53.475] presentNoisySquareAt end
+[2025-11-18 11:23:53.528] Mouse click: stimulus presented
+[2025-11-18 11:23:53.529] Stage loop iteration, stage=2
+[2025-11-18 11:23:53.905] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 11:23:54.414] presentNoisySquareAt end
+[2025-11-18 11:23:54.478] Mouse click: stimulus presented
+[2025-11-18 11:23:54.479] Stage loop iteration, stage=2
+[2025-11-18 11:23:54.742] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 11:23:55.250] presentNoisySquareAt end
+[2025-11-18 11:23:55.294] Mouse click: stimulus presented
+[2025-11-18 11:23:55.295] Stage loop iteration, stage=2
+[2025-11-18 11:23:55.533] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 11:23:56.041] presentNoisySquareAt end
+[2025-11-18 11:23:56.133] Mouse click: stimulus presented
+[2025-11-18 11:23:56.134] Stage loop iteration, stage=2
+[2025-11-18 11:23:56.343] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 11:23:56.853] presentNoisySquareAt end
+[2025-11-18 11:23:56.875] Mouse click: stimulus presented
+[2025-11-18 11:23:56.876] Stage loop iteration, stage=2
+[2025-11-18 11:23:57.082] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 11:23:57.593] presentNoisySquareAt end
+[2025-11-18 11:23:57.677] Mouse click: stimulus presented
+[2025-11-18 11:23:57.678] Stage loop iteration, stage=2
+[2025-11-18 11:23:57.840] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 11:23:58.350] presentNoisySquareAt end
+[2025-11-18 11:23:58.462] Mouse click: stimulus presented
+[2025-11-18 11:23:58.462] Stage loop iteration, stage=2
+[2025-11-18 11:23:58.650] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 11:23:59.157] presentNoisySquareAt end
+[2025-11-18 11:23:59.220] Mouse click: stimulus presented
+[2025-11-18 11:23:59.221] Stage loop iteration, stage=2
+[2025-11-18 11:23:59.422] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 11:23:59.929] presentNoisySquareAt end
+[2025-11-18 11:24:00.015] Mouse click: stimulus presented
+[2025-11-18 11:24:00.016] Stage loop iteration, stage=2
+[2025-11-18 11:24:00.204] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 11:24:00.711] presentNoisySquareAt end
+[2025-11-18 11:24:00.773] Mouse click: stimulus presented
+[2025-11-18 11:24:00.773] Stage loop iteration, stage=2
+[2025-11-18 11:24:00.982] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 11:24:01.488] presentNoisySquareAt end
+[2025-11-18 11:24:01.641] Mouse click: stimulus presented
+[2025-11-18 11:24:01.642] Stage loop iteration, stage=2
+[2025-11-18 11:24:01.805] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 11:24:02.315] presentNoisySquareAt end
+[2025-11-18 11:24:02.486] Mouse click: stimulus presented
+[2025-11-18 11:24:02.487] Stage loop iteration, stage=2
+[2025-11-18 11:24:02.663] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 11:24:03.171] presentNoisySquareAt end
+[2025-11-18 11:24:03.383] Mouse click: stimulus presented
+[2025-11-18 11:24:03.384] Stage loop iteration, stage=2
+[2025-11-18 11:24:03.529] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 11:24:04.039] presentNoisySquareAt end
+[2025-11-18 11:24:04.082] Mouse click: stimulus presented
+[2025-11-18 11:24:04.083] Stage loop iteration, stage=2
+[2025-11-18 11:24:04.264] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 11:24:04.771] presentNoisySquareAt end
+[2025-11-18 11:24:04.773] Mouse click: stimulus presented
+[2025-11-18 11:24:04.773] Stage loop iteration, stage=2
+[2025-11-18 11:24:05.143] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 11:24:05.650] presentNoisySquareAt end
+[2025-11-18 11:24:05.806] Mouse click: stimulus presented
+[2025-11-18 11:24:05.807] Stage loop iteration, stage=2
+[2025-11-18 11:24:05.995] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 11:24:06.504] presentNoisySquareAt end
+[2025-11-18 11:24:06.526] Mouse click: stimulus presented
+[2025-11-18 11:24:06.527] Stage loop iteration, stage=2
+[2025-11-18 11:24:06.740] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 11:24:07.249] presentNoisySquareAt end
+[2025-11-18 11:24:07.253] Mouse click: stimulus presented
+[2025-11-18 11:24:07.254] Stage loop iteration, stage=2
+[2025-11-18 11:24:07.635] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 11:24:08.142] presentNoisySquareAt end
+[2025-11-18 11:24:08.146] Mouse click: stimulus presented
+[2025-11-18 11:24:08.147] Stage loop iteration, stage=2
+[2025-11-18 11:24:08.157] Keypress detected: F (next stage)
+[2025-11-18 11:24:08.260] Stage advanced to 3
+[2025-11-18 11:24:08.262] Stage loop iteration, stage=3
+[2025-11-18 11:24:08.869] presentNoisySquareAt start: angle=0.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 11:24:08.872] presentNoisySquareAt end
+[2025-11-18 11:24:08.873] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 11:24:08.873] presentNoisySquareAt end
+[2025-11-18 11:24:08.874] presentNoisySquareAt start: angle=180.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 11:24:08.874] presentNoisySquareAt end
+[2025-11-18 11:24:08.875] presentNoisySquareAt start: angle=270.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 11:24:08.875] presentNoisySquareAt end
+[2025-11-18 11:24:09.381] Mouse click: stimulus presented
+[2025-11-18 11:24:09.382] Stage loop iteration, stage=3
+[2025-11-18 11:24:09.683] presentNoisySquareAt start: angle=0.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 11:24:09.684] presentNoisySquareAt end
+[2025-11-18 11:24:09.684] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 11:24:09.685] presentNoisySquareAt end
+[2025-11-18 11:24:09.685] presentNoisySquareAt start: angle=180.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 11:24:09.686] presentNoisySquareAt end
+[2025-11-18 11:24:09.686] presentNoisySquareAt start: angle=270.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 11:24:09.686] presentNoisySquareAt end
+[2025-11-18 11:24:10.195] Mouse click: stimulus presented
+[2025-11-18 11:24:10.196] Stage loop iteration, stage=3
+[2025-11-18 11:24:10.406] presentNoisySquareAt start: angle=0.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 11:24:10.406] presentNoisySquareAt end
+[2025-11-18 11:24:10.407] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 11:24:10.407] presentNoisySquareAt end
+[2025-11-18 11:24:10.408] presentNoisySquareAt start: angle=180.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 11:24:10.408] presentNoisySquareAt end
+[2025-11-18 11:24:10.408] presentNoisySquareAt start: angle=270.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 11:24:10.409] presentNoisySquareAt end
+[2025-11-18 11:24:10.917] Mouse click: stimulus presented
+[2025-11-18 11:24:10.918] Stage loop iteration, stage=3
+[2025-11-18 11:24:11.135] presentNoisySquareAt start: angle=0.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 11:24:11.136] presentNoisySquareAt end
+[2025-11-18 11:24:11.137] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 11:24:11.137] presentNoisySquareAt end
+[2025-11-18 11:24:11.138] presentNoisySquareAt start: angle=180.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 11:24:11.138] presentNoisySquareAt end
+[2025-11-18 11:24:11.139] presentNoisySquareAt start: angle=270.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 11:24:11.139] presentNoisySquareAt end
+[2025-11-18 11:24:11.648] Mouse click: stimulus presented
+[2025-11-18 11:24:11.650] Stage loop iteration, stage=3
+[2025-11-18 11:24:11.881] Keypress detected: F (next stage)
+[2025-11-18 11:24:11.983] Stage advanced to 4
+[2025-11-18 11:24:11.984] Stage loop iteration, stage=4
+[2025-11-18 11:24:12.239] presentNoisySquareAt start: angle=0.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 11:24:12.240] presentNoisySquareAt end
+[2025-11-18 11:24:12.241] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 11:24:12.241] presentNoisySquareAt end
+[2025-11-18 11:24:12.242] presentNoisySquareAt start: angle=180.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 11:24:12.242] presentNoisySquareAt end
+[2025-11-18 11:24:12.243] presentNoisySquareAt start: angle=270.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 11:24:12.243] presentNoisySquareAt end
+[2025-11-18 11:24:12.753] Mouse click: stimulus presented
+[2025-11-18 11:24:12.755] Stage loop iteration, stage=4
+[2025-11-18 11:24:12.981] presentNoisySquareAt start: angle=0.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 11:24:12.982] presentNoisySquareAt end
+[2025-11-18 11:24:12.982] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 11:24:12.983] presentNoisySquareAt end
+[2025-11-18 11:24:12.983] presentNoisySquareAt start: angle=180.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 11:24:12.983] presentNoisySquareAt end
+[2025-11-18 11:24:12.984] presentNoisySquareAt start: angle=270.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 11:24:12.984] presentNoisySquareAt end
+[2025-11-18 11:24:13.490] Mouse click: stimulus presented
+[2025-11-18 11:24:13.492] Stage loop iteration, stage=4
+[2025-11-18 11:24:13.719] presentNoisySquareAt start: angle=0.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 11:24:13.719] presentNoisySquareAt end
+[2025-11-18 11:24:13.720] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 11:24:13.720] presentNoisySquareAt end
+[2025-11-18 11:24:13.721] presentNoisySquareAt start: angle=180.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 11:24:13.721] presentNoisySquareAt end
+[2025-11-18 11:24:13.722] presentNoisySquareAt start: angle=270.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 11:24:13.722] presentNoisySquareAt end
+[2025-11-18 11:24:14.232] Mouse click: stimulus presented
+[2025-11-18 11:24:14.233] Stage loop iteration, stage=4
+[2025-11-18 11:24:14.395] presentNoisySquareAt start: angle=0.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 11:24:14.395] presentNoisySquareAt end
+[2025-11-18 11:24:14.396] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 11:24:14.396] presentNoisySquareAt end
+[2025-11-18 11:24:14.397] presentNoisySquareAt start: angle=180.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 11:24:14.397] presentNoisySquareAt end
+[2025-11-18 11:24:14.397] presentNoisySquareAt start: angle=270.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 11:24:14.398] presentNoisySquareAt end
+[2025-11-18 11:24:14.907] Mouse click: stimulus presented
+[2025-11-18 11:24:14.909] Stage loop iteration, stage=4
+[2025-11-18 11:24:15.252] Keypress detected: F (next stage)
+[2025-11-18 11:24:15.355] Stage advanced to 5
+[2025-11-18 11:24:15.358] Stage loop iteration, stage=5
+[2025-11-18 11:24:15.686] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:24:16.193] presentNoisySquareAt end
+[2025-11-18 11:24:16.502] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:24:17.012] presentNoisySquareAt end
+[2025-11-18 11:24:17.015] Mouse click: stimulus presented
+[2025-11-18 11:24:17.017] Stage loop iteration, stage=5
+[2025-11-18 11:24:17.029] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:24:17.555] presentNoisySquareAt end
+[2025-11-18 11:24:17.865] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:24:18.369] presentNoisySquareAt end
+[2025-11-18 11:24:18.371] Mouse click: stimulus presented
+[2025-11-18 11:24:18.371] Stage loop iteration, stage=5
+[2025-11-18 11:24:18.714] Keypress detected: F (next stage)
+[2025-11-18 11:24:18.816] Stage advanced to 6
+[2025-11-18 11:24:18.817] Stage loop iteration, stage=6
+[2025-11-18 11:24:19.267] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:24:19.774] presentNoisySquareAt end
+[2025-11-18 11:24:20.080] presentNoisySquareAt start: angle=270.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 11:24:20.587] presentNoisySquareAt end
+[2025-11-18 11:24:20.591] Mouse click: stimulus presented
+[2025-11-18 11:24:20.592] Stage loop iteration, stage=6
+[2025-11-18 11:24:21.576] Keypress detected: ESC (quit)
+[2025-11-18 11:24:21.677] Quit requested
+[2025-11-18 11:24:21.679] Cleanup called
+[2025-11-18 15:47:42.710] --- NoiseDemo_VMRand (Quantile-Based Von Mises) start ---
+[2025-11-18 15:47:43.417] Stage loop iteration, stage=1
+[2025-11-18 15:47:44.100] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:47:44.621] presentNoisySquareAt end
+[2025-11-18 15:47:44.626] Mouse click: stimulus presented
+[2025-11-18 15:47:44.627] Stage loop iteration, stage=1
+[2025-11-18 15:47:44.902] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:47:45.412] presentNoisySquareAt end
+[2025-11-18 15:47:45.414] Mouse click: stimulus presented
+[2025-11-18 15:47:45.416] Stage loop iteration, stage=1
+[2025-11-18 15:47:45.626] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:47:46.136] presentNoisySquareAt end
+[2025-11-18 15:47:46.140] Mouse click: stimulus presented
+[2025-11-18 15:47:46.142] Stage loop iteration, stage=1
+[2025-11-18 15:47:46.299] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:47:46.810] presentNoisySquareAt end
+[2025-11-18 15:47:46.811] Mouse click: stimulus presented
+[2025-11-18 15:47:46.812] Stage loop iteration, stage=1
+[2025-11-18 15:47:46.963] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:47:47.479] presentNoisySquareAt end
+[2025-11-18 15:47:47.483] Mouse click: stimulus presented
+[2025-11-18 15:47:47.484] Stage loop iteration, stage=1
+[2025-11-18 15:47:47.603] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:47:48.114] presentNoisySquareAt end
+[2025-11-18 15:47:48.117] Mouse click: stimulus presented
+[2025-11-18 15:47:48.119] Stage loop iteration, stage=1
+[2025-11-18 15:47:48.240] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:47:48.767] presentNoisySquareAt end
+[2025-11-18 15:47:48.768] Mouse click: stimulus presented
+[2025-11-18 15:47:48.768] Stage loop iteration, stage=1
+[2025-11-18 15:47:48.844] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:47:49.356] presentNoisySquareAt end
+[2025-11-18 15:47:49.358] Mouse click: stimulus presented
+[2025-11-18 15:47:49.359] Stage loop iteration, stage=1
+[2025-11-18 15:47:49.508] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:47:50.035] presentNoisySquareAt end
+[2025-11-18 15:47:50.036] Mouse click: stimulus presented
+[2025-11-18 15:47:50.037] Stage loop iteration, stage=1
+[2025-11-18 15:47:50.114] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:47:50.625] presentNoisySquareAt end
+[2025-11-18 15:47:50.627] Mouse click: stimulus presented
+[2025-11-18 15:47:50.628] Stage loop iteration, stage=1
+[2025-11-18 15:47:50.746] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:47:51.261] presentNoisySquareAt end
+[2025-11-18 15:47:51.264] Mouse click: stimulus presented
+[2025-11-18 15:47:51.264] Stage loop iteration, stage=1
+[2025-11-18 15:47:51.706] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:47:52.216] presentNoisySquareAt end
+[2025-11-18 15:47:52.218] Mouse click: stimulus presented
+[2025-11-18 15:47:52.218] Stage loop iteration, stage=1
+[2025-11-18 15:47:52.469] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:47:52.977] presentNoisySquareAt end
+[2025-11-18 15:47:52.980] Mouse click: stimulus presented
+[2025-11-18 15:47:52.982] Stage loop iteration, stage=1
+[2025-11-18 15:47:53.255] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:47:53.764] presentNoisySquareAt end
+[2025-11-18 15:47:53.765] Mouse click: stimulus presented
+[2025-11-18 15:47:53.766] Stage loop iteration, stage=1
+[2025-11-18 15:47:54.015] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:47:54.523] presentNoisySquareAt end
+[2025-11-18 15:47:54.525] Mouse click: stimulus presented
+[2025-11-18 15:47:54.526] Stage loop iteration, stage=1
+[2025-11-18 15:47:54.797] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:47:55.306] presentNoisySquareAt end
+[2025-11-18 15:47:55.310] Mouse click: stimulus presented
+[2025-11-18 15:47:55.311] Stage loop iteration, stage=1
+[2025-11-18 15:47:55.575] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:47:56.084] presentNoisySquareAt end
+[2025-11-18 15:47:56.085] Mouse click: stimulus presented
+[2025-11-18 15:47:56.086] Stage loop iteration, stage=1
+[2025-11-18 15:47:56.493] Keypress detected: F (next stage)
+[2025-11-18 15:47:56.594] Stage advanced to 2
+[2025-11-18 15:47:56.596] Stage loop iteration, stage=2
+[2025-11-18 15:47:57.130] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 15:47:57.640] presentNoisySquareAt end
+[2025-11-18 15:47:57.642] Mouse click: stimulus presented
+[2025-11-18 15:47:57.643] Stage loop iteration, stage=2
+[2025-11-18 15:47:57.858] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 15:47:58.367] presentNoisySquareAt end
+[2025-11-18 15:47:58.369] Mouse click: stimulus presented
+[2025-11-18 15:47:58.369] Stage loop iteration, stage=2
+[2025-11-18 15:47:58.585] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 15:47:59.093] presentNoisySquareAt end
+[2025-11-18 15:47:59.095] Mouse click: stimulus presented
+[2025-11-18 15:47:59.095] Stage loop iteration, stage=2
+[2025-11-18 15:47:59.307] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 15:47:59.815] presentNoisySquareAt end
+[2025-11-18 15:47:59.817] Mouse click: stimulus presented
+[2025-11-18 15:47:59.817] Stage loop iteration, stage=2
+[2025-11-18 15:48:00.062] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 15:48:00.572] presentNoisySquareAt end
+[2025-11-18 15:48:00.573] Mouse click: stimulus presented
+[2025-11-18 15:48:00.574] Stage loop iteration, stage=2
+[2025-11-18 15:48:01.277] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 15:48:01.789] presentNoisySquareAt end
+[2025-11-18 15:48:01.791] Mouse click: stimulus presented
+[2025-11-18 15:48:01.791] Stage loop iteration, stage=2
+[2025-11-18 15:48:02.108] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 15:48:02.619] presentNoisySquareAt end
+[2025-11-18 15:48:02.624] Mouse click: stimulus presented
+[2025-11-18 15:48:02.627] Stage loop iteration, stage=2
+[2025-11-18 15:48:02.884] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 15:48:03.393] presentNoisySquareAt end
+[2025-11-18 15:48:03.394] Mouse click: stimulus presented
+[2025-11-18 15:48:03.396] Stage loop iteration, stage=2
+[2025-11-18 15:48:03.619] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 15:48:04.129] presentNoisySquareAt end
+[2025-11-18 15:48:04.130] Mouse click: stimulus presented
+[2025-11-18 15:48:04.131] Stage loop iteration, stage=2
+[2025-11-18 15:48:04.231] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 15:48:04.741] presentNoisySquareAt end
+[2025-11-18 15:48:04.746] Mouse click: stimulus presented
+[2025-11-18 15:48:04.748] Stage loop iteration, stage=2
+[2025-11-18 15:48:04.784] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 15:48:05.298] presentNoisySquareAt end
+[2025-11-18 15:48:05.299] Mouse click: stimulus presented
+[2025-11-18 15:48:05.300] Stage loop iteration, stage=2
+[2025-11-18 15:48:05.333] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 15:48:05.848] presentNoisySquareAt end
+[2025-11-18 15:48:05.850] Mouse click: stimulus presented
+[2025-11-18 15:48:05.851] Stage loop iteration, stage=2
+[2025-11-18 15:48:05.885] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 15:48:06.403] presentNoisySquareAt end
+[2025-11-18 15:48:06.506] Mouse click: stimulus presented
+[2025-11-18 15:48:06.507] Stage loop iteration, stage=2
+[2025-11-18 15:48:07.815] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 15:48:08.326] presentNoisySquareAt end
+[2025-11-18 15:48:08.329] Mouse click: stimulus presented
+[2025-11-18 15:48:08.330] Stage loop iteration, stage=2
+[2025-11-18 15:48:08.631] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 15:48:09.141] presentNoisySquareAt end
+[2025-11-18 15:48:10.173] Mouse click: stimulus presented
+[2025-11-18 15:48:10.174] Stage loop iteration, stage=2
+[2025-11-18 15:48:10.490] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 15:48:11.001] presentNoisySquareAt end
+[2025-11-18 15:48:11.456] Mouse click: stimulus presented
+[2025-11-18 15:48:11.457] Stage loop iteration, stage=2
+[2025-11-18 15:48:11.716] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 15:48:12.225] presentNoisySquareAt end
+[2025-11-18 15:48:12.440] Mouse click: stimulus presented
+[2025-11-18 15:48:12.440] Stage loop iteration, stage=2
+[2025-11-18 15:48:12.654] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 15:48:13.165] presentNoisySquareAt end
+[2025-11-18 15:48:13.257] Mouse click: stimulus presented
+[2025-11-18 15:48:13.259] Stage loop iteration, stage=2
+[2025-11-18 15:48:13.452] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 15:48:13.962] presentNoisySquareAt end
+[2025-11-18 15:48:13.963] Mouse click: stimulus presented
+[2025-11-18 15:48:13.964] Stage loop iteration, stage=2
+[2025-11-18 15:48:14.766] Keypress detected: B (previous stage)
+[2025-11-18 15:48:14.867] Stage went back to 1
+[2025-11-18 15:48:14.869] Stage loop iteration, stage=1
+[2025-11-18 15:48:15.685] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:48:16.196] presentNoisySquareAt end
+[2025-11-18 15:48:16.297] Mouse click: stimulus presented
+[2025-11-18 15:48:16.300] Stage loop iteration, stage=1
+[2025-11-18 15:48:16.453] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:48:16.963] presentNoisySquareAt end
+[2025-11-18 15:48:16.964] Mouse click: stimulus presented
+[2025-11-18 15:48:16.965] Stage loop iteration, stage=1
+[2025-11-18 15:48:17.093] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:48:17.603] presentNoisySquareAt end
+[2025-11-18 15:48:17.606] Mouse click: stimulus presented
+[2025-11-18 15:48:17.607] Stage loop iteration, stage=1
+[2025-11-18 15:48:17.707] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:48:18.231] presentNoisySquareAt end
+[2025-11-18 15:48:18.234] Mouse click: stimulus presented
+[2025-11-18 15:48:18.234] Stage loop iteration, stage=1
+[2025-11-18 15:48:18.311] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:48:18.833] presentNoisySquareAt end
+[2025-11-18 15:48:18.836] Mouse click: stimulus presented
+[2025-11-18 15:48:18.837] Stage loop iteration, stage=1
+[2025-11-18 15:48:18.844] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:48:19.371] presentNoisySquareAt end
+[2025-11-18 15:48:19.375] Mouse click: stimulus presented
+[2025-11-18 15:48:19.376] Stage loop iteration, stage=1
+[2025-11-18 15:48:19.414] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:48:19.930] presentNoisySquareAt end
+[2025-11-18 15:48:20.287] Mouse click: stimulus presented
+[2025-11-18 15:48:20.288] Stage loop iteration, stage=1
+[2025-11-18 15:48:20.487] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 15:48:20.998] presentNoisySquareAt end
+[2025-11-18 15:48:21.001] Mouse click: stimulus presented
+[2025-11-18 15:48:21.003] Stage loop iteration, stage=1
+[2025-11-18 15:48:21.074] Keypress detected: ESC (quit)
+[2025-11-18 15:48:21.175] Quit requested
+[2025-11-18 15:48:21.178] Cleanup called
+[2025-11-18 16:26:16.242] --- NoiseDemo_VMRand (Quantile-Based Von Mises) start ---
+[2025-11-18 16:26:17.051] Stage loop iteration, stage=1
+[2025-11-18 16:26:17.731] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 16:26:18.270] presentNoisySquareAt end
+[2025-11-18 16:26:18.282] Mouse click: stimulus presented
+[2025-11-18 16:26:18.283] Stage loop iteration, stage=1
+[2025-11-18 16:26:18.556] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 16:26:19.067] presentNoisySquareAt end
+[2025-11-18 16:26:19.069] Mouse click: stimulus presented
+[2025-11-18 16:26:19.070] Stage loop iteration, stage=1
+[2025-11-18 16:26:19.631] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 16:26:20.143] presentNoisySquareAt end
+[2025-11-18 16:26:20.196] Mouse click: stimulus presented
+[2025-11-18 16:26:20.196] Stage loop iteration, stage=1
+[2025-11-18 16:26:20.827] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 16:26:21.341] presentNoisySquareAt end
+[2025-11-18 16:26:21.342] Mouse click: stimulus presented
+[2025-11-18 16:26:21.343] Stage loop iteration, stage=1
+[2025-11-18 16:26:21.929] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 16:26:22.448] presentNoisySquareAt end
+[2025-11-18 16:26:22.564] Mouse click: stimulus presented
+[2025-11-18 16:26:22.566] Stage loop iteration, stage=1
+[2025-11-18 16:26:23.007] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 16:26:23.517] presentNoisySquareAt end
+[2025-11-18 16:26:23.559] Mouse click: stimulus presented
+[2025-11-18 16:26:23.560] Stage loop iteration, stage=1
+[2025-11-18 16:26:23.962] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 16:26:24.472] presentNoisySquareAt end
+[2025-11-18 16:26:24.503] Mouse click: stimulus presented
+[2025-11-18 16:26:24.503] Stage loop iteration, stage=1
+[2025-11-18 16:26:24.922] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 16:26:25.432] presentNoisySquareAt end
+[2025-11-18 16:26:25.484] Mouse click: stimulus presented
+[2025-11-18 16:26:25.484] Stage loop iteration, stage=1
+[2025-11-18 16:26:25.882] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 16:26:26.393] presentNoisySquareAt end
+[2025-11-18 16:26:26.566] Mouse click: stimulus presented
+[2025-11-18 16:26:26.567] Stage loop iteration, stage=1
+[2025-11-18 16:26:26.981] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=0
+[2025-11-18 16:26:27.489] presentNoisySquareAt end
+[2025-11-18 16:26:27.662] Mouse click: stimulus presented
+[2025-11-18 16:26:27.662] Stage loop iteration, stage=1
+[2025-11-18 16:26:28.943] Keypress detected: F (next stage)
+[2025-11-18 16:26:29.044] Stage advanced to 2
+[2025-11-18 16:26:29.046] Stage loop iteration, stage=2
+[2025-11-18 16:26:30.123] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 16:26:30.635] presentNoisySquareAt end
+[2025-11-18 16:26:30.636] Mouse click: stimulus presented
+[2025-11-18 16:26:30.637] Stage loop iteration, stage=2
+[2025-11-18 16:26:31.112] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 16:26:31.621] presentNoisySquareAt end
+[2025-11-18 16:26:31.625] Mouse click: stimulus presented
+[2025-11-18 16:26:31.625] Stage loop iteration, stage=2
+[2025-11-18 16:26:32.124] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 16:26:32.634] presentNoisySquareAt end
+[2025-11-18 16:26:32.727] Mouse click: stimulus presented
+[2025-11-18 16:26:32.727] Stage loop iteration, stage=2
+[2025-11-18 16:26:33.197] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 16:26:33.706] presentNoisySquareAt end
+[2025-11-18 16:26:33.818] Mouse click: stimulus presented
+[2025-11-18 16:26:33.819] Stage loop iteration, stage=2
+[2025-11-18 16:26:34.191] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 16:26:34.702] presentNoisySquareAt end
+[2025-11-18 16:26:34.874] Mouse click: stimulus presented
+[2025-11-18 16:26:34.875] Stage loop iteration, stage=2
+[2025-11-18 16:26:35.248] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 16:26:35.757] presentNoisySquareAt end
+[2025-11-18 16:26:35.880] Mouse click: stimulus presented
+[2025-11-18 16:26:35.881] Stage loop iteration, stage=2
+[2025-11-18 16:26:36.265] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 16:26:36.774] presentNoisySquareAt end
+[2025-11-18 16:26:36.906] Mouse click: stimulus presented
+[2025-11-18 16:26:36.906] Stage loop iteration, stage=2
+[2025-11-18 16:26:37.209] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 16:26:37.719] presentNoisySquareAt end
+[2025-11-18 16:26:37.954] Mouse click: stimulus presented
+[2025-11-18 16:26:37.954] Stage loop iteration, stage=2
+[2025-11-18 16:26:38.237] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 16:26:38.747] presentNoisySquareAt end
+[2025-11-18 16:26:38.939] Mouse click: stimulus presented
+[2025-11-18 16:26:38.942] Stage loop iteration, stage=2
+[2025-11-18 16:26:39.279] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-11-18 16:26:39.788] presentNoisySquareAt end
+[2025-11-18 16:26:39.901] Mouse click: stimulus presented
+[2025-11-18 16:26:39.901] Stage loop iteration, stage=2
+[2025-11-18 16:26:41.492] Keypress detected: F (next stage)
+[2025-11-18 16:26:41.593] Stage advanced to 3
+[2025-11-18 16:26:41.594] Stage loop iteration, stage=3
+[2025-11-18 16:26:42.706] presentNoisySquareAt start: angle=0.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:42.710] presentNoisySquareAt end
+[2025-11-18 16:26:42.710] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:42.711] presentNoisySquareAt end
+[2025-11-18 16:26:42.711] presentNoisySquareAt start: angle=180.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:42.712] presentNoisySquareAt end
+[2025-11-18 16:26:42.712] presentNoisySquareAt start: angle=270.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:42.713] presentNoisySquareAt end
+[2025-11-18 16:26:43.230] Mouse click: stimulus presented
+[2025-11-18 16:26:43.231] Stage loop iteration, stage=3
+[2025-11-18 16:26:43.866] presentNoisySquareAt start: angle=0.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:43.866] presentNoisySquareAt end
+[2025-11-18 16:26:43.867] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:43.867] presentNoisySquareAt end
+[2025-11-18 16:26:43.867] presentNoisySquareAt start: angle=180.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:43.870] presentNoisySquareAt end
+[2025-11-18 16:26:43.870] presentNoisySquareAt start: angle=270.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:43.871] presentNoisySquareAt end
+[2025-11-18 16:26:44.386] Mouse click: stimulus presented
+[2025-11-18 16:26:44.386] Stage loop iteration, stage=3
+[2025-11-18 16:26:44.929] presentNoisySquareAt start: angle=0.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:44.930] presentNoisySquareAt end
+[2025-11-18 16:26:44.930] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:44.931] presentNoisySquareAt end
+[2025-11-18 16:26:44.931] presentNoisySquareAt start: angle=180.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:44.932] presentNoisySquareAt end
+[2025-11-18 16:26:44.932] presentNoisySquareAt start: angle=270.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:44.932] presentNoisySquareAt end
+[2025-11-18 16:26:45.443] Mouse click: stimulus presented
+[2025-11-18 16:26:45.444] Stage loop iteration, stage=3
+[2025-11-18 16:26:45.958] presentNoisySquareAt start: angle=0.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:45.959] presentNoisySquareAt end
+[2025-11-18 16:26:45.960] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:45.960] presentNoisySquareAt end
+[2025-11-18 16:26:45.960] presentNoisySquareAt start: angle=180.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:45.961] presentNoisySquareAt end
+[2025-11-18 16:26:45.961] presentNoisySquareAt start: angle=270.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:45.962] presentNoisySquareAt end
+[2025-11-18 16:26:46.476] Mouse click: stimulus presented
+[2025-11-18 16:26:46.476] Stage loop iteration, stage=3
+[2025-11-18 16:26:46.996] presentNoisySquareAt start: angle=0.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:46.996] presentNoisySquareAt end
+[2025-11-18 16:26:46.997] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:46.997] presentNoisySquareAt end
+[2025-11-18 16:26:46.998] presentNoisySquareAt start: angle=180.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:46.999] presentNoisySquareAt end
+[2025-11-18 16:26:46.999] presentNoisySquareAt start: angle=270.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:47.001] presentNoisySquareAt end
+[2025-11-18 16:26:47.518] Mouse click: stimulus presented
+[2025-11-18 16:26:47.519] Stage loop iteration, stage=3
+[2025-11-18 16:26:48.077] presentNoisySquareAt start: angle=0.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:48.077] presentNoisySquareAt end
+[2025-11-18 16:26:48.078] presentNoisySquareAt start: angle=90.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:48.078] presentNoisySquareAt end
+[2025-11-18 16:26:48.079] presentNoisySquareAt start: angle=180.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:48.079] presentNoisySquareAt end
+[2025-11-18 16:26:48.079] presentNoisySquareAt start: angle=270.0, noiseLevel=low, durMs=500, deferFlip=1
+[2025-11-18 16:26:48.080] presentNoisySquareAt end
+[2025-11-18 16:26:48.593] Mouse click: stimulus presented
+[2025-11-18 16:26:48.593] Stage loop iteration, stage=3
+[2025-11-18 16:26:49.541] Keypress detected: F (next stage)
+[2025-11-18 16:26:49.643] Stage advanced to 4
+[2025-11-18 16:26:49.643] Stage loop iteration, stage=4
+[2025-11-18 16:26:50.732] presentNoisySquareAt start: angle=0.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:50.733] presentNoisySquareAt end
+[2025-11-18 16:26:50.733] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:50.734] presentNoisySquareAt end
+[2025-11-18 16:26:50.734] presentNoisySquareAt start: angle=180.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:50.734] presentNoisySquareAt end
+[2025-11-18 16:26:50.735] presentNoisySquareAt start: angle=270.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:50.735] presentNoisySquareAt end
+[2025-11-18 16:26:51.249] Mouse click: stimulus presented
+[2025-11-18 16:26:51.250] Stage loop iteration, stage=4
+[2025-11-18 16:26:51.870] presentNoisySquareAt start: angle=0.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:51.870] presentNoisySquareAt end
+[2025-11-18 16:26:51.871] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:51.871] presentNoisySquareAt end
+[2025-11-18 16:26:51.872] presentNoisySquareAt start: angle=180.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:51.872] presentNoisySquareAt end
+[2025-11-18 16:26:51.872] presentNoisySquareAt start: angle=270.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:51.873] presentNoisySquareAt end
+[2025-11-18 16:26:52.386] Mouse click: stimulus presented
+[2025-11-18 16:26:52.387] Stage loop iteration, stage=4
+[2025-11-18 16:26:53.118] presentNoisySquareAt start: angle=0.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:53.119] presentNoisySquareAt end
+[2025-11-18 16:26:53.120] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:53.120] presentNoisySquareAt end
+[2025-11-18 16:26:53.121] presentNoisySquareAt start: angle=180.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:53.122] presentNoisySquareAt end
+[2025-11-18 16:26:53.122] presentNoisySquareAt start: angle=270.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:53.123] presentNoisySquareAt end
+[2025-11-18 16:26:53.634] Mouse click: stimulus presented
+[2025-11-18 16:26:53.635] Stage loop iteration, stage=4
+[2025-11-18 16:26:54.266] presentNoisySquareAt start: angle=0.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:54.266] presentNoisySquareAt end
+[2025-11-18 16:26:54.266] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:54.267] presentNoisySquareAt end
+[2025-11-18 16:26:54.267] presentNoisySquareAt start: angle=180.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:54.267] presentNoisySquareAt end
+[2025-11-18 16:26:54.268] presentNoisySquareAt start: angle=270.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:54.268] presentNoisySquareAt end
+[2025-11-18 16:26:54.780] Mouse click: stimulus presented
+[2025-11-18 16:26:54.781] Stage loop iteration, stage=4
+[2025-11-18 16:26:55.494] presentNoisySquareAt start: angle=0.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:55.495] presentNoisySquareAt end
+[2025-11-18 16:26:55.495] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:55.496] presentNoisySquareAt end
+[2025-11-18 16:26:55.496] presentNoisySquareAt start: angle=180.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:55.496] presentNoisySquareAt end
+[2025-11-18 16:26:55.497] presentNoisySquareAt start: angle=270.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:55.497] presentNoisySquareAt end
+[2025-11-18 16:26:57.739] Mouse click: stimulus presented
+[2025-11-18 16:26:57.740] Stage loop iteration, stage=4
+[2025-11-18 16:26:58.538] presentNoisySquareAt start: angle=0.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:58.538] presentNoisySquareAt end
+[2025-11-18 16:26:58.539] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:58.539] presentNoisySquareAt end
+[2025-11-18 16:26:58.540] presentNoisySquareAt start: angle=180.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:58.540] presentNoisySquareAt end
+[2025-11-18 16:26:58.540] presentNoisySquareAt start: angle=270.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:26:58.541] presentNoisySquareAt end
+[2025-11-18 16:26:59.484] Mouse click: stimulus presented
+[2025-11-18 16:26:59.485] Stage loop iteration, stage=4
+[2025-11-18 16:27:00.148] presentNoisySquareAt start: angle=0.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:27:00.149] presentNoisySquareAt end
+[2025-11-18 16:27:00.150] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:27:00.150] presentNoisySquareAt end
+[2025-11-18 16:27:00.150] presentNoisySquareAt start: angle=180.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:27:00.151] presentNoisySquareAt end
+[2025-11-18 16:27:00.151] presentNoisySquareAt start: angle=270.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:27:00.152] presentNoisySquareAt end
+[2025-11-18 16:27:00.884] Mouse click: stimulus presented
+[2025-11-18 16:27:00.884] Stage loop iteration, stage=4
+[2025-11-18 16:27:01.396] presentNoisySquareAt start: angle=0.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:27:01.397] presentNoisySquareAt end
+[2025-11-18 16:27:01.398] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:27:01.398] presentNoisySquareAt end
+[2025-11-18 16:27:01.398] presentNoisySquareAt start: angle=180.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:27:01.399] presentNoisySquareAt end
+[2025-11-18 16:27:01.399] presentNoisySquareAt start: angle=270.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:27:01.399] presentNoisySquareAt end
+[2025-11-18 16:27:02.234] Mouse click: stimulus presented
+[2025-11-18 16:27:02.236] Stage loop iteration, stage=4
+[2025-11-18 16:27:02.728] presentNoisySquareAt start: angle=0.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:27:02.728] presentNoisySquareAt end
+[2025-11-18 16:27:02.729] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:27:02.729] presentNoisySquareAt end
+[2025-11-18 16:27:02.730] presentNoisySquareAt start: angle=180.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:27:02.730] presentNoisySquareAt end
+[2025-11-18 16:27:02.730] presentNoisySquareAt start: angle=270.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:27:02.731] presentNoisySquareAt end
+[2025-11-18 16:27:03.556] Mouse click: stimulus presented
+[2025-11-18 16:27:03.557] Stage loop iteration, stage=4
+[2025-11-18 16:27:04.224] presentNoisySquareAt start: angle=0.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:27:04.225] presentNoisySquareAt end
+[2025-11-18 16:27:04.225] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:27:04.225] presentNoisySquareAt end
+[2025-11-18 16:27:04.226] presentNoisySquareAt start: angle=180.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:27:04.226] presentNoisySquareAt end
+[2025-11-18 16:27:04.226] presentNoisySquareAt start: angle=270.0, noiseLevel=high, durMs=500, deferFlip=1
+[2025-11-18 16:27:04.226] presentNoisySquareAt end
+[2025-11-18 16:27:05.070] Mouse click: stimulus presented
+[2025-11-18 16:27:05.071] Stage loop iteration, stage=4
+[2025-11-18 16:27:08.990] Keypress detected: ESC (quit)
+[2025-11-18 16:27:09.092] Quit requested
+[2025-11-18 16:27:09.093] Cleanup called
