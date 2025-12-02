@@ -6,7 +6,13 @@
 %======================================================================
 
 clear; close all; clc;
-sca; Screen('CloseAll');
+% Force cleanup of any existing windows
+try
+    sca; Screen('CloseAll');
+    WaitSecs(0.2);  % Give time for cleanup
+catch
+    % Ignore errors during cleanup
+end
 format shortg;
 InitializeMatlabOpenGL; AssertOpenGL;
 KbName('UnifyKeyNames');
@@ -27,6 +33,12 @@ global V
 global P  % Noise parameters for noisy stimuli
 V = initiate();             % your existing helper: opens window & sets V
 win = V.window;
+
+% Validate window was created successfully
+if ~isWindowValid(win)
+    error('Failed to create valid PTB window. Please check your display setup.');
+end
+
 V.PrintScreens = false;     % don't save screenshots by default
 
 
@@ -78,7 +90,7 @@ try
         end
     
         % Start of trial: only fixation (no location indicators)
-        Screen('FillRect', win, V.patch.bg);
+        safeFillRect(win, V.patch.bg);
         fixation(0);
         safeFlip(win);
         WaitSecs(V.Durations.FixationDuration); 
@@ -95,7 +107,7 @@ try
         
             try
                 % Show stimulus with existing masks
-                Screen('FillRect', win, V.patch.bg);
+                safeFillRect(win, V.patch.bg);
                 fixation(0);
                 % Draw masks for previously shown locations
                 if ~isempty(shownLocations)
@@ -135,7 +147,7 @@ try
             end
             
             % Immediately replace stimulus with mask
-            Screen('FillRect', win, V.patch.bg);
+            safeFillRect(win, V.patch.bg);
             fixation(0);
             DrawMasksAtLocations(shownLocations);  % Draw all masks for shown locations
             safeFlip(win);
@@ -157,7 +169,7 @@ try
         end
         
         % 2) Final retention (fixation + all masks)
-        Screen('FillRect', win, V.patch.bg);
+        safeFillRect(win, V.patch.bg);
         fixation(0);
         DrawMasksAtLocations(shownLocations);  % Masks serve as location indicators
         safeFlip(win);
@@ -333,7 +345,7 @@ function DrawIntertrialFeedbackFast(trialsSoFar, winPtr, winRect, nTotal)
     leftMargin = round((winRect(3) - totalW) / 2);
 
     % DRAW BACKGROUND
-    Screen('FillRect', winPtr, [128 128 128]);
+    safeFillRect(winPtr, [128 128 128]);
 
     % DRAW FIXATION USING EXISTING FUNCTION
     fixation(0);
@@ -345,7 +357,7 @@ function DrawIntertrialFeedbackFast(trialsSoFar, winPtr, winRect, nTotal)
         hPx   = round(score * plotH);
         xLeft = leftMargin + (i) * (barW + spaceW);
         rect  = [xLeft, bottomY - hPx, xLeft + barW, bottomY];
-        Screen('FillRect', winPtr, barColor, rect);
+        safeFillRect(winPtr, barColor, rect);
     end
 
     % DRAW AXES
@@ -897,7 +909,7 @@ end
 
 function [x, y, angles, distances, mousetime, rt, responseangle, derotatedAngle, precision]= GetResponse(trial, wheelTexture, orientationTexture)
     global V
-    Screen('FillRect', V.window, [V.patch.bg, V.patch.bg, V.patch.bg]);
+    safeFillRect(V.window, [V.patch.bg, V.patch.bg, V.patch.bg]);
     if trial.CuedFeature_i == false
         Screen('DrawTexture', V.window, wheelTexture, [], [], V.color.rotation);
     else
@@ -1049,9 +1061,14 @@ end
 % ========================================================
 function v = initiate() %Global variable with hard-coded defaults.
 
-sca;                   
-Screen('CloseAll');    
-WaitSecs(0.5);
+% Force cleanup of any existing windows
+try
+    sca;                   
+    Screen('CloseAll');    
+    WaitSecs(0.5);
+catch
+    % Ignore errors during cleanup - windows may already be closed
+end
 
 v.patch.bg = .5 * 255; % Background gray
 Screen('Preference', 'SkipSyncTests', 1);
@@ -1071,6 +1088,12 @@ for s = screens
 end
 
 [v.window, v.windowRect] = Screen('OpenWindow', screenToUse, [v.patch.bg, v.patch.bg, v.patch.bg]);
+
+% Validate window was created successfully
+if ~isWindowValid(v.window)
+    error('Failed to create valid PTB window. Please check your display setup.');
+end
+
 Screen('BlendFunction', v.window, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); % can use alpha values
 Screen('Flip', v.window);
 
@@ -1092,9 +1115,11 @@ fprintf('Calculated center (window-relative): X=%.1f, Y=%.1f\n', v.centerX, v.ce
 fprintf('==========================\n\n');
 
  % Warm-up background flip
-    Screen('FillRect', v.window, [v.patch.bg, v.patch.bg, v.patch.bg]);
-    Screen('Flip', v.window);
-    WaitSecs(0.1);
+    if isWindowValid(v.window)
+        Screen('FillRect', v.window, [v.patch.bg, v.patch.bg, v.patch.bg]);
+        Screen('Flip', v.window);
+        WaitSecs(0.1);
+    end
 
     % Warm-up font engine (PTB loads fonts lazily)
     Screen('TextSize', v.window, 36);
@@ -1364,7 +1389,7 @@ end
 
 function [] = blank(duration)
     global V
-    Screen('FillRect', V.window, [V.patch.bg, V.patch.bg, V.patch.bg]);
+    safeFillRect(V.window, [V.patch.bg, V.patch.bg, V.patch.bg]);
     safeFlip(V.window);
     if duration > 0
         WaitSecs(duration);
@@ -1530,6 +1555,27 @@ function safeFlip(winPtr, varargin)
     end
 end
 
+function safeFillRect(winPtr, color, rect)
+% Safely call Screen('FillRect') with error handling
+% Returns silently if window is invalid (allows graceful degradation)
+    if ~isWindowValid(winPtr)
+        % Window is invalid - silently return instead of crashing
+        fprintf('Warning: Window is not valid. Skipping Screen FillRect.\n');
+        return;
+    end
+    try
+        if nargin < 3
+            Screen('FillRect', winPtr, color);
+        else
+            Screen('FillRect', winPtr, color, rect);
+        end
+    catch ME
+        % If FillRect fails, log but don't crash - window might have been closed
+        fprintf('Warning: Screen FillRect failed: %s\n', ME.message);
+        % Don't rethrow - allow experiment to continue if possible
+    end
+end
+
 function [] = printScreen(filename, window)
     global V
     if V.PrintScreens
@@ -1576,7 +1622,7 @@ function drawNoisySquareAt(V, hueDeg, noiseLevel, angleDeg, P, prePattern)
         rgb01 = rgb01 * 255;
     end
 
-    Screen('FillRect', V.window, rgb01', tileRects);
+    safeFillRect(V.window, rgb01', tileRects);
 end
 
 function [rgb01, huesDeg] = makeNoisyPattern(V, hueDeg, noiseLevel, P)

@@ -59,7 +59,7 @@ P.K_LowNoise      = 50;       % concentration parameter (high = narrow distribut
                                 % Typical range: 20-100 for low noise
 
 % High noise parameters:
-P.K_HighNoise     = 2;         % concentration parameter (lower = wider distribution)
+P.K_HighNoise     = 0.8;         % concentration parameter (lower = wider distribution)
                                 % Lower kappa = wider spread around target
                                 % Typical range: 1-10 for high noise
                                 

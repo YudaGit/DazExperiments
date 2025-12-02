@@ -42,3 +42,43 @@
 [2025-11-30 11:37:33.484] Keypress detected: ESC (quit)
 [2025-11-30 11:37:33.585] Quit requested
 [2025-11-30 11:37:33.586] Cleanup called
+[2025-12-01 09:05:50.599] --- NoiseDemo_VMRand (Quantile-Based Von Mises) start ---
+[2025-12-01 09:05:51.685] Stage loop iteration, stage=1
+[2025-12-01 09:05:52.934] Keypress detected: F (next stage)
+[2025-12-01 09:05:53.036] Stage advanced to 2
+[2025-12-01 09:05:53.045] Stage loop iteration, stage=2
+[2025-12-01 09:05:56.135] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-12-01 09:05:56.707] presentNoisySquareAt end
+[2025-12-01 09:05:57.252] Mouse click: stimulus presented
+[2025-12-01 09:05:57.253] Stage loop iteration, stage=2
+[2025-12-01 09:05:57.893] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-12-01 09:05:58.407] presentNoisySquareAt end
+[2025-12-01 09:05:59.498] Mouse click: stimulus presented
+[2025-12-01 09:05:59.499] Stage loop iteration, stage=2
+[2025-12-01 09:05:59.860] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-12-01 09:06:00.372] presentNoisySquareAt end
+[2025-12-01 09:06:00.748] Mouse click: stimulus presented
+[2025-12-01 09:06:00.749] Stage loop iteration, stage=2
+[2025-12-01 09:06:01.043] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-12-01 09:06:01.554] presentNoisySquareAt end
+[2025-12-01 09:06:01.908] Mouse click: stimulus presented
+[2025-12-01 09:06:01.909] Stage loop iteration, stage=2
+[2025-12-01 09:06:02.238] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-12-01 09:06:02.759] presentNoisySquareAt end
+[2025-12-01 09:06:03.134] Mouse click: stimulus presented
+[2025-12-01 09:06:03.135] Stage loop iteration, stage=2
+[2025-12-01 09:06:03.475] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-12-01 09:06:03.985] presentNoisySquareAt end
+[2025-12-01 09:06:04.429] Mouse click: stimulus presented
+[2025-12-01 09:06:04.430] Stage loop iteration, stage=2
+[2025-12-01 09:06:04.702] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-12-01 09:06:05.212] presentNoisySquareAt end
+[2025-12-01 09:06:05.697] Mouse click: stimulus presented
+[2025-12-01 09:06:05.697] Stage loop iteration, stage=2
+[2025-12-01 09:06:06.037] presentNoisySquareAt start: angle=90.0, noiseLevel=high, durMs=500, deferFlip=0
+[2025-12-01 09:06:06.545] presentNoisySquareAt end
+[2025-12-01 09:06:06.708] Mouse click: stimulus presented
+[2025-12-01 09:06:06.709] Stage loop iteration, stage=2
+[2025-12-01 09:06:10.167] Keypress detected: ESC (quit)
+[2025-12-01 09:06:10.269] Quit requested
+[2025-12-01 09:06:10.270] Cleanup called
