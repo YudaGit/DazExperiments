@@ -44,6 +44,7 @@ function baseTbl = buildBase(itemNList, noiseLevels, baselineReps, rsReps, group
 % Build base table with all condition combinations
 % For each N and NoiseLevel:
 %   Baseline: baselineReps rows (R=0, Cue='NR', Cond='Baseline')
+%     - Half simultaneous, half sequential (randomly assigned per N×Noise combination)
 %   RS_TimeOnly: rsReps rows (R=2 for N=4, R=3 for N=6, Cue='R' or 'NR', Cond='RS_TimeOnly')
 %   RS_SpaceTime: rsReps rows (R=2 for N=4, R=3 for N=6, Cue='R' or 'NR', Cond='RS_SpaceTime')
 %   RedundantGrouped: groupedReps rows (R=2 for N=4, R=3 for N=6, Cue='R' or 'NR', Cond='RedundantGrouped')
@@ -56,37 +57,45 @@ function baseTbl = buildBase(itemNList, noiseLevels, baselineReps, rsReps, group
       for n = 1:numel(noiseLevels)
           noise = noiseLevels{n};
           
-          % Baseline (R=0)
+          % Baseline (R=0): Split half simultaneous, half sequential
+          % Create random assignment for this N×Noise combination
+          presentationTypes = repmat({'sequential'}, baselineReps, 1);
+          numSimultaneous = floor(baselineReps / 2);
+          simultaneousIdx = randperm(baselineReps, numSimultaneous);
+          for idx = simultaneousIdx
+              presentationTypes{idx} = 'simultaneous';
+          end
+          
           for k = 1:baselineReps
-              rows(end+1,:) = {N, 0, 'NR', 'Baseline', noise}; %#ok<AGROW>
+              rows(end+1,:) = {N, 0, 'NR', 'Baseline', noise, presentationTypes{k}}; %#ok<AGROW>
           end
           
           % RS_TimeOnly: 40 R-cue + 40 NR-cue = 80 total
           for k = 1:rsReps/2
-              rows(end+1,:) = {N, R, 'R', 'RS_TimeOnly', noise}; %#ok<AGROW>
+              rows(end+1,:) = {N, R, 'R', 'RS_TimeOnly', noise, 'sequential'}; %#ok<AGROW>
           end
           for k = 1:rsReps/2
-              rows(end+1,:) = {N, R, 'NR', 'RS_TimeOnly', noise}; %#ok<AGROW>
+              rows(end+1,:) = {N, R, 'NR', 'RS_TimeOnly', noise, 'sequential'}; %#ok<AGROW>
           end
           
           % RS_SpaceTime: 40 R-cue + 40 NR-cue = 80 total
           for k = 1:rsReps/2
-              rows(end+1,:) = {N, R, 'R', 'RS_SpaceTime', noise}; %#ok<AGROW>
+              rows(end+1,:) = {N, R, 'R', 'RS_SpaceTime', noise, 'sequential'}; %#ok<AGROW>
           end
           for k = 1:rsReps/2
-              rows(end+1,:) = {N, R, 'NR', 'RS_SpaceTime', noise}; %#ok<AGROW>
+              rows(end+1,:) = {N, R, 'NR', 'RS_SpaceTime', noise, 'sequential'}; %#ok<AGROW>
           end
           
           % RedundantGrouped: 40 R-cue + 40 NR-cue = 80 total
           for k = 1:groupedReps/2
-              rows(end+1,:) = {N, R, 'R', 'RedundantGrouped', noise}; %#ok<AGROW>
+              rows(end+1,:) = {N, R, 'R', 'RedundantGrouped', noise, 'sequential'}; %#ok<AGROW>
           end
           for k = 1:groupedReps/2
-              rows(end+1,:) = {N, R, 'NR', 'RedundantGrouped', noise}; %#ok<AGROW>
+              rows(end+1,:) = {N, R, 'NR', 'RedundantGrouped', noise, 'sequential'}; %#ok<AGROW>
           end
       end
   end
-  baseTbl = cell2table(rows, 'VariableNames', {'ItemN','RedundantN','CueType','Condition','NoiseLevel'});
+  baseTbl = cell2table(rows, 'VariableNames', {'ItemN','RedundantN','CueType','Condition','NoiseLevel','PresentationType'});
 end
 
 function T = enrich(coreTbl, sessionN, pid, age, ts)
@@ -113,6 +122,11 @@ function T = enrich(coreTbl, sessionN, pid, age, ts)
   end
   T.SequenceTag = strings(n,1);
   T.Grouping    = repmat({'Separate'}, n,1);
+  
+  % Initialize PresentationType if not already present (for backward compatibility)
+  if ~ismember('PresentationType', T.Properties.VariableNames)
+      T.PresentationType = repmat({'sequential'}, n, 1);
+  end
 end
 
 function T = addSequenceOrderST(T)
@@ -132,25 +146,50 @@ function T = addSequenceOrderST(T)
     
     switch cond
       case 'Baseline'
-        % All unique items, sequential ACW
-        s0 = randi(N);
-        ring = circshift(1:N, [0, s0-1]);
-        segs = num2cell(ring);
-        tag = repmat("U", 1, N);
-        dupPos = [];
-        
-        % Colors: all unique
-        cols = pickUniqueHues(N, 30, []);
-        
-        % Locations: N evenly spaced positions, rotated
-        % All locations on invisible circle, evenly spaced
-        baseLocs = 90 + (0:N-1)*(360/N);
-        locs = circshift(baseLocs, [0, s0-1]);
-        % Normalize to 0-360 range
-        locs = mod(locs, 360);
-        
-        % Grouping
-        grouping = 'Separate';
+        % All unique items
+        % Check if simultaneous or sequential presentation
+        if ismember('PresentationType', T.Properties.VariableNames) && ...
+           strcmp(T.PresentationType{k}, 'simultaneous')
+            % Simultaneous presentation (all items in one interval)
+            dupPos = [];
+            
+            % Single segment containing all items
+            segs = {1:N};
+            tag = "G";
+            
+            % Colors: all unique
+            cols = pickUniqueHues(N, 30, []);
+            
+            % Locations: N evenly spaced positions (no rotation needed for simultaneous)
+            baseLocs = 90 + (0:N-1)*(360/N);
+            locs = baseLocs;
+            % Normalize to 0-360 range
+            locs = mod(locs, 360);
+            s0 = 1;  % Not used for simultaneous, but set for consistency
+            
+            % Grouping
+            grouping = 'Grouped';
+        else
+            % Sequential ACW presentation (default)
+            s0 = randi(N);
+            ring = circshift(1:N, [0, s0-1]);
+            segs = num2cell(ring);
+            tag = repmat("U", 1, N);
+            dupPos = [];
+            
+            % Colors: all unique
+            cols = pickUniqueHues(N, 30, []);
+            
+            % Locations: N evenly spaced positions, rotated
+            % All locations on invisible circle, evenly spaced
+            baseLocs = 90 + (0:N-1)*(360/N);
+            locs = circshift(baseLocs, [0, s0-1]);
+            % Normalize to 0-360 range
+            locs = mod(locs, 360);
+            
+            % Grouping
+            grouping = 'Separate';
+        end
         
       case 'RS_TimeOnly'
         % R redundant items at SAME location across intervals
@@ -396,6 +435,7 @@ function T = addSequenceOrderST(T)
     % Safety check: verify segments form a partition of 1..N
     % For equal timing: RS_TimeOnly and RS_SpaceTime must have singleton segments
     % RedundantGrouped can have one group segment (R items simultaneous)
+    % Baseline can be simultaneous (1 segment with N items) or sequential (N singleton segments)
     if strcmp(cond, 'RedundantGrouped')
         % RedundantGrouped: one group segment (R items) + singleton segments (unique items)
         % Verify structure: exactly one group segment, rest are singletons
@@ -409,6 +449,18 @@ function T = addSequenceOrderST(T)
             end
         end
         assert(groupSegCount == 1, 'RedundantGrouped: Should have exactly 1 group segment, got %d', groupSegCount);
+    elseif strcmp(cond, 'Baseline')
+        % Baseline: can be simultaneous (1 segment with N items) or sequential (N singleton segments)
+        if numel(segs) == 1
+            % Simultaneous: verify single segment contains all N items
+            assert(numel(segs{1}) == N, 'Baseline simultaneous: Segment should contain N=%d items, got %d', N, numel(segs{1}));
+        else
+            % Sequential: verify all segments are singletons
+            assert(numel(segs) == N, 'Baseline sequential: Should have N=%d segments, got %d', N, numel(segs));
+            for s = 1:numel(segs)
+                assert(isscalar(segs{s}), 'Baseline sequential: Segment %d must be a singleton, got %d items', s, numel(segs{s}));
+            end
+        end
     else
         % RS_TimeOnly and RS_SpaceTime: all segments must be singletons for equal timing
         for s = 1:numel(segs)

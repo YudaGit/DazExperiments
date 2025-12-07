@@ -45,9 +45,9 @@ V.PrintScreens = false;     % don't save screenshots by default
 % Design specification for Pilot 1: Main Redundancy Integration
 design.ItemNList    = [4 6];           % Set sizes: N=4, N=6
 design.NoiseLevels  = {'high'};        % Only high noise for Pilot 1
-design.BaselineReps = 10;              % 80 trials per set size (Baseline)
-design.RSReps       = 20;              % 80 trials per set size per RS condition (40 R-cue + 40 NR-cue)
-design.GroupedReps  = 20;              % 80 trials per set size (40 R-cue + 40 NR-cue)
+design.BaselineReps = 10;              % trials per set size (Baseline)
+design.RSReps       = 20;              % trials per set size per RS condition (R-cue + NR-cue)
+design.GroupedReps  = 20;              % trials per set size (40 R-cue + 40 NR-cue)
 design.PracticeReps = 0;               % No practice trials
 design.presDur      = 0.30;
 design.retDur       = 1.0;
@@ -98,7 +98,7 @@ try
         % Track which locations have been shown (and will be masked)
         shownLocations = [];
         
-        % 1) Presentation sequence (simultaneous for Baseline/Homo_Space, sequential for others)
+        % 1) Presentation sequence (simultaneous: single segment with all items, sequential: multiple segments)
         allSegs = tr.SegmentOrder{1};                 % cell array: {1:N} for simultaneous, {1},{2},... for sequential
         locs = tr.StimulusLocations{1};
         

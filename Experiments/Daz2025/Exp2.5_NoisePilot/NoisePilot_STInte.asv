@@ -6,7 +6,13 @@
 %======================================================================
 
 clear; close all; clc;
-sca; Screen('CloseAll');
+% Force cleanup of any existing windows
+try
+    sca; Screen('CloseAll');
+    WaitSecs(0.2);  % Give time for cleanup
+catch
+    % Ignore errors during cleanup
+end
 format shortg;
 InitializeMatlabOpenGL; AssertOpenGL;
 KbName('UnifyKeyNames');
@@ -27,14 +33,21 @@ global V
 global P  % Noise parameters for noisy stimuli
 V = initiate();             % your existing helper: opens window & sets V
 win = V.window;
+
+% Validate window was created successfully
+if ~isWindowValid(win)
+    error('Failed to create valid PTB window. Please check your display setup.');
+end
+
 V.PrintScreens = false;     % don't save screenshots by default
 
 
-% Design specification for Pilot 2: Homogeneous Integration
-design.ItemNList    = [2 6];           % Set sizes: N=2, N=6
-design.NoiseLevels  = {'low', 'high'}; % Noise levels
-design.BaselineReps = 12;              % N trials per N×Noise combination ( Setsize × Noise × BaselineReps)
-design.HomoReps     = 4;              % N trials per N×Noise combination per condition (Setsize × Noise × HomoReps × 3 Seq type)
+% Design specification for Pilot 1: Main Redundancy Integration
+design.ItemNList    = [4 6];           % Set sizes: N=4, N=6
+design.NoiseLevels  = {'high'};        % Only high noise for Pilot 1
+design.BaselineReps = 10;              % 10 trials per set size (Baseline)
+design.RSReps       = 20;              % 80 trials per set size per RS condition (40 R-cue + 40 NR-cue)
+design.GroupedReps  = 20;              % 80 trials per set size (40 R-cue + 40 NR-cue)
 design.PracticeReps = 0;               % No practice trials
 design.presDur      = 0.30;
 design.retDur       = 1.0;
@@ -42,7 +55,7 @@ design.SegmentDur   = 0.30;
 design.ISI          = 0.15;
 
 % Generate practice & main tables
-[pracTrials, expTrials] = TrialMatrixSeq3way_HomoInte(design, sessionN, participantID, age, timestamp);
+[pracTrials, expTrials] = TrialMatrixSeq3way_STInte(design, sessionN, participantID, age, timestamp);
 
 % Calibration & textures
 VA5deg        = calibrateMonitor();
@@ -50,15 +63,11 @@ adjustSquareStim(VA5deg);  % Use square stimulus adjustment for noisy squares
 wheelTex      = DrawWheel();
 neutralTex    = DrawNeutralWheel();
 
-% Noise parameters (EXACTLY matching NoiseDemo_VMRand.m)
-P.K_LowNoise      = 25;       % concentration parameter (high = narrow distribution)
-                                % Higher kappa = tighter clustering around target
-                                % Typical range: 20-100 for low noise
-P.K_HighNoise     = 0.8;         % concentration parameter (lower = wider distribution)
+% Noise parameters for Pilot 1 (high noise only)
+% Pilot 1 uses only high noise (K < 2) as specified in design
+P.K_LowNoise      = 25;       % Not used in Pilot 1, but kept for compatibility
+P.K_HighNoise     = 0.8;        % High noise for Pilot 1 (matches demo)
                                 % Lower kappa = wider spread around target
-                                % Typical range: 1-10 for high noise
-% Note: For better discriminability, aim for kappa ratio > 10:1
-%       (e.g., Low=50, High=2 gives 25:1 ratio)
 % Prepare color map for noisy stimuli (360-row lookup)
 if size(V.color.map,1) == 360
     P.cMap360_255 = V.color.map;
@@ -75,10 +84,15 @@ try
     for ii = 1:height(expTrials)
         tr = expTrials(ii,:);
     
+        % Verify window is still valid before proceeding
+        if ~isWindowValid(win)
+            error('Window is no longer valid at trial %d. Experiment terminated.', ii);
+        end
+    
         % Start of trial: only fixation (no location indicators)
-        Screen('FillRect', win, V.patch.bg);
+        safeFillRect(win, V.patch.bg);
         fixation(0);
-        Screen('Flip', win);
+        safeFlip(win);
         WaitSecs(V.Durations.FixationDuration); 
         
         % Track which locations have been shown (and will be masked)
@@ -91,16 +105,38 @@ try
         for seg = 1:numel(allSegs)
             idxList = allSegs{seg};                   % numeric vector (1×1 for singletons)
         
-            % Show stimulus with existing masks
-            Screen('FillRect', win, V.patch.bg);
-            fixation(0);
-            % Draw masks for previously shown locations
-            if ~isempty(shownLocations)
-                DrawMasksAtLocations(shownLocations);
+            try
+                % Show stimulus with existing masks
+                safeFillRect(win, V.patch.bg);
+                fixation(0);
+                % Draw masks for previously shown locations
+                if ~isempty(shownLocations)
+                    DrawMasksAtLocations(shownLocations);
+                end
+                DrawStimulusSegment(tr, idxList);         % now handles vector or scalar
+                safeFlip(win);
+                
+                % CRITICAL: Each segment must get full SegmentDur, regardless of location
+                segmentStartTime = GetSecs();
+                WaitSecs(design.SegmentDur);
+                segmentEndTime = GetSecs();
+                actualSegmentDur = segmentEndTime - segmentStartTime;
+                
+                % Verify timing (debug - can be removed later)
+                if abs(actualSegmentDur - design.SegmentDur) > 0.01
+                    fprintf('Warning: Segment %d actual duration (%.3f s) differs from expected (%.3f s)\n', ...
+                        seg, actualSegmentDur, design.SegmentDur);
+                end
+            catch ME
+                % If there's an error during presentation, log it and continue
+                fprintf('Error during segment %d presentation: %s\n', seg, ME.message);
+                fprintf('Stack trace:\n');
+                for k = 1:length(ME.stack)
+                    fprintf('  File: %s, Line: %d, Function: %s\n', ...
+                        ME.stack(k).file, ME.stack(k).line, ME.stack(k).name);
+                end
+                rethrow(ME);  % Re-throw to be caught by outer try-catch
             end
-            DrawStimulusSegment(tr, idxList);         % now handles vector or scalar
-            Screen('Flip', win);
-            WaitSecs(design.SegmentDur);
         
             % Track locations shown in this segment
             for k = idxList
@@ -111,21 +147,32 @@ try
             end
             
             % Immediately replace stimulus with mask
-            Screen('FillRect', win, V.patch.bg);
+            safeFillRect(win, V.patch.bg);
             fixation(0);
             DrawMasksAtLocations(shownLocations);  % Draw all masks for shown locations
-            Screen('Flip', win);
+            safeFlip(win);
             
+            % CRITICAL: ISI must be applied between ALL segments (except last)
+            % This ensures equal timing between segments, even for same-location R items
             if seg < numel(allSegs)
+                isiStartTime = GetSecs();
                 WaitSecs(design.ISI);
+                isiEndTime = GetSecs();
+                actualISI = isiEndTime - isiStartTime;
+                
+                % Verify ISI timing (debug - can be removed later)
+                if abs(actualISI - design.ISI) > 0.01
+                    fprintf('Warning: ISI after segment %d actual duration (%.3f s) differs from expected (%.3f s)\n', ...
+                        seg, actualISI, design.ISI);
+                end
             end
         end
         
         % 2) Final retention (fixation + all masks)
-        Screen('FillRect', win, V.patch.bg);
+        safeFillRect(win, V.patch.bg);
         fixation(0);
         DrawMasksAtLocations(shownLocations);  % Masks serve as location indicators
-        Screen('Flip', win);
+        safeFlip(win);
         WaitSecs(tr.retDur);  
 
         % 5) Response
@@ -270,7 +317,7 @@ function [] = instructions(n)
     Screen('TextSize', V.window, 50);
     DrawFormattedText(V.window, inst, 'center', V.windowRect(4) * m, [255, 255, 255]);
     DrawFormattedText(V.window, 'Press The Left Mouse Button To Continue', 'center', V.windowRect(4) * .95, [255, 255, 255]);
-    Screen('Flip', V.window);
+    safeFlip(V.window);
     WaitForMouseClick(); 
 end
 
@@ -298,7 +345,7 @@ function DrawIntertrialFeedbackFast(trialsSoFar, winPtr, winRect, nTotal)
     leftMargin = round((winRect(3) - totalW) / 2);
 
     % DRAW BACKGROUND
-    Screen('FillRect', winPtr, [128 128 128]);
+    safeFillRect(winPtr, [128 128 128]);
 
     % DRAW FIXATION USING EXISTING FUNCTION
     fixation(0);
@@ -310,7 +357,7 @@ function DrawIntertrialFeedbackFast(trialsSoFar, winPtr, winRect, nTotal)
         hPx   = round(score * plotH);
         xLeft = leftMargin + (i) * (barW + spaceW);
         rect  = [xLeft, bottomY - hPx, xLeft + barW, bottomY];
-        Screen('FillRect', winPtr, barColor, rect);
+        safeFillRect(winPtr, barColor, rect);
     end
 
     % DRAW AXES
@@ -347,7 +394,7 @@ function DrawIntertrialFeedbackFast(trialsSoFar, winPtr, winRect, nTotal)
     DrawFormattedText(winPtr, 'Click to continue', 'center', winRect(4) * 0.4, white);
 
     % FINAL FLIP
-    Screen('Flip', winPtr);
+    safeFlip(winPtr);
     WaitForMouseClick();
 end
 
@@ -400,7 +447,7 @@ function [] = DrawWheelFeedback(trial, wheelTexture, orientationTexture)
         Screen('TextSize', V.window, 40);
         DrawFormattedText(V.window, feedback, 'center', V.windowRect(4)/2, [255, 0, 0]);
     end
-    Screen('Flip', V.window);
+    safeFlip(V.window);
 end
 
 function drawShortestArc(startAngle, endAngle)
@@ -474,7 +521,7 @@ function TargetCue(trial, refresh)
     
     fixation(0);
     if refresh
-        Screen('Flip', V.window);
+        safeFlip(V.window);
     end
 end
 
@@ -575,14 +622,54 @@ function DrawMaskAtLocation(angleDeg)
     % Draw a square mask at a specific location (used after each stimulus)
     % Uses cached static mask texture (never closed)
     global V
-    theta = deg2rad(angleDeg);
-    centerX = round(V.centerX + V.stim.positionradius * cos(theta));
-    centerY = round(V.centerY - V.stim.positionradius * sin(theta));  % Note: -sin for y-axis (screen coordinates)
-    squareSize = V.square.side_px_full;
-    maskRect = CenterRectOnPointd([0, 0, squareSize, squareSize], centerX, centerY);
-    
-    noiseMaskTex = GaussianTextureSquare();  % Returns cached texture (never closed)
-    Screen('DrawTexture', V.window, noiseMaskTex, [], maskRect);
+    try
+        % Check if window is valid before proceeding
+        if ~isfield(V, 'window') || isempty(V.window)
+            return;  % Window not available, skip drawing
+        end
+        
+        % Verify window is still valid
+        try
+            Screen('WindowKind', V.window);
+        catch
+            return;  % Window invalid, skip drawing
+        end
+        
+        theta = deg2rad(angleDeg);
+        centerX = round(V.centerX + V.stim.positionradius * cos(theta));
+        centerY = round(V.centerY - V.stim.positionradius * sin(theta));  % Note: -sin for y-axis (screen coordinates)
+        squareSize = V.square.side_px_full;
+        maskRect = CenterRectOnPointd([0, 0, squareSize, squareSize], centerX, centerY);
+        
+        noiseMaskTex = GaussianTextureSquare();  % Returns cached texture (never closed)
+        
+        % Verify texture is valid before drawing
+        if isempty(noiseMaskTex) || noiseMaskTex <= 0
+            return;  % Invalid texture, skip drawing
+        end
+        
+        % Verify texture is still valid
+        try
+            Screen('WindowKind', noiseMaskTex);
+        catch
+            % Texture was closed, try to recreate it
+            try
+                noiseMaskTex = GaussianTextureSquare();
+                if isempty(noiseMaskTex) || noiseMaskTex <= 0
+                    return;  % Failed to recreate, skip drawing
+                end
+            catch
+                return;  % Failed to recreate texture, skip drawing
+            end
+        end
+        
+        % Draw texture
+        Screen('DrawTexture', V.window, noiseMaskTex, [], maskRect);
+        
+    catch ME
+        % Silently skip if there's an error - don't crash the experiment
+        % Window or texture might be invalid, which is okay during cleanup
+    end
     % DO NOT close the texture - it's cached and reused
 end
 
@@ -616,7 +703,7 @@ function Mask(trial)
         Screen('Close', noiseMaskTex);
     end
     fixation(0);
-    Screen('Flip', V.window);
+    safeFlip(V.window);
 end
 
 function [] = fixation(duration)
@@ -639,7 +726,7 @@ function [] = fixation(duration)
             V.centerX + V.mouseinit.radius, V.centerY + V.mouseinit.radius];
     Screen('FrameOval', V.window, V.mouseinit.color, rect, V.mouseinit.radiusWidth);
     if duration > 0
-        Screen('Flip', V.window);
+        safeFlip(V.window);
         WaitSecs(duration);
     end
 end
@@ -754,7 +841,7 @@ function CueCreation(display)
             Screen('FillOval', V.window, V.cue.Bgcolor, centeredPedestal);
 
             fixation(0);
-            Screen('Flip', V.window);
+            safeFlip(V.window);
             WaitSecs(1);
         end
     end
@@ -822,7 +909,7 @@ end
 
 function [x, y, angles, distances, mousetime, rt, responseangle, derotatedAngle, precision]= GetResponse(trial, wheelTexture, orientationTexture)
     global V
-    Screen('FillRect', V.window, [V.patch.bg, V.patch.bg, V.patch.bg]);
+    safeFillRect(V.window, [V.patch.bg, V.patch.bg, V.patch.bg]);
     if trial.CuedFeature_i == false
         Screen('DrawTexture', V.window, wheelTexture, [], [], V.color.rotation);
     else
@@ -831,7 +918,7 @@ function [x, y, angles, distances, mousetime, rt, responseangle, derotatedAngle,
     fixation(0);
     %Cue(trial, true, false, false)
     TargetCue(trial, false);
-    Screen('Flip', V.window);
+    safeFlip(V.window);
     looptime = GetSecs;
     starttime = looptime;
     checkmousetime = 10; %ms 
@@ -949,14 +1036,14 @@ function x = randColors(n)
 end
 
 function [] = SaveData(expTrials, sessionN, participantID, timestamp)
-% Saving data for Pilot 2: Homogeneous Integration
+% Saving data for Pilot 1: Main Redundancy Integration (Space-Time)
     global V
-    saveDir = 'Noise Pilot HomoInte Data';
+    saveDir = 'Noise Pilot STInte Data';
     if ~isfolder(saveDir)
         mkdir(saveDir);
         disp(['Save Data Directory Created: ', saveDir]);
     end
-    fname = sprintf('HomoInte_%s_sess%d_%s.mat', ...
+    fname = sprintf('STInte_%s_sess%d_%s.mat', ...
                     participantID, sessionN, timestamp);
     fullpath = fullfile(saveDir, fname);
     try
@@ -974,9 +1061,14 @@ end
 % ========================================================
 function v = initiate() %Global variable with hard-coded defaults.
 
-sca;                   
-Screen('CloseAll');    
-WaitSecs(0.5);
+% Force cleanup of any existing windows
+try
+    sca;                   
+    Screen('CloseAll');    
+    WaitSecs(0.5);
+catch
+    % Ignore errors during cleanup - windows may already be closed
+end
 
 v.patch.bg = .5 * 255; % Background gray
 Screen('Preference', 'SkipSyncTests', 1);
@@ -996,6 +1088,12 @@ for s = screens
 end
 
 [v.window, v.windowRect] = Screen('OpenWindow', screenToUse, [v.patch.bg, v.patch.bg, v.patch.bg]);
+
+% Validate window was created successfully
+if ~isWindowValid(v.window)
+    error('Failed to create valid PTB window. Please check your display setup.');
+end
+
 Screen('BlendFunction', v.window, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); % can use alpha values
 Screen('Flip', v.window);
 
@@ -1017,9 +1115,11 @@ fprintf('Calculated center (window-relative): X=%.1f, Y=%.1f\n', v.centerX, v.ce
 fprintf('==========================\n\n');
 
  % Warm-up background flip
-    Screen('FillRect', v.window, [v.patch.bg, v.patch.bg, v.patch.bg]);
-    Screen('Flip', v.window);
-    WaitSecs(0.1);
+    if isWindowValid(v.window)
+        Screen('FillRect', v.window, [v.patch.bg, v.patch.bg, v.patch.bg]);
+        Screen('Flip', v.window);
+        WaitSecs(0.1);
+    end
 
     % Warm-up font engine (PTB loads fonts lazily)
     Screen('TextSize', v.window, 36);
@@ -1150,7 +1250,7 @@ function fiveDegVA_in_pixels = calibrateMonitor()
             'arrow keys to move each line.\nUse UP/DOWN arrow keys to choose which line' ...
             ' moves.\nPress ENTER when done.'], ...
             'center', 'center', [255 255 255]);
-        Screen('Flip', V.window);
+        safeFlip(V.window);
         WaitSecs(1);
         blank(0);
     
@@ -1207,7 +1307,7 @@ function fiveDegVA_in_pixels = calibrateMonitor()
             DrawFormattedText(V.window, ...
                 'Use arrow keys to move lines. Press ENTER when done.', ...
                 'center', 50, [255 255 255]);
-            Screen('Flip', V.window);
+            safeFlip(V.window);
             WaitSecs(0.01);
     
         end
@@ -1289,8 +1389,8 @@ end
 
 function [] = blank(duration)
     global V
-    Screen('FillRect', V.window, [V.patch.bg, V.patch.bg, V.patch.bg]);
-    Screen('Flip', V.window);
+    safeFillRect(V.window, [V.patch.bg, V.patch.bg, V.patch.bg]);
+    safeFlip(V.window);
     if duration > 0
         WaitSecs(duration);
     end
@@ -1336,8 +1436,11 @@ function [] = ExperimentEnd(Finished)
         if isfield(V, 'window') && ~isempty(V.window)
             try
                 % Try to query window to see if it's still valid
-                Screen('WindowKind', V.window);
-                windowValid = true;
+                % Use WindowKind which is safer than Rect
+                kind = Screen('WindowKind', V.window);
+                if kind == 1  % 1 = onscreen window, 0 = offscreen window/texture
+                    windowValid = true;
+                end
             catch
                 windowValid = false;
             end
@@ -1355,19 +1458,39 @@ function [] = ExperimentEnd(Finished)
             
             if Finished
                 try
-                    Screen('TextSize', V.window, 50);
-                    DrawFormattedText(V.window, 'Experiment Complete!\n\nThank you for your participation.', 'center', V.windowRect(4)/2, [255, 255, 255]);
-                    Screen('Flip', V.window);
-                    WaitSecs(4);
+                    % Try each Screen call individually with error suppression
+                    try
+                        Screen('TextSize', V.window, 50);
+                    catch
+                        % Window invalid, skip rest
+                        return;
+                    end
+                    try
+                        DrawFormattedText(V.window, 'Experiment Complete!\n\nThank you for your participation.', 'center', V.windowRect(4)/2, [255, 255, 255]);
+                        safeFlip(V.window);
+                        WaitSecs(4);
+                    catch
+                        % Window might have been closed during display, just skip
+                    end
                 catch
                     % Window might have been closed, just skip display
                 end
             else
                 try
-                    Screen('TextSize', V.window, 50);
-                    DrawFormattedText(V.window, 'Terminating Experiment.', 'center', V.windowRect(4)/2, [255, 255, 255]);
-                    Screen('Flip', V.window);
-                    WaitSecs(1);
+                    % Try each Screen call individually with error suppression
+                    try
+                        Screen('TextSize', V.window, 50);
+                    catch
+                        % Window invalid, skip rest
+                        return;
+                    end
+                    try
+                        DrawFormattedText(V.window, 'Terminating Experiment.', 'center', V.windowRect(4)/2, [255, 255, 255]);
+                        safeFlip(V.window);
+                        WaitSecs(1);
+                    catch
+                        % Window might have been closed during display, just skip
+                    end
                 catch
                     % Window might have been closed, just skip display
                 end
@@ -1399,6 +1522,58 @@ function [] = ExperimentEnd(Finished)
     
     close all;
     disp('Experiment Code Finished');
+end
+
+function isValid = isWindowValid(winPtr)
+% Helper function to check if a window pointer is valid
+    isValid = false;
+    if isempty(winPtr) || winPtr <= 0
+        return;
+    end
+    try
+        kind = Screen('WindowKind', winPtr);
+        isValid = (kind == 1);  % 1 = onscreen window
+    catch
+        isValid = false;
+    end
+end
+
+function safeFlip(winPtr, varargin)
+% Safely call Screen('Flip') with error handling
+% Returns silently if window is invalid (allows graceful degradation)
+    if ~isWindowValid(winPtr)
+        % Window is invalid - silently return instead of crashing
+        fprintf('Warning: Window is not valid. Skipping Screen Flip.\n');
+        return;
+    end
+    try
+        Screen('Flip', winPtr, varargin{:});
+    catch ME
+        % If flip fails, log but don't crash - window might have been closed
+        fprintf('Warning: Screen Flip failed: %s\n', ME.message);
+        % Don't rethrow - allow experiment to continue if possible
+    end
+end
+
+function safeFillRect(winPtr, color, rect)
+% Safely call Screen('FillRect') with error handling
+% Returns silently if window is invalid (allows graceful degradation)
+    if ~isWindowValid(winPtr)
+        % Window is invalid - silently return instead of crashing
+        fprintf('Warning: Window is not valid. Skipping Screen FillRect.\n');
+        return;
+    end
+    try
+        if nargin < 3
+            Screen('FillRect', winPtr, color);
+        else
+            Screen('FillRect', winPtr, color, rect);
+        end
+    catch ME
+        % If FillRect fails, log but don't crash - window might have been closed
+        fprintf('Warning: Screen FillRect failed: %s\n', ME.message);
+        % Don't rethrow - allow experiment to continue if possible
+    end
 end
 
 function [] = printScreen(filename, window)
@@ -1447,7 +1622,7 @@ function drawNoisySquareAt(V, hueDeg, noiseLevel, angleDeg, P, prePattern)
         rgb01 = rgb01 * 255;
     end
 
-    Screen('FillRect', V.window, rgb01', tileRects);
+    safeFillRect(V.window, rgb01', tileRects);
 end
 
 function [rgb01, huesDeg] = makeNoisyPattern(V, hueDeg, noiseLevel, P)

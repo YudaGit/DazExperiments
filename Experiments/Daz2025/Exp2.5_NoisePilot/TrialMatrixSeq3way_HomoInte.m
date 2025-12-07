@@ -42,6 +42,7 @@ function baseTbl = buildBase(itemNList, noiseLevels, baselineReps, homoReps)
 % Build base table with all condition combinations
 % For each N and NoiseLevel:
 %   Baseline: baselineReps rows (R=0, Cue='NR', Cond='Baseline')
+%     - Half simultaneous, half sequential (randomly assigned per N×Noise combination)
 %   Homo-Space: homoReps rows (R=N, Cue='NR', Cond='Homo_Space')
 %   Homo-Time: homoReps rows (R=N, Cue='NR', Cond='Homo_Time')
 %   Homo-Space+Time: homoReps rows (R=N, Cue='NR', Cond='Homo_SpaceTime')
@@ -51,24 +52,32 @@ function baseTbl = buildBase(itemNList, noiseLevels, baselineReps, homoReps)
       for n = 1:numel(noiseLevels)
           noise = noiseLevels{n};
           
-          % Baseline (R=0)
+          % Baseline (R=0): Split half simultaneous, half sequential
+          % Create random assignment for this N×Noise combination
+          presentationTypes = repmat({'sequential'}, baselineReps, 1);
+          numSimultaneous = floor(baselineReps / 2);
+          simultaneousIdx = randperm(baselineReps, numSimultaneous);
+          for idx = simultaneousIdx
+              presentationTypes{idx} = 'simultaneous';
+          end
+          
           for k = 1:baselineReps
-              rows(end+1,:) = {N, 0, 'NR', 'Baseline', noise}; %#ok<AGROW>
+              rows(end+1,:) = {N, 0, 'NR', 'Baseline', noise, presentationTypes{k}}; %#ok<AGROW>
           end
           
           % Homogeneous conditions (R=N)
           for k = 1:homoReps
-              rows(end+1,:) = {N, N, 'NR', 'Homo_Space', noise}; %#ok<AGROW>
+              rows(end+1,:) = {N, N, 'NR', 'Homo_Space', noise, 'simultaneous'}; %#ok<AGROW>
           end
           for k = 1:homoReps
-              rows(end+1,:) = {N, N, 'NR', 'Homo_Time', noise}; %#ok<AGROW>
+              rows(end+1,:) = {N, N, 'NR', 'Homo_Time', noise, 'sequential'}; %#ok<AGROW>
           end
           for k = 1:homoReps
-              rows(end+1,:) = {N, N, 'NR', 'Homo_SpaceTime', noise}; %#ok<AGROW>
+              rows(end+1,:) = {N, N, 'NR', 'Homo_SpaceTime', noise, 'sequential'}; %#ok<AGROW>
           end
       end
   end
-  baseTbl = cell2table(rows, 'VariableNames', {'ItemN','RedundantN','CueType','Condition','NoiseLevel'});
+  baseTbl = cell2table(rows, 'VariableNames', {'ItemN','RedundantN','CueType','Condition','NoiseLevel','PresentationType'});
 end
 
 % Removed blockByItem - now using full randomization instead
@@ -98,6 +107,11 @@ function T = enrich(coreTbl, sessionN, pid, age, ts)
   end
   T.SequenceTag = strings(n,1);
   T.Grouping    = repmat({'Separate'}, n,1);
+  
+  % Initialize PresentationType if not already present (for backward compatibility)
+  if ~ismember('PresentationType', T.Properties.VariableNames)
+      T.PresentationType = repmat({'sequential'}, n, 1);
+  end
 end
 
 function T = addSequenceOrderHomo(T)
@@ -115,22 +129,45 @@ function T = addSequenceOrderHomo(T)
     
     switch cond
       case 'Baseline'
-        % All unique items, sequential ACW
-        s0 = randi(N);
-        ring = circshift(1:N, [0, s0-1]);
-        segs = num2cell(ring);
-        tag = repmat("U", 1, N);
-        dupPos = [];
-        
-        % Colors: all unique
-        cols = pickUniqueHues(N, 30, []);
-        
-        % Locations: N evenly spaced positions, rotated
-        baseLocs = 90 + (0:N-1)*(360/N);
-        locs = circshift(baseLocs, [0, s0-1]);
-        
-        % Grouping
-        grouping = 'Separate';
+        % All unique items
+        % Check if simultaneous or sequential presentation
+        if ismember('PresentationType', T.Properties.VariableNames) && ...
+           strcmp(T.PresentationType{k}, 'simultaneous')
+            % Simultaneous presentation (like Homo_Space)
+            dupPos = [];
+            
+            % Single segment containing all items
+            segs = {1:N};
+            tag = "G";
+            
+            % Colors: all unique
+            cols = pickUniqueHues(N, 30, []);
+            
+            % Locations: N evenly spaced positions (no rotation needed for simultaneous)
+            baseLocs = 90 + (0:N-1)*(360/N);
+            locs = baseLocs;
+            s0 = 1;  % Not used for simultaneous, but set for consistency
+            
+            % Grouping
+            grouping = 'Grouped';
+        else
+            % Sequential ACW presentation (default)
+            s0 = randi(N);
+            ring = circshift(1:N, [0, s0-1]);
+            segs = num2cell(ring);
+            tag = repmat("U", 1, N);
+            dupPos = [];
+            
+            % Colors: all unique
+            cols = pickUniqueHues(N, 30, []);
+            
+            % Locations: N evenly spaced positions, rotated
+            baseLocs = 90 + (0:N-1)*(360/N);
+            locs = circshift(baseLocs, [0, s0-1]);
+            
+            % Grouping
+            grouping = 'Separate';
+        end
         
       case 'Homo_Space'
         % All same hue, simultaneous (all items in one interval)
