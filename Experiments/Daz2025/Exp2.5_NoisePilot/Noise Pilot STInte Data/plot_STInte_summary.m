@@ -7,6 +7,7 @@
 clear; close all; clc;
 
 fprintf('=== Loading STInte Data ===\n\n');
+fprintf('*** SCRIPT VERSION: UPDATED WITH 9 BARS PER GROUP ***\n\n');
 
 % Data directory (script runs from within the data folder)
 dataDir = '.';
@@ -93,12 +94,14 @@ end
 
 % Prepare data for plotting
 % Groups: N=4 (high noise), N=6 (high noise)
-% For each group: Baseline, AggR-cue, AggNR-cue, RS_TimeOnly, RS_SpaceTime, RedundantGrouped
+% For each group: Baseline, AggR-cue, AggNR-cue, RS_TimeOnly_R, RS_TimeOnly_NR, 
+%                 RS_SpaceTime_R, RS_SpaceTime_NR, RedundantGrouped_R, RedundantGrouped_NR
 
 itemNs = [4, 6];
 xGroups = {'N=4', 'N=6'};
 nGroups = length(xGroups);
-barsPerGroup = 6;  % Baseline, AggR-cue, AggNR-cue, RS_TimeOnly, RS_SpaceTime, RedundantGrouped
+barsPerGroup = 9;  % Baseline, AggR-cue, AggNR-cue, RS_TimeOnly_R, RS_TimeOnly_NR, 
+                   % RS_SpaceTime_R, RS_SpaceTime_NR, RedundantGrouped_R, RedundantGrouped_NR
 
 % Initialize storage for all data
 allPrecisionData = cell(nGroups, barsPerGroup);
@@ -133,25 +136,52 @@ for g = 1:nGroups
         allRTData{g, 3} = allTrials.ResponseTime(idx);
     end
     
-    % 4. RS_TimeOnly (aggregated across R-cue and NR-cue)
-    idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RS_TimeOnly');
+    % 4. RS_TimeOnly_R (R-cue only)
+    idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RS_TimeOnly') & ...
+          strcmp(allTrials.CueType, 'R');
     if sum(idx) > 0
         allPrecisionData{g, 4} = abs(allTrials.Precision(idx));
         allRTData{g, 4} = allTrials.ResponseTime(idx);
     end
     
-    % 5. RS_SpaceTime (aggregated across R-cue and NR-cue)
-    idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RS_SpaceTime');
+    % 5. RS_TimeOnly_NR (NR-cue only)
+    idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RS_TimeOnly') & ...
+          strcmp(allTrials.CueType, 'NR');
     if sum(idx) > 0
         allPrecisionData{g, 5} = abs(allTrials.Precision(idx));
         allRTData{g, 5} = allTrials.ResponseTime(idx);
     end
     
-    % 6. RedundantGrouped (aggregated across R-cue and NR-cue)
-    idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RedundantGrouped');
+    % 6. RS_SpaceTime_R (R-cue only)
+    idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RS_SpaceTime') & ...
+          strcmp(allTrials.CueType, 'R');
     if sum(idx) > 0
         allPrecisionData{g, 6} = abs(allTrials.Precision(idx));
         allRTData{g, 6} = allTrials.ResponseTime(idx);
+    end
+    
+    % 7. RS_SpaceTime_NR (NR-cue only)
+    idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RS_SpaceTime') & ...
+          strcmp(allTrials.CueType, 'NR');
+    if sum(idx) > 0
+        allPrecisionData{g, 7} = abs(allTrials.Precision(idx));
+        allRTData{g, 7} = allTrials.ResponseTime(idx);
+    end
+    
+    % 8. RedundantGrouped_R (R-cue only)
+    idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RedundantGrouped') & ...
+          strcmp(allTrials.CueType, 'R');
+    if sum(idx) > 0
+        allPrecisionData{g, 8} = abs(allTrials.Precision(idx));
+        allRTData{g, 8} = allTrials.ResponseTime(idx);
+    end
+    
+    % 9. RedundantGrouped_NR (NR-cue only)
+    idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RedundantGrouped') & ...
+          strcmp(allTrials.CueType, 'NR');
+    if sum(idx) > 0
+        allPrecisionData{g, 9} = abs(allTrials.Precision(idx));
+        allRTData{g, 9} = allTrials.ResponseTime(idx);
     end
 end
 
@@ -193,13 +223,15 @@ end
 
 % --- Figure 1a: Precision ---
 fprintf('Creating Figure 1a: Precision...\n');
+fprintf('*** DEBUG: barsPerGroup = %d ***\n', barsPerGroup);
+fprintf('*** DEBUG: total bars = %d ***\n', length(allBarData));
 fig1a = figure('Position', [100, 100, 1600, 500], 'Color', 'w');
 
 % Determine global Y-axis max
 globalYMax = max(allBarData + allBarCI_upper) * 1.1;
 
 % Set up x-positions
-barSpacing = 0.8;  % Spacing between bars within a group
+barSpacing = 0.6;  % Spacing between bars within a group (reduced for more bars)
 groupSpacing = 2.0;  % Spacing between groups
 xPositions = [];
 xLabels = {};
@@ -209,17 +241,25 @@ for g = 1:nGroups
     groupXPos = xStart + (0:(barsPerGroup-1)) * barSpacing;
     xPositions = [xPositions, groupXPos];
     
-    % Labels: Baseline, AggR-cue, AggNR-cue, RS_TimeOnly, RS_SpaceTime, RedundantGrouped
-    xLabels = [xLabels, {'Baseline', 'AggR-cue', 'AggNR-cue', 'RS_Time', 'RS_SpaceTime', 'RG_Space'}];
+    % Labels: Baseline, AggR-cue, AggNR-cue, RS_Time_R, RS_Time_NR, RS_SpaceTime_R, RS_SpaceTime_NR, RG_Space_R, RG_Space_NR
+    xLabels = [xLabels, {'Baseline', 'AggR-cue', 'AggNR-cue', 'RS_Time_R', 'RS_Time_NR', ...
+                         'RS_ST_R', 'RS_ST_NR', 'RG_Space_R', 'RG_Space_NR'}];
     
     xStart = max(groupXPos) + groupSpacing;
 end
 
 % Plot all bars in single figure
-b = bar(xPositions, allBarData, 0.6, 'FaceColor', 'flat');  % 0.6 = bar width
+b = bar(xPositions, allBarData, 0.4, 'FaceColor', 'flat');  % 0.4 = narrower bar width for more bars
 
 % Set colors for each bar
-barColors = repmat([0.5, 0.5, 0.5; 0.2, 0.6, 0.8; 0.8, 0.2, 0.2; 0.2, 0.4, 0.8; 0.8, 0.2, 0.2; 0.2, 0.8, 0.4], nGroups, 1);
+% Gray (Baseline), Blue (AggR-cue), Red (AggNR-cue), 
+% Darker blue (RS_Time_R), Lighter blue (RS_Time_NR),
+% Darker red (RS_SpaceTime_R), Lighter red (RS_SpaceTime_NR),
+% Darker green (RG_Space_R), Lighter green (RG_Space_NR)
+barColors = repmat([0.5, 0.5, 0.5; 0.2, 0.6, 0.8; 0.8, 0.2, 0.2; ...
+                    0.2, 0.4, 0.8; 0.4, 0.6, 0.9; ...
+                    0.8, 0.2, 0.2; 0.9, 0.4, 0.4; ...
+                    0.2, 0.8, 0.4; 0.4, 0.9, 0.6], nGroups, 1);
 b.CData = barColors;
 
 hold on;
@@ -274,7 +314,7 @@ fig1b = figure('Position', [100, 100, 1600, 500], 'Color', 'w');
 globalRTYMax = max(allRTBarData + allRTBarCI_upper) * 1.1;
 
 % Use same x-positions and labels
-b = bar(xPositions, allRTBarData, 0.6, 'FaceColor', 'flat');
+b = bar(xPositions, allRTBarData, 0.4, 'FaceColor', 'flat');  % 0.4 = narrower bar width
 b.CData = barColors;
 
 hold on;
@@ -348,11 +388,17 @@ for g = 1:nGroups
             elseif b == 3
                 allColors = [allColors; repmat([0.8, 0.2, 0.2], length(yVals), 1)];  % Red (AggNR-cue)
             elseif b == 4
-                allColors = [allColors; repmat([0.2, 0.4, 0.8], length(yVals), 1)];  % Darker blue (RS_Time)
+                allColors = [allColors; repmat([0.2, 0.4, 0.8], length(yVals), 1)];  % Darker blue (RS_Time_R)
             elseif b == 5
-                allColors = [allColors; repmat([0.8, 0.2, 0.2], length(yVals), 1)];  % Red (RS_SpaceTime)
+                allColors = [allColors; repmat([0.4, 0.6, 0.9], length(yVals), 1)];  % Lighter blue (RS_Time_NR)
+            elseif b == 6
+                allColors = [allColors; repmat([0.8, 0.2, 0.2], length(yVals), 1)];  % Darker red (RS_SpaceTime_R)
+            elseif b == 7
+                allColors = [allColors; repmat([0.9, 0.4, 0.4], length(yVals), 1)];  % Lighter red (RS_SpaceTime_NR)
+            elseif b == 8
+                allColors = [allColors; repmat([0.2, 0.8, 0.4], length(yVals), 1)];  % Darker green (RG_Space_R)
             else
-                allColors = [allColors; repmat([0.2, 0.8, 0.4], length(yVals), 1)];  % Green (RG_Space)
+                allColors = [allColors; repmat([0.4, 0.9, 0.6], length(yVals), 1)];  % Lighter green (RG_Space_NR)
             end
         end
     end
@@ -379,7 +425,7 @@ for g = 1:nGroups
             whiskerHigh = min(max(data), q75 + 1.5*iqr);
             
             % Box
-            boxWidth = 0.3;
+            boxWidth = 0.25;  % Narrower box width for more bars
             rectangle('Position', [xPos - boxWidth/2, q25, boxWidth, q75 - q25], ...
                      'FaceColor', 'none', 'EdgeColor', 'k', 'LineWidth', 1.5);
             % Median line
@@ -459,11 +505,17 @@ for g = 1:nGroups
             elseif b == 3
                 allColors = [allColors; repmat([0.8, 0.2, 0.2], length(yVals), 1)];  % Red (AggNR-cue)
             elseif b == 4
-                allColors = [allColors; repmat([0.2, 0.4, 0.8], length(yVals), 1)];  % Darker blue (RS_Time)
+                allColors = [allColors; repmat([0.2, 0.4, 0.8], length(yVals), 1)];  % Darker blue (RS_Time_R)
             elseif b == 5
-                allColors = [allColors; repmat([0.8, 0.2, 0.2], length(yVals), 1)];  % Red (RS_SpaceTime)
+                allColors = [allColors; repmat([0.4, 0.6, 0.9], length(yVals), 1)];  % Lighter blue (RS_Time_NR)
+            elseif b == 6
+                allColors = [allColors; repmat([0.8, 0.2, 0.2], length(yVals), 1)];  % Darker red (RS_SpaceTime_R)
+            elseif b == 7
+                allColors = [allColors; repmat([0.9, 0.4, 0.4], length(yVals), 1)];  % Lighter red (RS_SpaceTime_NR)
+            elseif b == 8
+                allColors = [allColors; repmat([0.2, 0.8, 0.4], length(yVals), 1)];  % Darker green (RG_Space_R)
             else
-                allColors = [allColors; repmat([0.2, 0.8, 0.4], length(yVals), 1)];  % Green (RG_Space)
+                allColors = [allColors; repmat([0.4, 0.9, 0.6], length(yVals), 1)];  % Lighter green (RG_Space_NR)
             end
         end
     end
@@ -490,7 +542,7 @@ for g = 1:nGroups
             whiskerHigh = min(max(data), q75 + 1.5*iqr);
             
             % Box
-            boxWidth = 0.3;
+            boxWidth = 0.25;  % Narrower box width for more bars
             rectangle('Position', [xPos - boxWidth/2, q25, boxWidth, q75 - q25], ...
                      'FaceColor', 'none', 'EdgeColor', 'k', 'LineWidth', 1.5);
             % Median line
@@ -545,4 +597,3 @@ saveas(fig2b, fullfile(dataDir, 'Figure2b_RT_Distributions.png'));
 fprintf('Saved: Figure2b_RT_Distributions.png\n\n');
 
 fprintf('=== Plotting Complete ===\n');
-
