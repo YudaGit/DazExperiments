@@ -54,7 +54,7 @@ fprintf('Refresh: %.2f Hz (%.3f ms/frame)\n', 1/ifi, ifi*1000);
 % No truncation needed - distribution naturally bounded by kappa parameter
 % 
 % Low noise parameters:
-P.K_LowNoise      = 50;       % concentration parameter (high = narrow distribution)
+P.K_LowNoise      = 25;       % concentration parameter (high = narrow distribution)
                                 % Higher kappa = tighter clustering around target
                                 % Typical range: 20-100 for low noise
 
