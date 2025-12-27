@@ -33,8 +33,8 @@ V.PrintScreens = false;     % don't save screenshots by default
 % Design specification for Pilot 2: Homogeneous Integration
 design.ItemNList    = [2 6];           % Set sizes: N=2, N=6
 design.NoiseLevels  = {'low', 'high'}; % Noise levels
-design.BaselineReps = 12;              % N trials per N×Noise combination ( Setsize × Noise × BaselineReps)
-design.HomoReps     = 4;              % N trials per N×Noise combination per condition (Setsize × Noise × HomoReps × 3 Seq type)
+design.BaselineReps = 24;              % N trials per N×Noise combination ( Setsize × Noise × BaselineReps)
+design.HomoReps     = 8;              % N trials per N×Noise combination per condition (Setsize × Noise × HomoReps × 3 Seq type)
 design.PracticeReps = 0;               % No practice trials
 design.presDur      = 0.30;
 design.retDur       = 1.0;

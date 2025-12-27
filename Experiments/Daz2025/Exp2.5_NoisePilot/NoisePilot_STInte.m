@@ -45,9 +45,9 @@ V.PrintScreens = false;     % don't save screenshots by default
 % Design specification for Pilot 1: Main Redundancy Integration
 design.ItemNList    = [4 6];           % Set sizes: N=4, N=6
 design.NoiseLevels  = {'high'};        % Only high noise for Pilot 1
-design.BaselineReps = 10;              % trials per set size (Baseline)
-design.RSReps       = 20;              % trials per set size per RS condition (R-cue + NR-cue)
-design.GroupedReps  = 20;              % trials per set size (40 R-cue + 40 NR-cue)
+design.BaselineReps = 15;              % trials per set size (Baseline)
+design.RSReps       = 30;              % trials per set size per RS condition (R-cue + NR-cue)
+design.GroupedReps  = 30;              % trials per set size (40 R-cue + 40 NR-cue)
 design.PracticeReps = 0;               % No practice trials
 design.presDur      = 0.30;
 design.retDur       = 1.0;
