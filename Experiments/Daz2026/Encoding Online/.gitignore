@@ -1,0 +1,9 @@
+*.pyc
+*.swp
+*.swo
+venv
+venv/*
+MallExperiment.py
+SimpleDB.py
+config.py.production
+zappa_settings.json

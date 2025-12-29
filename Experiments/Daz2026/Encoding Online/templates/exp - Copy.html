@@ -1,0 +1,653 @@
+{% extends "experiment_wrapper.html" %}
+
+{% block title %} Experiment {% endblock %}
+
+{% block extra_head %}
+    <script src="{{url_for('static', filename='jspsych7/jspsych.js')}}" type="text/javascript"></script>
+    <script src="{{url_for('static', filename='jspsych7/plugin-external-html.js')}}" type="text/javascript"></script>
+    <script src="{{url_for('static', filename='jspsych7/plugin-preload.js')}}" type="text/javascript"></script>
+    <script src="{{url_for('static', filename='jspsych7/plugin-html-keyboard-response.js')}}" type="text/javascript"></script>
+    <script src="{{url_for('static', filename='jspsych7/plugin-html-button-response.js')}}" type="text/javascript"></script>
+    <script src="{{url_for('static', filename='jspsych7/plugin-call-function.js')}}" type="text/javascript"></script>
+    <script src="{{url_for('static', filename='jspsych7/plugin-survey-multi-choice.js')}}" type="text/javascript"></script>
+    <script src="{{url_for('static', filename='jspsych7/plugin-fullscreen.js')}}" type="text/javascript"></script>
+    <script src="{{url_for('static', filename='jspsych7/plugin-survey-text.js')}}" type="text/javascript"></script>
+    <script src="{{url_for('static', filename='jspsych7/plugin-categorize-image.js')}}" type="text/javascript"></script>
+    
+    <script src="{{url_for('static', filename='colorpatches.js')}}" type="text/javascript"></script>
+    <script src="{{url_for('static', filename='patchselector.js')}}" type="text/javascript"></script>
+    <script src="{{url_for('static', filename='confidencewheel.js')}}" type="text/javascript"></script>
+    <script src="{{url_for('static', filename='adv_plot.js')}}" type="text/javascript"></script>
+    
+    
+    <link rel="stylesheet" href="{{url_for('static', filename='jspsych7/jspsych.css')}}" type="text/css"></link>
+
+    <style>
+        *, *::after, *::before {
+            box-sizing: border-box;
+        }
+
+        html{
+            overflow-y: auto;   
+        }
+        #jspsych-target{
+            width: 100%;
+            height: 100%;
+        }
+
+        body {
+            margin: 0;
+            background-color: rgb(20, 20, 20);
+            color: white;
+        }
+
+        
+    </style>
+
+
+{% endblock %}
+
+
+{% block body %}
+    
+{% endblock %}
+
+
+{% block after_body %}
+
+  <script>
+    var expt_data = {{data|safe}};
+    var studyFinished = true
+    var troubleshooting = false
+
+    var send_debrief = function(data){
+        if(_record_task_complete){
+            //window.location.href ="/debrief";
+            var form = document.createElement("form");
+            form.setAttribute('method', 'post');
+            form.setAttribute('action', '/debrief');
+
+            var input = document.createElement('input');
+            input.setAttribute('type', 'hidden');
+            input.setAttribute('name', 'data');
+            input.setAttribute('value', data);
+            form.appendChild(input);
+
+
+            input = document.createElement('input');
+            input.setAttribute('type', 'hidden');
+            input.setAttribute('name', 'uid');
+            input.setAttribute('value', "{{uid}}");
+            form.appendChild(input);
+
+            if(_mturk){
+                input = document.createElement('input');
+                input.setAttribute('type', 'hidden');
+                input.setAttribute('name', 'mturk');
+                input.setAttribute('value', _mturk);
+            }
+            
+            document.body.appendChild(form);
+            form.submit();
+
+        }else{
+            window.setTimeout(function(){
+                send_debrief(data);
+            }, 1000);
+        } 
+    };
+
+    var futureStudy = false;
+    var resultsAlert = false;
+    var check_consent = function(elem) {
+        if ($('#future_checkbox').is(':checked')) {
+            futureStudy = true;
+        }
+
+        if ($('#emailed_checkbox').is(':checked')) {
+            resultsAlert = true;
+        }
+        
+        if ($('#consent_checkbox').is(':checked')) {
+            return true;
+        }
+        else {
+            alert("If you wish to participate, you must check the box next to the statement 'I agree to participate in this study.'");
+            return false;
+        }
+        return false;
+    };  
+
+    var tab_exits = 0
+    // ADD RANDOMIZIATION WITH
+    // 2 (SATURATION: HIGH, LOW) * 4 (DISP: 1, 2, 4, 6) * 1 (DSP TIME: 1000 ms)
+    var Patchcolor, ColorDegrees, Pos, Sat
+    var PatchN = [1, 2, 4, 6]
+    // var PatchN = [1]
+    var RetentionTime = [1000]
+    var SaturationLevels = [1]
+    var ExpIterations = 90
+    // var ExpIterations = 1  // For Piloting
+    var PracticeIterations = 2
+
+    var shuffled = shuffle(PatchN, RetentionTime, SaturationLevels, PracticeIterations)
+    var PracPatches = shuffled[0]
+    var PracTime = shuffled[1]
+    var PracSat  = shuffled[2]
+
+    var shuffled = shuffle(PatchN, RetentionTime, SaturationLevels, ExpIterations)
+    PatchN = shuffled[0]
+    RetentionTime = shuffled[1]
+    SaturationLevels = shuffled[2]
+
+    TrialN = PatchN.length
+
+    var Colors
+    var colorAngles
+    var patchAngles
+
+    var sessionWheelRotation = getRandomIntegers(0, 359)
+
+    var random_id = Math.floor(Math.random() * 10000);
+
+    var browser_window_height = window.outerHeight;
+    var browser_window_width = window.outerWidth;
+    const h = browser_window_height
+    const w = browser_window_width
+
+    var experiment_name = 'ConfidenceArc2023';
+    var experiment_timeline = [];
+
+    const consent = { 
+        type: jsPsychExternalHtml, 
+        url: "{{url_for('static', filename='html/consent.html')}}",
+        cont_btn: "next",
+        check_fn: check_consent,
+        data: {'part': 'consent'},
+        on_finish:function(){
+                if(_rep===1&&_rep_on_consent===1){
+                    _mark_rep_as_done();
+                }
+        }
+    }
+
+    const instructions = {
+        type: jsPsychExternalHtml, 
+        url: "{{url_for('static', filename='html/instructions.html')}}",
+        cont_btn: "read_instructions",
+        data: {'part': 'instructions'}
+    };
+
+    var instructions_check1 = {
+        type: jsPsychSurveyMultiChoice,
+        questions: [{
+            prompt: "What will you be required to do?", 
+            name: 'check1', 
+            options: ['Determine the motion of a set of dots.', 'Study and recall a list of words.', 'Recall one color patch using a color wheel.'], 
+            required: true
+        }],
+        data: {'part':'check'}, 
+        randomize_question_order: true,
+        on_finish: function(data){
+            data.accuracy = jsPsych.data.getLastTrialData().select('response').values[0].check1 == 'Recall one color patch using a color wheel.'
+        }
+    }
+
+    var instructions_check2 = {
+        type: jsPsychSurveyMultiChoice,
+        questions: [{
+            prompt: "How many color patches will be presented at a time?", 
+            name: 'check1', 
+            options: ['Between 1 and 6.', 'Between 1 and 3.', 'Between 1 and 10.'], 
+            required: true
+        }],
+        data: {'part':'check'}, 
+        randomize_question_order: true,
+        on_finish: function(data){
+            data.accuracy = jsPsych.data.getLastTrialData().select('response').values[0].check1 == 'Between 1 and 6.' 
+        }
+    }
+
+    var instructions_check3 = {
+        type: jsPsychSurveyMultiChoice,
+        questions: [{
+            prompt: "How will you be required to respond?", 
+            name: 'check1', 
+            options: ['Using a keyboard.', 'Using a mouse.', 'Using the force.'], 
+            required: true
+        }],
+        data: {'part':'check'}, 
+        randomize_question_order: true,
+        on_finish: function(data){
+            data.accuracy = jsPsych.data.getLastTrialData().select('response').values[0].check1 == 'Using a mouse.'
+        }
+    }
+
+    var instructions_check4 = {
+        type: jsPsychHtmlKeyboardResponse,
+        stimulus: '<p>It does not appear you have understood the instructions.</p> <p>We are going to show you the instructions again.</p>',
+        trial_duration: 5000,
+        choices: 'NO_KEYS',
+        data: {part: 'repeat_instruction_message'}, 
+        on_start: function(data){
+            console.log( 'rep count', jsPsych.data.get().filter({part:"repeat_instruction_message"}).count() )
+            var n_tries = jsPsych.data.get().filter({part:"repeat_instruction_message"}).count();
+            if(n_tries > 2){
+                jsPsych.endExperiment("Too many failed attempts, aborting study.");
+            }
+        }
+    }
+
+    var repeat_inst_conditional = {
+        type: jsPsychHtmlKeyboardResponse,
+        choices: 'NO_KEYS',
+        trial_duration: 0,
+        timeline: [instructions_check4],
+        conditional_function: function(){
+            var acc_checks = jsPsych.data.get().filter({part:'check'}).last(3).filter({accuracy:true}).count();
+            console.log('repeat active')
+            if(acc_checks < 3){
+                return true;
+            }else{
+                return false;
+            }
+        }
+    }
+
+    var repeat_instruction_loop = {
+        timeline: [instructions, instructions_check1, instructions_check2, instructions_check3, repeat_inst_conditional],
+        loop_function: function(){
+            var acc_checks = jsPsych.data.get().filter({part:'check'}).last(3).filter({accuracy:true}).count();
+            if(acc_checks < 3){ return true;
+            } else { return false; }
+        }
+    }
+
+    const plain_langauge_statement = {
+        type: jsPsychExternalHtml, 
+        url: "{{url_for('static', filename='html/plain-language-statement.html')}}",
+        cont_btn: "next",
+        data: {'part': 'statement'}
+    };
+
+    
+    var fullscreen = {
+        type: jsPsychFullscreen,
+        fullscreen_mode: true, 
+        on_finish: function(data){
+            studyFinished = false
+        }
+    }
+
+    const dsp_fixation = {
+        type: jsPsychHtmlKeyboardResponse,
+        stimulus: '<div style="font-size:25px;">+</div>',
+        choices: 'NO_KEYS',
+        trial_duration: 200,
+        data: {trial_event: 'fixation'}
+    }
+
+    var preload = { 
+        type: jsPsychPreload,
+        images: ["{{url_for('static', filename='images/stim/Exp_Feedback.png')}}",  
+                 "{{url_for('static', filename='images/stim/Confidence.png')}}",
+                 "{{url_for('static', filename='images/stim/Penalty.png')}}",
+                 "{{url_for('static', filename='images/stim/Points.png')}}",
+                 "{{url_for('static', filename='images/stim/Response.png')}}",
+                 "{{url_for('static', filename='images/stim/Wheel.png')}}",
+                 "{{url_for('static', filename='images/stim/Stim.png')}}"]
+    }
+
+    var colorblindItem = {
+        type: jsPsychSurveyMultiChoice,
+        questions: [{
+            prompt: "Please indicate if you are color blind.", 
+            name: 'colorblind', 
+            options: ['Yes', 'No'], 
+            required: true
+        }],
+        data: {'part':'colorblind'}, 
+    }
+
+    var genderItem = {
+        type: jsPsychSurveyMultiChoice,
+        questions: [{
+            prompt: "Please indicate your gender.", 
+            name: 'gender', 
+            options: ['Man', 'Woman', 'Non-Binary', 'Other Term', 'Prefer Not To Say'], 
+            required: true
+        }],
+        data: {'part':'gender'}, 
+    }
+
+    var ageItem = {
+        type: jsPsychSurveyText,
+        questions: [{
+            prompt: "Please report your age using whole numbers (e.g., 18, 19, 20, 21, 22, ...).", 
+            name: 'age', 
+            required: true
+        }],
+        data: {'part':'age'}, 
+    }
+    
+    var wheel1 = {
+        type: jsPsychCategorizeImage,
+        stimulus: "{{url_for('static', filename='images/stim/Stim.png')}}",
+        key_answer: 'ALL_KEYS',
+        incorrect_text: '',
+        show_stim_with_feedback: false, 
+        feedback_duration: 0,
+        stimulus_width: 100,
+        prompt: "<p>During each trial, you will briefly view between 1 and 6 colored discs.</p> Press any key to contine."
+    };
+
+    var wheel2 = {
+        type: jsPsychCategorizeImage,
+        stimulus: "{{url_for('static', filename='images/stim/Wheel.png')}}",
+        key_answer: 'ALL_KEYS',
+        incorrect_text: '',
+        show_stim_with_feedback: false, 
+        feedback_duration: 0,
+        prompt: "<p>The discs will then be covered and one disc will have a white border.</p> <p>Recall the color of the highlighted disc by moving your mouse to the color's location on the color wheel.</p> Press any key to contine."
+    };
+
+    var wheel3 = {
+        type: jsPsychCategorizeImage,
+        stimulus: "{{url_for('static', filename='images/stim/Response.png')}}",
+        key_answer: 'ALL_KEYS',
+        incorrect_text: '',
+        show_stim_with_feedback: false, 
+        feedback_duration: 0,
+        prompt: "<p> Each response will create a white line, indicating your response position on the color wheel.</p>Press any key to contine."
+    };
+
+    var wheel4 = {
+        type: jsPsychCategorizeImage,
+        stimulus: "{{url_for('static', filename='images/stim/Confidence.png')}}",
+        key_answer: 'ALL_KEYS',
+        incorrect_text: '',
+        show_stim_with_feedback: false, 
+        feedback_duration: 0,
+        prompt: "<p>You may then move your mouse across the color wheel to indicate your color confidence.</p> When ready, click the left mouse button to finalize your response.</p>Press any key to contine."
+    };
+
+    var wheel5 = {
+        type: jsPsychCategorizeImage,
+        stimulus: "{{url_for('static', filename='images/stim/Points.png')}}",
+        key_answer: 'ALL_KEYS',
+        incorrect_text: '',
+        show_stim_with_feedback: false, 
+        feedback_duration: 0,
+        prompt: "<p>Responses will gain you points based on your first response's precision, and the tightness of your confidence arc.</p>A wider arc gives fewer points, but an arc that misses the true color (green line) gives 0 points!</p> Press any key to contine."
+    };
+
+    var wheel6 = {
+        type: jsPsychCategorizeImage,
+        stimulus: "{{url_for('static', filename='images/stim/Penalty.png')}}",
+        key_answer: 'ALL_KEYS',
+        incorrect_text: '',
+        show_stim_with_feedback: false, 
+        feedback_duration: 0,
+        prompt: "<p>On each trial you will receive a time penalty and explanation if your mouse leaves the center circle too fast, </p>too slowly, or does start in the center of the screen.</p> Press any key to contine."
+    };
+
+    var wheel7 = {
+        type: jsPsychHtmlKeyboardResponse,
+        stimulus: 'You will have 10 seconds to make your responses, after which, the trial will timeout and become invalid.</p> Press any key to contine.'
+    };
+
+    var wheel8 = {
+        type: jsPsychCategorizeImage,
+        stimulus: "{{url_for('static', filename='images/stim/Exp_Feedback.png')}}",
+        key_answer: 'ALL_KEYS',
+        incorrect_text: '',
+        show_stim_with_feedback: false, 
+        feedback_duration: 0,
+        prompt: "<p>Lastly, between each trial you can track your points by set-size (1, 2, 4 or 6 items) as well as your mean score (white dotted line). </p> Press any key to contine."
+    }
+
+    const practice_screen = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: "We will begin with eight practice trials. <p> Ensure the mouse is in the center of the screen at the start of each response. <p> You will be told if you move away from the center too quickly or too slowly. <p> Press any key to begin."
+    }
+
+    // INSTRUCTION TEXT
+    const welcome_screen = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: 'Thank you for completing our bot check and welcome to the study! Press any key to read the plain language statement.'
+    }
+
+    const experimentBegin = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: "Excellent! <p> You are now ready to begin the main experiment. <p> Proceed at your own pace. As a rough guideline, the experiment should take about 50min to complete. <p> When ready, press any key to start the main experiment."
+    }
+    
+    const exit_screen = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: 'Thank you for finishing the study. <p> In this task, you were asked to recall and report a colored item. <p> This was a sensory memory (i.e., extremly short term memory) task. <p> Your data will be modelled using your accuracy and response times. <p> We think your data will provide new insights into how people recall sensory memory information <p> and the limits of human sensory memory. <p> This work will contribute to a future peer reviewed scientific manuscript. <p> Press any key to recieve your REP credits or reimbursement, and exit the study.'
+    }
+
+    // ###   Experiment Timeline Setup ### //
+    experiment_timeline.push( fullscreen )
+
+    experiment_timeline.push( preload )
+    experiment_timeline.push( repeat_instruction_loop )    
+    experiment_timeline.push( welcome_screen )
+    experiment_timeline.push( plain_langauge_statement )
+    experiment_timeline.push( consent )
+    experiment_timeline.push( colorblindItem )
+    experiment_timeline.push( ageItem )
+    experiment_timeline.push( genderItem )
+
+    experiment_timeline.push( wheel1 )
+    experiment_timeline.push( wheel2 )
+    experiment_timeline.push( wheel3 )
+    experiment_timeline.push( wheel4 )
+    experiment_timeline.push( wheel5 )
+    experiment_timeline.push( wheel6 )
+    experiment_timeline.push( wheel7 )
+    experiment_timeline.push( wheel8 )
+    experiment_timeline.push( practice_screen )
+    
+
+    // Loop to create practice trials
+    var pracTrialCount = 0;
+    for (var ii = 0; ii < PracPatches.length; ii++ ){
+
+        trialCount = ii + 1;
+        // [Patchcolor, ColorDegrees] = getPatchColors( PracPatches[ii], PracSat[ii] )
+        [Colors, colorAngles, patchAngles] = SelectColorPatches(PracPatches[ii])
+        // Pos = getPatchPositions(PracPatches[ii], browser_window_height*.1, browser_window_height * .95, browser_window_width * .95, 17)
+
+        var rsp_trial_advance = {
+            type: jsPsychHtmlButtonResponse,
+            stimulus: 'Press to proceed to the next practice trial',
+            choices: ['Next'],
+            data: {trial_event: 'practice_trial_start_event'},
+            prompt: 'Practice trial ' + trialCount + ' of ' + PracPatches.length
+        }
+
+        var color_patches = {
+            data: {trial_event: 'practice_color_patch_display_event'},
+            type: jsConfidenceWheel,
+            trial_duration: 1500,
+            draw_wheel: false,
+            choice_colors: Colors,
+            patch_positionalangle: patchAngles,
+            choice_colorangles: colorAngles,
+            stimulus_height: browser_window_height * .95,
+            on_start: function(data){ // Turn off tab monitoring so people can't use it to pause color patch display
+                studyFinished = true
+            }
+        }
+
+        var retention_interval = {
+            type: jsPsychHtmlKeyboardResponse,
+            stimulus: '',
+            choices: 'NO_KEYS',
+            trial_duration: PracTime[ii],
+            data: {trial_event: 'practice_fixation'},
+            on_finish: function(data){ // Turn back on tab monitoring
+            studyFinished = false
+            }
+        }
+
+        var wheel_response = {
+            data: {trial_event: 'practice_stimulus_wheel_display_event'},
+            type: jsConfidenceWheel,
+            trial_duration: 60000,
+            draw_wheel: true,
+            choice_colors: Colors,
+            patch_positionalangle: patchAngles,
+            choice_colorangles: colorAngles,        
+            stimulus_height: browser_window_height * .95,
+            wheel_rotation: sessionWheelRotation,
+            color_palette: highRGBs          
+        }
+
+        experiment_timeline.push( rsp_trial_advance )
+        experiment_timeline.push( dsp_fixation )
+        experiment_timeline.push( color_patches )
+        experiment_timeline.push( retention_interval )
+        experiment_timeline.push( wheel_response )
+    }
+    
+    experiment_timeline.push( experimentBegin )
+
+    //  EXPERIMENTAL TRIALS 
+
+    // For debugging...
+    // experiment_timeline = [];
+
+    function getPoints(data) { return data.points[0]}
+    var participantPoints = [];
+
+    var trialCount = 0
+    for (var ii = 0; ii < PatchN.length; ii++ ){
+        trialCount = ii + 1;
+        [Colors, colorAngles, patchAngles] = SelectColorPatches(PatchN[ii])
+        
+        
+        
+        // [Patchcolor, ColorDegrees] = getPatchColors( PatchN[ii], SaturationLevels[ii]  )
+        // console.log(Patchcolor)
+        // Pos = getPatchPositions(PatchN[ii], browser_window_height*.1, browser_window_height * .95, browser_window_width * .95, 17)
+
+        var rsp_trial_advance = {
+            type: jsAdvPlot,
+            points: participantPoints,
+            trialN: TrialN,
+            patchN: PatchN
+        }
+        
+        var color_patches = {
+            data: {trial_event: 'color_patch_display_event'},
+            type: jsConfidenceWheel,
+            trial_duration: 1500,
+            draw_wheel: false,
+            choice_colors: Colors,
+            patch_positionalangle: patchAngles,
+            choice_colorangles: colorAngles,
+            stimulus_height: browser_window_height * .95,
+            on_start: function(data){ // Turn off tab monitoring so people can't use it to pause color patch display
+                studyFinished = true
+            }
+        }
+
+        var retention_interval = {
+            type: jsPsychHtmlKeyboardResponse,
+            stimulus: '',
+            choices: 'NO_KEYS',
+            trial_duration: RetentionTime[ii],
+            data: {trial_event: 'fixation'},
+            on_finish: function(data){ // Turn back on tab monitoring
+                studyFinished = false
+            }
+        }
+
+        var wheel_response = {
+            data: {trial_event: 'stimulus_wheel_display_event'},
+            type: jsConfidenceWheel,
+            patch_saturation: SaturationLevels[ii],
+            stimulus: "{{url_for('static', filename='images/stim/WhitePointLUV_ColorWheelDarkBg_L54_r9.bmp')}}",
+            trial_duration: 60000,
+            draw_wheel: true,
+            choice_colors: Colors,
+            patch_positionalangle: patchAngles,
+            choice_colorangles: colorAngles,
+            stimulus_height: browser_window_height * .95,
+            wheel_rotation: sessionWheelRotation,
+            color_palette: highRGBs, 
+            on_finish: function(data) { participantPoints.push(getPoints(data)) }
+
+        }
+
+        experiment_timeline.push( rsp_trial_advance )
+        experiment_timeline.push( dsp_fixation )
+        experiment_timeline.push( color_patches )
+        experiment_timeline.push( retention_interval )
+        experiment_timeline.push( wheel_response )
+    }
+
+    var send_abort = function(data){
+        var form = document.createElement("form");
+        form.setAttribute('method', 'post');
+        form.setAttribute('action', '/abort');
+        document.body.appendChild(form);
+        form.submit();
+    };
+
+    // UNCOMMENT: SHORT CIRCUIT EXPERMENT
+    // experiment_timeline = [color_patches, retention_interval, wheel_response]; 
+    
+
+    /* start the experiment */
+    const jsPsych = initJsPsych({
+      on_finish: function() {
+        // jsPsych.displayData will print your data on the page. If you want to see it, comment out send_debrief() otherwise 
+        // it'll send you through to another page before you have a chance to look at the data  
+        studyFinished = true
+        var n_tries = jsPsych.data.get().filter({part:"repeat_instruction_message"}).count();
+        // console.log('N tries:', n_tries)
+
+        if (n_tries < 3){
+            jsPsych.data.addProperties({
+            experiment: experiment_name,
+            subject_id: random_id,
+            unique_id: jsPsych.data.getURLVariable("id"), 
+            browser_window_height: browser_window_height,
+            browser_window_width: browser_window_width, 
+            futurestudyAlert: futureStudy,
+            studyresultsEmail: resultsAlert,
+            tab_away_count: tab_exits
+            });
+
+            // Show data at end...
+            // jsPsych.data.displayData();
+
+            // Save data... 
+            var all_data = jsPsych.data.get().json();
+            _send_task_data(all_data, compressed=true);
+            send_debrief();
+        } else {
+            send_abort();
+            console.log("Attempts exceeded 3.");
+        }
+        
+
+      },
+      default_iti: 0,
+      on_interaction_data_update: function(data){
+          if(data.event == "blur" & troubleshooting == false){
+            if(!studyFinished){
+                tab_exits = tab_exits + 1;
+                alert("Please do not leave the experiment prior to completion & ensure the browser is in full-screen mode (F11).");
+            }
+          }
+      }
+    });
+	
+    jsPsych.run(experiment_timeline);
+  </script>
+
+{% endblock %}
