@@ -39,6 +39,11 @@ var jsConfidenceWheel = (function (jspsych) {
                 type: jspsych.ParameterType.INT,
                 pretty_name: "Redundancy",
                 default: null,
+            },
+            target_index:{
+                type: jspsych.ParameterType.INT,
+                pretty_name: "Target Index",
+                default: null,
             }
         }   
     }
@@ -94,7 +99,10 @@ var jsConfidenceWheel = (function (jspsych) {
             var patchradius    = browser_window_height*.1;
             var targetN;
             if (trial.draw_wheel == true){
-                if (trial.redundancy == 1) {
+                // If target_index is explicitly provided, use it
+                if (trial.target_index !== null && trial.target_index !== undefined) {
+                    targetN = trial.target_index;
+                } else if (trial.redundancy == 1) {
                     targetN = this.findTargetIndex(trial.choice_colorangles, true);
                 } else {
                     targetN = this.findTargetIndex(trial.choice_colorangles, false);
@@ -207,8 +215,8 @@ var jsConfidenceWheel = (function (jspsych) {
             var pastXcoords = [];
             var pastYcoords = [];
 
-            var startinitiatetime  = 300;
-            var maxinitiatetime  = 3000;
+            var startinitiatetime  = 1;  // Changed to 1ms so it never triggers (but still checks if starting outside circle)
+            var maxinitiatetime  = 3000;  // Trigger penalty if leaving center after 3000ms
 
             var toofast = [false];
             var tooslow = [false];

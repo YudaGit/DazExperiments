@@ -56,7 +56,19 @@
 {% block after_body %}
 
   <script>
+    // ============================================================
+    // STEP 1: Get data from Python (includes subexperiment assignment)
+    // ============================================================
     var expt_data = {{data|safe}};
+    var subexperiment = expt_data.subexperiment;  // 1, 2, or 3
+    
+    // Log which sub-experiment was assigned (for debugging)
+    console.log("========================================");
+    console.log("Sub-Experiment Assignment:", subexperiment);
+    console.log("Experiment Type:", expt_data.experiment_type);
+    console.log("Full experiment data:", expt_data);
+    console.log("========================================");
+    
     var studyFinished = true
     var troubleshooting = false
 
@@ -181,8 +193,51 @@
     const h = browser_window_height
     const w = browser_window_width
 
-    var experiment_name = 'Daz2024_PostStimCue_REP';
+    // ============================================================
+    // STEP 2: Set experiment name and initialize timeline
+    // ============================================================
+    var experiment_name = 'Daz2026_Encoding_Online_SubExp' + subexperiment;
     var experiment_timeline = [];
+    
+    // ============================================================
+    // STEP 3: Route to appropriate sub-experiment
+    // ============================================================
+    // For now, all sub-experiments will run the current example
+    // Later, we'll implement specific logic for each sub-experiment
+    
+    console.log("Building timeline for Sub-Experiment", subexperiment);
+    
+    // ============================================================
+    // Helper Functions for Sub-Experiment 1
+    // ============================================================
+    
+    /**
+     * Convert Python color angles (0-359) to RGB arrays using highRGBs palette
+     * @param {Array<number>} colorAngles - Array of color angles from Python (0-359)
+     * @returns {Array<Array<number>>} Array of RGB arrays
+     */
+    function convertColorAnglesToRGB(colorAngles) {
+        return colorAngles.map(function(angle) {
+            // Round angle to nearest integer and ensure it's in range [0, 359]
+            var idx = Math.round(angle) % 360;
+            if (idx < 0) idx += 360;
+            return highRGBs[idx];
+        });
+    }
+    
+    /**
+     * Convert Python positions (angles in degrees) to radians for display
+     * @param {Array<number>} positions - Array of position angles from Python (0-359)
+     * @returns {Array<number>} Array of position angles (same values, just validated)
+     */
+    function convertPositions(positions) {
+        return positions.map(function(pos) {
+            // Ensure position is in valid range [0, 360)
+            var angle = pos % 360;
+            if (angle < 0) angle += 360;
+            return angle;
+        });
+    }
 
     var preload = { 
         type: jsPsychPreload,
@@ -443,146 +498,377 @@
     experiment_timeline.push( ageItem )
     experiment_timeline.push( genderItem )
 
-    experiment_timeline.push( wheel1 )
-    experiment_timeline.push( wheel2 )
-    experiment_timeline.push( wheel3 )
-    experiment_timeline.push( wheel4 )
-    experiment_timeline.push( wheel5 )
-    experiment_timeline.push( wheel6 )
-    experiment_timeline.push( practice_screen )
+    // ============================================================
+    // SUB-EXPERIMENT 1: Encoding Study Implementation
+    // ============================================================
     
-
-    // Loop to create practice trials
-    var pracTrialCount = 0;
-    for (var ii = 0; ii < PracPatchN.length; ii++ ){
-
-        trialCount = ii + 1;
-        //[Colors, colorAngles, patchAngles] = SelectColorPatches(PracPatchN[ii])
-        [Colors, colorAngles, patchAngles] = selectRedundantColorPatches( PracPatchN[ii] , PracColorN[ii] )
-
-        var rsp_trial_advance = {
-            type: jsPsychHtmlButtonResponse,
-            stimulus: 'Press to proceed to the next practice trial',
-            choices: ['Next'],
-            data: {trial_event: 'practice_trial_start_event'},
-            prompt: 'Practice trial ' + trialCount + ' of ' + PracPatchN.length
-        }
-
-        var color_patches = {
-            data: {trial_event: 'practice_color_patch_display_event'},
-            type: jsConfidenceWheel,
-            trial_duration: 1000,
-            draw_wheel: false,
-            choice_colors: Colors,
-            patch_positionalangle: patchAngles,
-            choice_colorangles: colorAngles,
-            stimulus_height: browser_window_height * .95,
-            on_start: function(data){ // Turn off tab monitoring so people can't use it to pause color patch display
-                studyFinished = true
-            }
-        }
-
-        var retention_interval = {
-            type: jsPsychHtmlKeyboardResponse,
-            stimulus: '',
-            choices: 'NO_KEYS',
-            trial_duration: RetentionTime,
-            data: {trial_event: 'practice_fixation'},
-            on_finish: function(data){ // Turn back on tab monitoring
-            studyFinished = false
-            }
-        }
-
-        var wheel_response = {
-            data: {trial_event: 'practice_stimulus_wheel_display_event'},
-            type: jsConfidenceWheel,
-            trial_duration: 60000,
-            redundancy: PracRedundancy[ii],
-            draw_wheel: true,
-            choice_colors: Colors,
-            patch_positionalangle: patchAngles,
-            choice_colorangles: colorAngles,        
-            stimulus_height: browser_window_height * .95,
-            wheel_rotation: sessionWheelRotation,
-            color_palette: highRGBs          
-        }
-
-        experiment_timeline.push( rsp_trial_advance )
-        experiment_timeline.push( dsp_fixation )
-        experiment_timeline.push( color_patches )
-        experiment_timeline.push( retention_interval )
-        experiment_timeline.push( wheel_response )
-
+    if (subexperiment == 1) {
+        console.log("Building Sub-Experiment 1 timeline");
+        console.log("Trials:", expt_data.trials ? expt_data.trials.length : 0);
+        console.log("Practice trials:", expt_data.practice_trials ? expt_data.practice_trials.length : 0);
         
-    }
-    
-    experiment_timeline.push( experimentBegin )
-
-    //  EXPERIMENTAL TRIALS 
-    function getPoints(data) { return data.points[0]}
-    var participantPoints = [];
-
-    //experiment_timeline = []
-
-    var trialCount = 0
-    for (var ii = 0; ii < PatchN.length; ii++ ){
-        trialCount = ii + 1;
-        [Colors, colorAngles, patchAngles] = selectRedundantColorPatches( PatchN[ii] , ColorN[ii] )
-
-        var rsp_trial_advance = {
-            type: jsAdvPlot,
-            points: participantPoints,
-            trialN: TrialN,
-            patchN: PatchN
+        // Sub-Experiment 1 specific instructions (using existing for now)
+        experiment_timeline.push( wheel1 )
+        experiment_timeline.push( wheel2 )
+        experiment_timeline.push( wheel3 )
+        experiment_timeline.push( wheel4 )
+        experiment_timeline.push( wheel5 )
+        experiment_timeline.push( wheel6 )
+        experiment_timeline.push( practice_screen )
+        
+        // Retention interval duration (750ms = 750ms)
+        var retention_duration_ms = 750;
+        
+        // Function to get points for feedback plot
+        function getPoints(data) { return data.points[0] }
+        var participantPoints = [];
+        
+        // ============================================================
+        // PRACTICE TRIALS for Sub-Experiment 1
+        // ============================================================
+        if (expt_data.practice_trials && expt_data.practice_trials.length > 0) {
+            for (var p = 0; p < expt_data.practice_trials.length; p++) {
+                var practiceTrial = expt_data.practice_trials[p];
+                
+                // Convert Python data to JavaScript format
+                var practiceColors = convertColorAnglesToRGB(practiceTrial.colors);
+                var practiceColorAngles = practiceTrial.colors; // Already in degrees
+                var practicePositions = convertPositions(practiceTrial.positions);
+                
+                // Determine redundancy (1 = redundant target, 0 = non-redundant)
+                var practiceRedundancy = practiceTrial.is_redundant_target ? 1 : 0;
+                
+                // Create practice trial timeline
+                var practice_trial_advance = {
+                    type: jsPsychHtmlButtonResponse,
+                    stimulus: 'Press to proceed to the next practice trial',
+                    choices: ['Next'],
+                    data: {
+                        trial_event: 'practice_trial_start_event',
+                        trial_number: practiceTrial.trial_number,
+                        duration_ms: practiceTrial.duration_ms,
+                        cue_type: practiceTrial.cue_type,
+                        is_practice: true
+                    },
+                    prompt: 'Practice trial ' + (p + 1) + ' of ' + expt_data.practice_trials.length
+                };
+                
+                var practice_fixation = {
+                    type: jsPsychHtmlKeyboardResponse,
+                    stimulus: '<div style="font-size:25px;">+</div>',
+                    choices: 'NO_KEYS',
+                    trial_duration: 1000, // 1 second fixation
+                    data: {trial_event: 'practice_fixation'}
+                };
+                
+                var practice_color_patches = {
+                    data: {
+                        trial_event: 'practice_color_patch_display_event',
+                        trial_number: practiceTrial.trial_number,
+                        duration_ms: practiceTrial.duration_ms,
+                        cue_type: practiceTrial.cue_type,
+                        target: practiceTrial.target,
+                        is_practice: true
+                    },
+                    type: jsConfidenceWheel,
+                    trial_duration: practiceTrial.duration_ms, // Variable duration from Python
+                    draw_wheel: false,
+                    choice_colors: practiceColors,
+                    patch_positionalangle: practicePositions,
+                    choice_colorangles: practiceColorAngles,
+                    stimulus_height: browser_window_height * .95,
+                    on_start: function(data) {
+                        studyFinished = true; // Turn off tab monitoring
+                    }
+                };
+                
+                var practice_retention_interval = {
+                    type: jsPsychHtmlKeyboardResponse,
+                    stimulus: '',
+                    choices: 'NO_KEYS',
+                    trial_duration: retention_duration_ms,
+                    data: {trial_event: 'practice_retention_interval'},
+                    on_finish: function(data) {
+                        studyFinished = false; // Turn back on tab monitoring
+                    }
+                };
+                
+                var practice_wheel_response = {
+                    data: {
+                        trial_event: 'practice_stimulus_wheel_display_event',
+                        trial_number: practiceTrial.trial_number,
+                        duration_ms: practiceTrial.duration_ms,
+                        cue_type: practiceTrial.cue_type,
+                        target: practiceTrial.target,
+                        is_practice: true
+                    },
+                    type: jsConfidenceWheel,
+                    trial_duration: 60000, // 60 second max response time
+                    redundancy: practiceRedundancy,
+                    target_index: practiceTrial.target, // Direct target index from Python
+                    draw_wheel: true,
+                    choice_colors: practiceColors,
+                    patch_positionalangle: practicePositions,
+                    choice_colorangles: practiceColorAngles,
+                    stimulus_height: browser_window_height * .95,
+                    wheel_rotation: sessionWheelRotation,
+                    color_palette: highRGBs
+                };
+                
+                experiment_timeline.push(practice_trial_advance);
+                experiment_timeline.push(practice_fixation);
+                experiment_timeline.push(practice_color_patches);
+                experiment_timeline.push(practice_retention_interval);
+                experiment_timeline.push(practice_wheel_response);
+            }
         }
         
-        var color_patches = {
-            data: {trial_event: 'color_patch_display_event'},
-            type: jsConfidenceWheel,
-            trial_duration: 400,
-            draw_wheel: false,
-            choice_colors: Colors,
-            patch_positionalangle: patchAngles,
-            choice_colorangles: colorAngles,
-            stimulus_height: browser_window_height * .95,
-            on_start: function(data){ // Turn off tab monitoring so people can't use it to pause color patch display
-                studyFinished = true
+        experiment_timeline.push(experimentBegin);
+        
+        // ============================================================
+        // MAIN TRIALS for Sub-Experiment 1
+        // ============================================================
+        if (expt_data.trials && expt_data.trials.length > 0) {
+            for (var t = 0; t < expt_data.trials.length; t++) {
+                var trial = expt_data.trials[t];
+                
+                // Convert Python data to JavaScript format
+                var trialColors = convertColorAnglesToRGB(trial.colors);
+                var trialColorAngles = trial.colors; // Already in degrees
+                var trialPositions = convertPositions(trial.positions);
+                
+                // Determine redundancy (1 = redundant target, 0 = non-redundant)
+                var trialRedundancy = trial.is_redundant_target ? 1 : 0;
+                
+                // Create main trial timeline
+                var trial_advance = {
+                    type: jsAdvPlot,
+                    points: participantPoints,
+                    trialN: expt_data.trials.length,
+                    patchN: Array(expt_data.trials.length).fill(trial.set_size) // Set-size for each trial
+                };
+                
+                var trial_fixation = {
+                    type: jsPsychHtmlKeyboardResponse,
+                    stimulus: '<div style="font-size:25px;">+</div>',
+                    choices: 'NO_KEYS',
+                    trial_duration: 1000, // 1 second fixation
+                    data: {
+                        trial_event: 'fixation',
+                        trial_number: trial.trial_number,
+                        duration_ms: trial.duration_ms,
+                        cue_type: trial.cue_type
+                    }
+                };
+                
+                var trial_color_patches = {
+                    data: {
+                        trial_event: 'color_patch_display_event',
+                        trial_number: trial.trial_number,
+                        duration_ms: trial.duration_ms,
+                        cue_type: trial.cue_type,
+                        target: trial.target,
+                        set_size: trial.set_size
+                    },
+                    type: jsConfidenceWheel,
+                    trial_duration: trial.duration_ms, // Variable duration from Python
+                    draw_wheel: false,
+                    choice_colors: trialColors,
+                    patch_positionalangle: trialPositions,
+                    choice_colorangles: trialColorAngles,
+                    stimulus_height: browser_window_height * .95,
+                    on_start: function(data) {
+                        studyFinished = true; // Turn off tab monitoring
+                    }
+                };
+                
+                var trial_retention_interval = {
+                    type: jsPsychHtmlKeyboardResponse,
+                    stimulus: '',
+                    choices: 'NO_KEYS',
+                    trial_duration: retention_duration_ms,
+                    data: {
+                        trial_event: 'retention_interval',
+                        trial_number: trial.trial_number
+                    },
+                    on_finish: function(data) {
+                        studyFinished = false; // Turn back on tab monitoring
+                    }
+                };
+                
+                var trial_wheel_response = {
+                    data: {
+                        trial_event: 'stimulus_wheel_display_event',
+                        trial_number: trial.trial_number,
+                        duration_ms: trial.duration_ms,
+                        cue_type: trial.cue_type,
+                        target: trial.target,
+                        set_size: trial.set_size
+                    },
+                    type: jsConfidenceWheel,
+                    stimulus: "{{url_for('static', filename='images/stim/WhitePointLUV_ColorWheelDarkBg_L54_r9.bmp')}}",
+                    trial_duration: 60000, // 60 second max response time
+                    redundancy: trialRedundancy,
+                    target_index: trial.target, // Direct target index from Python
+                    draw_wheel: true,
+                    choice_colors: trialColors,
+                    patch_positionalangle: trialPositions,
+                    choice_colorangles: trialColorAngles,
+                    stimulus_height: browser_window_height * .95,
+                    wheel_rotation: sessionWheelRotation,
+                    color_palette: highRGBs,
+                    on_finish: function(data) {
+                        participantPoints.push(getPoints(data));
+                    }
+                };
+                
+                experiment_timeline.push(trial_advance);
+                experiment_timeline.push(trial_fixation);
+                experiment_timeline.push(trial_color_patches);
+                experiment_timeline.push(trial_retention_interval);
+                experiment_timeline.push(trial_wheel_response);
             }
         }
+        
+    } else {
+        // ============================================================
+        // ORIGINAL EXAMPLE EXPERIMENT (for Sub-Experiments 2 & 3, or fallback)
+        // ============================================================
+        console.log("Building original example experiment timeline");
+        
+        experiment_timeline.push( wheel1 )
+        experiment_timeline.push( wheel2 )
+        experiment_timeline.push( wheel3 )
+        experiment_timeline.push( wheel4 )
+        experiment_timeline.push( wheel5 )
+        experiment_timeline.push( wheel6 )
+        experiment_timeline.push( practice_screen )
+        
+        // Loop to create practice trials
+        var pracTrialCount = 0;
+        for (var ii = 0; ii < PracPatchN.length; ii++ ){
+            trialCount = ii + 1;
+            [Colors, colorAngles, patchAngles] = selectRedundantColorPatches( PracPatchN[ii] , PracColorN[ii] )
 
-        var retention_interval = {
-            type: jsPsychHtmlKeyboardResponse,
-            stimulus: '',
-            choices: 'NO_KEYS',
-            trial_duration: RetentionTime,
-            data: {trial_event: 'fixation'},
-            on_finish: function(data){ // Turn back on tab monitoring
-                studyFinished = false
+            var rsp_trial_advance = {
+                type: jsPsychHtmlButtonResponse,
+                stimulus: 'Press to proceed to the next practice trial',
+                choices: ['Next'],
+                data: {trial_event: 'practice_trial_start_event'},
+                prompt: 'Practice trial ' + trialCount + ' of ' + PracPatchN.length
             }
+
+            var color_patches = {
+                data: {trial_event: 'practice_color_patch_display_event'},
+                type: jsConfidenceWheel,
+                trial_duration: 1000,
+                draw_wheel: false,
+                choice_colors: Colors,
+                patch_positionalangle: patchAngles,
+                choice_colorangles: colorAngles,
+                stimulus_height: browser_window_height * .95,
+                on_start: function(data){ 
+                    studyFinished = true
+                }
+            }
+
+            var retention_interval = {
+                type: jsPsychHtmlKeyboardResponse,
+                stimulus: '',
+                choices: 'NO_KEYS',
+                trial_duration: RetentionTime,
+                data: {trial_event: 'practice_fixation'},
+                on_finish: function(data){ 
+                    studyFinished = false
+                }
+            }
+
+            var wheel_response = {
+                data: {trial_event: 'practice_stimulus_wheel_display_event'},
+                type: jsConfidenceWheel,
+                trial_duration: 60000,
+                redundancy: PracRedundancy[ii],
+                draw_wheel: true,
+                choice_colors: Colors,
+                patch_positionalangle: patchAngles,
+                choice_colorangles: colorAngles,        
+                stimulus_height: browser_window_height * .95,
+                wheel_rotation: sessionWheelRotation,
+                color_palette: highRGBs          
+            }
+
+            experiment_timeline.push( rsp_trial_advance )
+            experiment_timeline.push( dsp_fixation )
+            experiment_timeline.push( color_patches )
+            experiment_timeline.push( retention_interval )
+            experiment_timeline.push( wheel_response )
         }
+        
+        experiment_timeline.push( experimentBegin )
 
-        var wheel_response = {
-            data: {trial_event: 'stimulus_wheel_display_event'},
-            type: jsConfidenceWheel,
-            stimulus: "{{url_for('static', filename='images/stim/WhitePointLUV_ColorWheelDarkBg_L54_r9.bmp')}}",
-            trial_duration: 60000,
-            redundancy: Redundancy[ii],
-            draw_wheel: true,
-            choice_colors: Colors,
-            patch_positionalangle: patchAngles,
-            choice_colorangles: colorAngles,
-            stimulus_height: browser_window_height * .95,
-            wheel_rotation: sessionWheelRotation,
-            color_palette: highRGBs,
-            on_finish: function(data) { participantPoints.push(getPoints(data)) }
+        //  EXPERIMENTAL TRIALS 
+        function getPoints(data) { return data.points[0]}
+        var participantPoints = [];
 
+        var trialCount = 0
+        for (var ii = 0; ii < PatchN.length; ii++ ){
+            trialCount = ii + 1;
+            [Colors, colorAngles, patchAngles] = selectRedundantColorPatches( PatchN[ii] , ColorN[ii] )
+
+            var rsp_trial_advance = {
+                type: jsAdvPlot,
+                points: participantPoints,
+                trialN: TrialN,
+                patchN: PatchN
+            }
+            
+            var color_patches = {
+                data: {trial_event: 'color_patch_display_event'},
+                type: jsConfidenceWheel,
+                trial_duration: 400,
+                draw_wheel: false,
+                choice_colors: Colors,
+                patch_positionalangle: patchAngles,
+                choice_colorangles: colorAngles,
+                stimulus_height: browser_window_height * .95,
+                on_start: function(data){ 
+                    studyFinished = true
+                }
+            }
+
+            var retention_interval = {
+                type: jsPsychHtmlKeyboardResponse,
+                stimulus: '',
+                choices: 'NO_KEYS',
+                trial_duration: RetentionTime,
+                data: {trial_event: 'fixation'},
+                on_finish: function(data){ 
+                    studyFinished = false
+                }
+            }
+
+            var wheel_response = {
+                data: {trial_event: 'stimulus_wheel_display_event'},
+                type: jsConfidenceWheel,
+                stimulus: "{{url_for('static', filename='images/stim/WhitePointLUV_ColorWheelDarkBg_L54_r9.bmp')}}",
+                trial_duration: 60000,
+                redundancy: Redundancy[ii],
+                draw_wheel: true,
+                choice_colors: Colors,
+                patch_positionalangle: patchAngles,
+                choice_colorangles: colorAngles,
+                stimulus_height: browser_window_height * .95,
+                wheel_rotation: sessionWheelRotation,
+                color_palette: highRGBs,
+                on_finish: function(data) { participantPoints.push(getPoints(data)) }
+            }
+
+            experiment_timeline.push( rsp_trial_advance )
+            experiment_timeline.push( dsp_fixation )
+            experiment_timeline.push( color_patches )
+            experiment_timeline.push( retention_interval )
+            experiment_timeline.push( wheel_response )
         }
-
-        experiment_timeline.push( rsp_trial_advance )
-        experiment_timeline.push( dsp_fixation )
-        experiment_timeline.push( color_patches )
-        experiment_timeline.push( retention_interval )
-        experiment_timeline.push( wheel_response )
     }
 
     var send_abort = function(data){
@@ -609,6 +895,8 @@
         if (n_tries < 3){
             jsPsych.data.addProperties({
             experiment: experiment_name,
+            subexperiment: subexperiment,  // Add subexperiment to data
+            experiment_type: expt_data.experiment_type,  // Add experiment type
             subject_id: random_id,
             unique_id: jsPsych.data.getURLVariable("id"), 
             browser_window_height: browser_window_height,
