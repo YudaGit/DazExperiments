@@ -296,13 +296,13 @@
         questions: [{
             prompt: "How many color patches will be presented at a time?", 
             name: 'check1', 
-            options: ['Between 1 and 6.', 'Between 1 and 3.', 'Between 1 and 10.'], 
+            options: ['Between 2 and 6.', 'Between 1 and 3.', 'Always 6.'], 
             required: true
         }],
         data: {'part':'check'}, 
         randomize_question_order: true,
         on_finish: function(data){
-            data.accuracy = jsPsych.data.getLastTrialData().select('response').values[0].check1 == 'Between 1 and 6.' 
+            data.accuracy = jsPsych.data.getLastTrialData().select('response').values[0].check1 == 'Always 6.' 
         }
     }
 
@@ -730,9 +730,246 @@
             }
         }
         
+    } else if (subexperiment == 2) {
+        // ============================================================
+        // SUB-EXPERIMENT 2: Context Effect Hypothesis
+        // ============================================================
+        console.log("Building Sub-Experiment 2 timeline");
+        console.log("Trials:", expt_data.trials ? expt_data.trials.length : 0);
+        console.log("Practice trials:", expt_data.practice_trials ? expt_data.practice_trials.length : 0);
+        
+        // Sub-Experiment 2 specific instructions (using existing for now)
+        experiment_timeline.push( wheel1 )
+        experiment_timeline.push( wheel2 )
+        experiment_timeline.push( wheel3 )
+        experiment_timeline.push( wheel4 )
+        experiment_timeline.push( wheel5 )
+        experiment_timeline.push( wheel6 )
+        experiment_timeline.push( practice_screen )
+        
+        // Retention interval duration (750ms)
+        var retention_duration_ms = 750;
+        
+        // Function to get points for feedback plot
+        function getPoints(data) { return data.points[0] }
+        var participantPoints = [];
+        
+        // ============================================================
+        // PRACTICE TRIALS for Sub-Experiment 2
+        // ============================================================
+        if (expt_data.practice_trials && expt_data.practice_trials.length > 0) {
+            for (var p = 0; p < expt_data.practice_trials.length; p++) {
+                var practiceTrial = expt_data.practice_trials[p];
+                
+                // Convert Python data to JavaScript format
+                var practiceColors = convertColorAnglesToRGB(practiceTrial.colors);
+                var practiceColorAngles = practiceTrial.colors; // Already in degrees
+                var practicePositions = convertPositions(practiceTrial.positions);
+                
+                // Determine redundancy (1 = redundant target, 0 = non-redundant)
+                // Baseline trials have no redundancy (all unique colors)
+                var practiceRedundancy = practiceTrial.is_redundant_target ? 1 : 0;
+                
+                // Create practice trial timeline
+                var practice_trial_advance = {
+                    type: jsPsychHtmlButtonResponse,
+                    stimulus: 'Press to proceed to the next practice trial',
+                    choices: ['Next'],
+                    data: {
+                        trial_event: 'practice_trial_start_event',
+                        trial_number: practiceTrial.trial_number,
+                        duration_ms: practiceTrial.duration_ms,
+                        trial_type: practiceTrial.trial_type,
+                        set_size: practiceTrial.set_size,
+                        is_practice: true
+                    },
+                    prompt: 'Practice trial ' + (p + 1) + ' of ' + expt_data.practice_trials.length
+                };
+                
+                var practice_fixation = {
+                    type: jsPsychHtmlKeyboardResponse,
+                    stimulus: '<div style="font-size:25px;">+</div>',
+                    choices: 'NO_KEYS',
+                    trial_duration: 1000, // 1 second fixation
+                    data: {trial_event: 'practice_fixation'}
+                };
+                
+                var practice_color_patches = {
+                    data: {
+                        trial_event: 'practice_color_patch_display_event',
+                        trial_number: practiceTrial.trial_number,
+                        duration_ms: practiceTrial.duration_ms,
+                        trial_type: practiceTrial.trial_type,
+                        set_size: practiceTrial.set_size,
+                        target: practiceTrial.target,
+                        is_practice: true
+                    },
+                    type: jsConfidenceWheel,
+                    trial_duration: practiceTrial.duration_ms, // Variable duration from Python
+                    draw_wheel: false,
+                    choice_colors: practiceColors,
+                    patch_positionalangle: practicePositions,
+                    choice_colorangles: practiceColorAngles,
+                    stimulus_height: browser_window_height * .95,
+                    on_start: function(data) {
+                        studyFinished = true; // Turn off tab monitoring
+                    }
+                };
+                
+                var practice_retention_interval = {
+                    type: jsPsychHtmlKeyboardResponse,
+                    stimulus: '',
+                    choices: 'NO_KEYS',
+                    trial_duration: retention_duration_ms,
+                    data: {trial_event: 'practice_retention_interval'},
+                    on_finish: function(data) {
+                        studyFinished = false; // Turn back on tab monitoring
+                    }
+                };
+                
+                var practice_wheel_response = {
+                    data: {
+                        trial_event: 'practice_stimulus_wheel_display_event',
+                        trial_number: practiceTrial.trial_number,
+                        duration_ms: practiceTrial.duration_ms,
+                        trial_type: practiceTrial.trial_type,
+                        set_size: practiceTrial.set_size,
+                        target: practiceTrial.target,
+                        is_practice: true
+                    },
+                    type: jsConfidenceWheel,
+                    trial_duration: 60000, // 60 second max response time
+                    redundancy: practiceRedundancy,
+                    target_index: practiceTrial.target, // Direct target index from Python
+                    draw_wheel: true,
+                    choice_colors: practiceColors,
+                    patch_positionalangle: practicePositions,
+                    choice_colorangles: practiceColorAngles,
+                    stimulus_height: browser_window_height * .95,
+                    wheel_rotation: sessionWheelRotation,
+                    color_palette: highRGBs
+                };
+                
+                experiment_timeline.push(practice_trial_advance);
+                experiment_timeline.push(practice_fixation);
+                experiment_timeline.push(practice_color_patches);
+                experiment_timeline.push(practice_retention_interval);
+                experiment_timeline.push(practice_wheel_response);
+            }
+        }
+        
+        experiment_timeline.push(experimentBegin);
+        
+        // ============================================================
+        // MAIN TRIALS for Sub-Experiment 2
+        // ============================================================
+        if (expt_data.trials && expt_data.trials.length > 0) {
+            for (var t = 0; t < expt_data.trials.length; t++) {
+                var trial = expt_data.trials[t];
+                
+                // Convert Python data to JavaScript format
+                var trialColors = convertColorAnglesToRGB(trial.colors);
+                var trialColorAngles = trial.colors; // Already in degrees
+                var trialPositions = convertPositions(trial.positions);
+                
+                // Determine redundancy (1 = redundant target, 0 = non-redundant)
+                // Baseline trials have no redundancy (all unique colors)
+                var trialRedundancy = trial.is_redundant_target ? 1 : 0;
+                
+                // Create main trial timeline
+                var trial_advance = {
+                    type: jsAdvPlot,
+                    points: participantPoints,
+                    trialN: expt_data.trials.length,
+                    patchN: expt_data.trials.map(function(t) { return t.set_size; }) // Set-size for each trial
+                };
+                
+                var trial_fixation = {
+                    type: jsPsychHtmlKeyboardResponse,
+                    stimulus: '<div style="font-size:25px;">+</div>',
+                    choices: 'NO_KEYS',
+                    trial_duration: 1000, // 1 second fixation
+                    data: {
+                        trial_event: 'fixation',
+                        trial_number: trial.trial_number,
+                        duration_ms: trial.duration_ms,
+                        trial_type: trial.trial_type,
+                        set_size: trial.set_size
+                    }
+                };
+                
+                var trial_color_patches = {
+                    data: {
+                        trial_event: 'color_patch_display_event',
+                        trial_number: trial.trial_number,
+                        duration_ms: trial.duration_ms,
+                        trial_type: trial.trial_type,
+                        set_size: trial.set_size,
+                        target: trial.target
+                    },
+                    type: jsConfidenceWheel,
+                    trial_duration: trial.duration_ms, // Variable duration from Python
+                    draw_wheel: false,
+                    choice_colors: trialColors,
+                    patch_positionalangle: trialPositions,
+                    choice_colorangles: trialColorAngles,
+                    stimulus_height: browser_window_height * .95,
+                    on_start: function(data) {
+                        studyFinished = true; // Turn off tab monitoring
+                    }
+                };
+                
+                var trial_retention_interval = {
+                    type: jsPsychHtmlKeyboardResponse,
+                    stimulus: '',
+                    choices: 'NO_KEYS',
+                    trial_duration: retention_duration_ms,
+                    data: {
+                        trial_event: 'retention_interval',
+                        trial_number: trial.trial_number
+                    },
+                    on_finish: function(data) {
+                        studyFinished = false; // Turn back on tab monitoring
+                    }
+                };
+                
+                var trial_wheel_response = {
+                    data: {
+                        trial_event: 'stimulus_wheel_display_event',
+                        trial_number: trial.trial_number,
+                        duration_ms: trial.duration_ms,
+                        trial_type: trial.trial_type,
+                        set_size: trial.set_size,
+                        target: trial.target
+                    },
+                    type: jsConfidenceWheel,
+                    stimulus: "{{url_for('static', filename='images/stim/WhitePointLUV_ColorWheelDarkBg_L54_r9.bmp')}}",
+                    trial_duration: 60000, // 60 second max response time
+                    redundancy: trialRedundancy,
+                    target_index: trial.target, // Direct target index from Python
+                    draw_wheel: true,
+                    choice_colors: trialColors,
+                    patch_positionalangle: trialPositions,
+                    choice_colorangles: trialColorAngles,
+                    stimulus_height: browser_window_height * .95,
+                    wheel_rotation: sessionWheelRotation,
+                    color_palette: highRGBs,
+                    on_finish: function(data) {
+                        participantPoints.push(getPoints(data));
+                    }
+                };
+                
+                experiment_timeline.push(trial_advance);
+                experiment_timeline.push(trial_fixation);
+                experiment_timeline.push(trial_color_patches);
+                experiment_timeline.push(trial_retention_interval);
+                experiment_timeline.push(trial_wheel_response);
+            }
+        }
+        
     } else {
         // ============================================================
-        // ORIGINAL EXAMPLE EXPERIMENT (for Sub-Experiments 2 & 3, or fallback)
+        // ORIGINAL EXAMPLE EXPERIMENT (for Sub-Experiment 3, or fallback)
         // ============================================================
         console.log("Building original example experiment timeline");
         

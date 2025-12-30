@@ -44,6 +44,17 @@ var jsConfidenceWheel = (function (jspsych) {
                 type: jspsych.ParameterType.INT,
                 pretty_name: "Target Index",
                 default: null,
+            },
+            orientations:{
+                type: jspsych.ParameterType.array,
+                pretty_name: "Orientations",
+                default: null,
+                array: true,
+            },
+            stimulus_type:{
+                type: jspsych.ParameterType.STRING,
+                pretty_name: "Stimulus Type",
+                default: 'color_patches',  // 'color_patches' or 'orientation_bars'
             }
         }   
     }
@@ -90,7 +101,55 @@ var jsConfidenceWheel = (function (jspsych) {
             return targetN;
         }
 
-        
+        drawOrientationBars(ctx, trial, centerX, centerY, patchradius, patchRadius) {
+            /**
+             * Draw colored orientation bars for Sub-Experiment 3
+             * 
+             * Bar dimensions:
+             * - Length: approximately equal to color patch diameter (2 * patchRadius)
+             * - Width:Length ratio = 1:7
+             * - Each bar has a color and orientation (0-180°)
+             */
+            
+            // Bar length = diameter of color patch
+            var barLength = 2 * patchRadius;
+            // Bar width = length / 7 (1:7 ratio)
+            var barWidth = barLength / 7;
+            
+            // Draw each bar
+            for (var ii = 0; ii < trial.patch_positionalangle.length; ii++) {
+                // Calculate bar center position (same as patch position)
+                var posAngle = trial.patch_positionalangle[ii] * Math.PI / 180;
+                var barCenterX = centerX + patchradius * Math.cos(posAngle);
+                var barCenterY = centerY + patchradius * Math.sin(posAngle);
+                
+                // Get bar color
+                var rgbstr = 'rgb(' + trial.choice_colors[ii][0] + ',' + 
+                                      trial.choice_colors[ii][1] + ',' + 
+                                      trial.choice_colors[ii][2] + ')';
+                
+                // Get bar orientation (convert to radians, 0-180° -> 0-π)
+                var orientationRad = trial.orientations[ii] * Math.PI / 180;
+                
+                // Save context state
+                ctx.save();
+                
+                // Translate to bar center
+                ctx.translate(barCenterX, barCenterY);
+                
+                // Rotate to bar orientation
+                ctx.rotate(orientationRad);
+                
+                // Draw bar (centered at origin after translation/rotation)
+                ctx.fillStyle = rgbstr;
+                ctx.strokeStyle = rgbstr;
+                ctx.fillRect(-barLength/2, -barWidth/2, barLength, barWidth);
+                ctx.strokeRect(-barLength/2, -barWidth/2, barLength, barWidth);
+                
+                // Restore context state
+                ctx.restore();
+            }
+        }
 
         trial(display_element, trial) {
             // Set Base Variables
@@ -131,24 +190,32 @@ var jsConfidenceWheel = (function (jspsych) {
             //console.log('p', indiv_patch_radius)
             
             if (trial.draw_wheel == false){
-                // Set timeout when showing colored patches
+                // Set timeout when showing stimuli
                 this.jsPsych.pluginAPI.setTimeout(() => {
                     end_trial();
                 }, trial.trial_duration);
-                // Draw Colored Patches
-                for (var ii = 0; ii < trial.patch_positionalangle.length; ii++){
-                    var patches = new Path2D();
-                    patches.arc(midx + patchradius * Math.cos( trial.patch_positionalangle[ii] * Math.PI/180 ), 
-                                midy + patchradius * Math.sin( trial.patch_positionalangle[ii] * Math.PI/180 ), 
-                                indiv_patch_radius, 0, 2 * Math.PI);
-                    var rgbstr = 'rgb(' + trial.choice_colors[ii][0] + ',' + 
-                                          trial.choice_colors[ii][1] + ',' + 
-                                          trial.choice_colors[ii][2] + ')'
-                    ctx.strokeStyle = rgbstr
-                    ctx.fillStyle   = rgbstr
-                    ctx.fill(patches);
-                    ctx.stroke(patches);
-                    display_element.insertBefore(canvas, null); 
+                
+                // Check stimulus type
+                if (trial.stimulus_type === 'orientation_bars' && trial.orientations) {
+                    // Draw Colored Orientation Bars
+                    this.drawOrientationBars(ctx, trial, midx, midy, patchradius, indiv_patch_radius);
+                    display_element.insertBefore(canvas, null);
+                } else {
+                    // Draw Colored Patches (default)
+                    for (var ii = 0; ii < trial.patch_positionalangle.length; ii++){
+                        var patches = new Path2D();
+                        patches.arc(midx + patchradius * Math.cos( trial.patch_positionalangle[ii] * Math.PI/180 ), 
+                                    midy + patchradius * Math.sin( trial.patch_positionalangle[ii] * Math.PI/180 ), 
+                                    indiv_patch_radius, 0, 2 * Math.PI);
+                        var rgbstr = 'rgb(' + trial.choice_colors[ii][0] + ',' + 
+                                              trial.choice_colors[ii][1] + ',' + 
+                                              trial.choice_colors[ii][2] + ')'
+                        ctx.strokeStyle = rgbstr
+                        ctx.fillStyle   = rgbstr
+                        ctx.fill(patches);
+                        ctx.stroke(patches);
+                        display_element.insertBefore(canvas, null); 
+                    }
                 }
             }
             
