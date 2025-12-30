@@ -55,6 +55,21 @@ var jsConfidenceWheel = (function (jspsych) {
                 type: jspsych.ParameterType.STRING,
                 pretty_name: "Stimulus Type",
                 default: 'color_patches',  // 'color_patches' or 'orientation_bars'
+            },
+            response_type:{
+                type: jspsych.ParameterType.STRING,
+                pretty_name: "Response Type",
+                default: 'color_wheel',  // 'color_wheel' or 'orientation_bar'
+            },
+            show_mask:{
+                type: jspsych.ParameterType.BOOL,
+                pretty_name: "Show Visual Mask",
+                default: false,  // Show visual mask (for Sub-Experiment 3 retention interval)
+            },
+            mask_data:{
+                type: jspsych.ParameterType.OBJECT,
+                pretty_name: "Mask Data",
+                default: null,  // Pre-generated mask data (colors, orientations, positions)
             }
         }   
     }
@@ -151,6 +166,230 @@ var jsConfidenceWheel = (function (jspsych) {
             }
         }
 
+        drawOrientationBarResponse(ctx, trial, centerX, centerY, targetN, patchRadius) {
+            /**
+             * Draw orientation bar response interface for Sub-Experiment 3
+             * 
+             * Draws a single orientation bar at center (colored like target)
+             * This bar serves as both cue and response interface
+             * Mouse up/down rotates the bar, click confirms response
+             */
+            
+            // Bar length = diameter of color patch
+            var barLength = 2 * patchRadius;
+            // Bar width = length / 7 (1:7 ratio)
+            var barWidth = barLength / 7;
+            
+            // Get target color (bar color matches target item)
+            var targetColor = trial.choice_colors[targetN];
+            var rgbstr = 'rgb(' + targetColor[0] + ',' + targetColor[1] + ',' + targetColor[2] + ')';
+            
+            // Initial orientation (will be updated by mouse movement)
+            // Store in trial object so it persists across redraws
+            if (trial.current_orientation === undefined) {
+                trial.current_orientation = 0; // Start at 0°
+            }
+            
+            // Draw the orientation bar at center
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            ctx.rotate(trial.current_orientation * Math.PI / 180); // Rotate to current orientation
+            
+            ctx.fillStyle = rgbstr;
+            ctx.strokeStyle = rgbstr;
+            ctx.lineWidth = 2;
+            ctx.fillRect(-barLength/2, -barWidth/2, barLength, barWidth);
+            ctx.strokeRect(-barLength/2, -barWidth/2, barLength, barWidth);
+            
+            ctx.restore();
+            
+            display_element.insertBefore(canvas, null);
+        }
+
+        drawOrientationBarFeedback(ctx, trial, centerX, centerY, targetN, patchRadius, responseOrientation, targetOrientation) {
+            /**
+             * Draw feedback for orientation bar response
+             * Shows response orientation (white bar) and correct orientation (green bar)
+             */
+            
+            var barLength = 2 * patchRadius;
+            var barWidth = barLength / 7;
+            var targetColor = trial.choice_colors[targetN];
+            
+            // Draw response orientation (white bar)
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            ctx.rotate(responseOrientation * Math.PI / 180);
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.fillRect(-barLength/2, -barWidth/2, barLength, barWidth);
+            ctx.strokeRect(-barLength/2, -barWidth/2, barLength, barWidth);
+            ctx.restore();
+            
+            // Draw correct orientation (green bar, slightly offset)
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            ctx.rotate(targetOrientation * Math.PI / 180);
+            ctx.fillStyle = 'lime';
+            ctx.strokeStyle = 'lime';
+            ctx.lineWidth = 2;
+            // Offset slightly so both bars are visible
+            ctx.translate(barWidth * 1.5, 0);
+            ctx.fillRect(-barLength/2, -barWidth/2, barLength, barWidth);
+            ctx.strokeRect(-barLength/2, -barWidth/2, barLength, barWidth);
+            ctx.restore();
+            
+            display_element.insertBefore(canvas, null);
+        }
+
+        generateVisualMask(centerX, centerY, maskRadius, barRadius, numBars) {
+            /**
+             * Generate visual mask data for Sub-Experiment 3 retention interval
+             * 
+             * Creates random colored orientation bars covering the entire mask area
+             * Mask is a circle that fully covers the stimulus display area
+             * 
+             * @param {number} centerX - X coordinate of mask center
+             * @param {number} centerY - Y coordinate of mask center
+             * @param {number} maskRadius - Radius of mask circle (larger than stimulus area)
+             * @param {number} barRadius - Radius of individual bars (same as stimulus bars)
+             * @param {number} numBars - Number of bars to generate (dense coverage)
+             * @returns {Object} Mask data with colors, orientations, and positions
+             */
+            
+            var maskData = {
+                colors: [],
+                orientations: [],
+                positions: []
+            };
+            
+            // Bar dimensions (same as stimulus bars)
+            var barLength = 2 * barRadius;
+            var barWidth = barLength / 7;
+            
+            // Generate random bars covering the mask area
+            // Use a grid-based approach with some randomness for dense coverage
+            var gridSize = Math.ceil(Math.sqrt(numBars));
+            var cellSize = (maskRadius * 2) / gridSize;
+            
+            for (var i = 0; i < numBars; i++) {
+                // Random position within mask circle
+                var angle = Math.random() * 2 * Math.PI;
+                var distance = Math.random() * maskRadius;
+                var x = centerX + distance * Math.cos(angle);
+                var y = centerY + distance * Math.sin(angle);
+                
+                // Ensure bar is within mask circle (accounting for bar length)
+                var distFromCenter = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
+                if (distFromCenter + barLength/2 > maskRadius) {
+                    // Adjust position to keep bar within circle
+                    var adjustFactor = (maskRadius - barLength/2) / distFromCenter;
+                    x = centerX + (x - centerX) * adjustFactor;
+                    y = centerY + (y - centerY) * adjustFactor;
+                }
+                
+                // Random color (0-360°)
+                var colorAngle = Math.floor(Math.random() * 360);
+                var colorRGB = this.colorAngleToRGB(colorAngle);
+                
+                // Random orientation (0-180°)
+                var orientation = Math.random() * 180;
+                
+                maskData.colors.push(colorRGB);
+                maskData.orientations.push(orientation);
+                maskData.positions.push({x: x, y: y});
+            }
+            
+            return maskData;
+        }
+
+        colorAngleToRGB(angle) {
+            /**
+             * Convert color angle (0-360°) to RGB
+             * Uses the same color space as the color wheel
+             */
+            // Use the highRGBs array if available (from color wheel)
+            if (typeof highRGBs !== 'undefined' && highRGBs.length > 0) {
+                var index = Math.round(angle) % 360;
+                return highRGBs[index];
+            }
+            
+            // Fallback: simple HSV to RGB conversion
+            var h = angle / 360;
+            var s = 1.0;
+            var v = 0.8;
+            
+            var c = v * s;
+            var x = c * (1 - Math.abs((h * 6) % 2 - 1));
+            var m = v - c;
+            
+            var r, g, b;
+            if (h < 1/6) { r = c; g = x; b = 0; }
+            else if (h < 2/6) { r = x; g = c; b = 0; }
+            else if (h < 3/6) { r = 0; g = c; b = x; }
+            else if (h < 4/6) { r = 0; g = x; b = c; }
+            else if (h < 5/6) { r = x; g = 0; b = c; }
+            else { r = c; g = 0; b = x; }
+            
+            return [
+                Math.round((r + m) * 255),
+                Math.round((g + m) * 255),
+                Math.round((b + m) * 255)
+            ];
+        }
+
+        drawVisualMask(ctx, trial, centerX, centerY, maskRadius, barRadius) {
+            /**
+             * Draw visual mask for Sub-Experiment 3 retention interval
+             * 
+             * Draws a dense array of random colored orientation bars
+             * covering the entire mask area (circle)
+             */
+            
+            var maskData;
+            
+            // Use pre-generated mask data if available, otherwise generate new
+            if (trial.mask_data && trial.mask_data.colors && trial.mask_data.colors.length > 0) {
+                maskData = trial.mask_data;
+            } else {
+                // Generate mask data (dense coverage: ~200 bars for good coverage)
+                var numBars = 200;
+                maskData = this.generateVisualMask(centerX, centerY, maskRadius, barRadius, numBars);
+                // Store for reuse
+                trial.mask_data = maskData;
+            }
+            
+            // Bar dimensions (same as stimulus bars)
+            var barLength = 2 * barRadius;
+            var barWidth = barLength / 7;
+            
+            // Draw all bars
+            for (var i = 0; i < maskData.colors.length; i++) {
+                var color = maskData.colors[i];
+                var orientation = maskData.orientations[i];
+                var pos = maskData.positions[i];
+                
+                var rgbstr = 'rgb(' + color[0] + ',' + color[1] + ',' + color[2] + ')';
+                var orientationRad = orientation * Math.PI / 180;
+                
+                // Draw bar
+                ctx.save();
+                ctx.translate(pos.x, pos.y);
+                ctx.rotate(orientationRad);
+                
+                ctx.fillStyle = rgbstr;
+                ctx.strokeStyle = rgbstr;
+                ctx.lineWidth = 1;
+                ctx.fillRect(-barLength/2, -barWidth/2, barLength, barWidth);
+                ctx.strokeRect(-barLength/2, -barWidth/2, barLength, barWidth);
+                
+                ctx.restore();
+            }
+            
+            display_element.insertBefore(canvas, null);
+        }
+
         trial(display_element, trial) {
             // Set Base Variables
             var maxtime = 10000
@@ -195,8 +434,20 @@ var jsConfidenceWheel = (function (jspsych) {
                     end_trial();
                 }, trial.trial_duration);
                 
+                // Check if showing visual mask (for Sub-Experiment 3 retention interval)
+                if (trial.show_mask == true) {
+                    // Calculate mask radius (larger than stimulus area to fully cover it)
+                    // Stimulus centers are on a circle, so bars extend outside that circle
+                    // Mask radius = patch radius + bar length (to fully cover)
+                    var barLength = 2 * indiv_patch_radius;
+                    var maskRadius = patchradius + barLength;
+                    
+                    // Draw visual mask
+                    this.drawVisualMask(ctx, trial, midx, midy, maskRadius, indiv_patch_radius);
+                    display_element.insertBefore(canvas, null);
+                }
                 // Check stimulus type
-                if (trial.stimulus_type === 'orientation_bars' && trial.orientations) {
+                else if (trial.stimulus_type === 'orientation_bars' && trial.orientations) {
                     // Draw Colored Orientation Bars
                     this.drawOrientationBars(ctx, trial, midx, midy, patchradius, indiv_patch_radius);
                     display_element.insertBefore(canvas, null);
@@ -221,55 +472,72 @@ var jsConfidenceWheel = (function (jspsych) {
             
             if (trial.draw_wheel == true){
                 
-                // Calculate Wheel Colors + Rotation
-                const vector = [...Array(360).keys()];
-                // console.log(vector)
-                const vectorPlus = vector.map((element) => element - Number(trial.wheel_rotation));
-                const wrappedVector = vectorPlus.map((element) => {
-                    if (element >= 359) {return element - 359 }
-                    else if (element < 0) { return element + 359 } 
-                    else { return element }
-                });      
+                // Check response type
+                if (trial.response_type === 'orientation_bar') {
+                    // ============================================================
+                    // ORIENTATION BAR RESPONSE (Sub-Experiment 3)
+                    // ============================================================
+                    // Draw orientation bar at center (serves as cue and response interface)
+                    // Bar color matches target item color
+                    // Mouse up/down rotates bar, click confirms
+                    
+                    this.drawOrientationBarResponse(ctx, trial, midx, midy, targetN, indiv_patch_radius);
+                    
+                } else {
+                    // ============================================================
+                    // COLOR WHEEL RESPONSE (Sub-Experiments 1 & 2)
+                    // ============================================================
+                    
+                    // Calculate Wheel Colors + Rotation
+                    const vector = [...Array(360).keys()];
+                    // console.log(vector)
+                    const vectorPlus = vector.map((element) => element - Number(trial.wheel_rotation));
+                    const wrappedVector = vectorPlus.map((element) => {
+                        if (element >= 359) {return element - 359 }
+                        else if (element < 0) { return element + 359 } 
+                        else { return element }
+                    });      
+                    
+                    var rgbs = wrappedVector.map((index) => highRGBs[index]);
+                    
+                    
                 
-                var rgbs = wrappedVector.map((index) => highRGBs[index]);
-                
-                
-            
-                // Draw Color Wheel                
-                var outer_radius = Math.round( window.outerHeight * 0.354 )
-                var inner_radius = Math.round(outer_radius - window.outerHeight * 0.028)
+                    // Draw Color Wheel                
+                    var outer_radius = Math.round( window.outerHeight * 0.354 )
+                    var inner_radius = Math.round(outer_radius - window.outerHeight * 0.028)
 
-                
-                var graphics = canvas.getContext("2d");
-                // console.log(Number(trial.wheel_rotation))
-                // console.log(rgbs)
-                for (ii = 0; ii < 359.5; ii += 0.01){
-                    var rad = ii * (2*Math.PI) / 360;
-                    graphics.strokeStyle = "rgb("+ rgbs[Math.round(ii)][0] +"," + rgbs[Math.round(ii)][1] + "," + rgbs[Math.round(ii)][2] + ")"
-                    graphics.lineWidth = outer_radius/125
-                    graphics.beginPath();
-                    graphics.moveTo(midx + outer_radius * Math.cos(rad), midy + outer_radius * Math.sin(rad) )
-                    graphics.lineTo(midx + inner_radius * Math.cos(rad), midy + inner_radius * Math.sin(rad) )
-                    graphics.stroke();
-                }
-                display_element.insertBefore(canvas, null);
-                ctx.save();
-
-                for (var ii = 0; ii < trial.patch_positionalangle.length; ii++){
-                    var patches = new Path2D();
-                    patches.arc(midx + patchradius * Math.cos( trial.patch_positionalangle[ii] * Math.PI/180 ), 
-                                midy + patchradius * Math.sin( trial.patch_positionalangle[ii] * Math.PI/180 ), 
-                                indiv_patch_radius, 0, 2 * Math.PI);
-                    if (ii == targetN){
-                        ctx.lineWidth = 3
-                        ctx.strokeStyle = 'white'
-                    } else {
-                        ctx.strokeStyle = 'rgb( 128, 128, 128 )'
+                    
+                    var graphics = canvas.getContext("2d");
+                    // console.log(Number(trial.wheel_rotation))
+                    // console.log(rgbs)
+                    for (ii = 0; ii < 359.5; ii += 0.01){
+                        var rad = ii * (2*Math.PI) / 360;
+                        graphics.strokeStyle = "rgb("+ rgbs[Math.round(ii)][0] +"," + rgbs[Math.round(ii)][1] + "," + rgbs[Math.round(ii)][2] + ")"
+                        graphics.lineWidth = outer_radius/125
+                        graphics.beginPath();
+                        graphics.moveTo(midx + outer_radius * Math.cos(rad), midy + outer_radius * Math.sin(rad) )
+                        graphics.lineTo(midx + inner_radius * Math.cos(rad), midy + inner_radius * Math.sin(rad) )
+                        graphics.stroke();
                     }
-                    ctx.fillStyle   = 'rgb( 128, 128, 128 )'
-                    ctx.fill(patches);
-                    ctx.stroke(patches);
-                    display_element.insertBefore(canvas, null); 
+                    display_element.insertBefore(canvas, null);
+                    ctx.save();
+
+                    for (var ii = 0; ii < trial.patch_positionalangle.length; ii++){
+                        var patches = new Path2D();
+                        patches.arc(midx + patchradius * Math.cos( trial.patch_positionalangle[ii] * Math.PI/180 ), 
+                                    midy + patchradius * Math.sin( trial.patch_positionalangle[ii] * Math.PI/180 ), 
+                                    indiv_patch_radius, 0, 2 * Math.PI);
+                        if (ii == targetN){
+                            ctx.lineWidth = 3
+                            ctx.strokeStyle = 'white'
+                        } else {
+                            ctx.strokeStyle = 'rgb( 128, 128, 128 )'
+                        }
+                        ctx.fillStyle   = 'rgb( 128, 128, 128 )'
+                        ctx.fill(patches);
+                        ctx.stroke(patches);
+                        display_element.insertBefore(canvas, null); 
+                    }
                 }
 
                 
@@ -318,12 +586,134 @@ var jsConfidenceWheel = (function (jspsych) {
 
             if (trial.draw_wheel == true & endtrial == false){
 
-                canvas.addEventListener("mousemove", function(e) {
-                    x_mouse = e.offsetX - canvas.width/2;
-                    y_mouse = canvas.height/2 - e.offsetY;
-                });
+                // Check response type for mouse interaction
+                if (trial.response_type === 'orientation_bar') {
+                    // ============================================================
+                    // ORIENTATION BAR RESPONSE: Mouse up/down rotation
+                    // ============================================================
+                    
+                    // Initialize orientation tracking
+                    if (trial.current_orientation === undefined) {
+                        trial.current_orientation = 0; // Start at 0°
+                    }
+                    
+                    var lastMouseY = null;
+                    var rotationSpeed = 0.3; // Degrees per pixel of vertical mouse movement
+                    
+                    // Track mouse Y position for rotation (up/down movement)
+                    // Rotation happens on mouse movement (no button press needed)
+                    canvas.addEventListener("mousemove", function(e) {
+                        var currentY = e.offsetY;
+                        
+                        // Check if starting outside center circle (only on first movement)
+                        if (lastMouseY === null) {
+                            var x_mouse = e.offsetX - canvas.width/2;
+                            var y_mouse = canvas.height/2 - e.offsetY;
+                            var distance = Math.sqrt(x_mouse * x_mouse + y_mouse * y_mouse);
+                            if (distance > startingradius) {
+                                startoutofCenter[0] = true;
+                            }
+                            // Check for too fast/slow leaving center
+                            if (distance >= startingradius & leavecenter == false) {
+                                leavecenter = true;
+                                leavecenterRT.push(performance.now() - start_time);
+                                if (Math.round(performance.now() - start_time) <= startinitiatetime & toofast[0] == false) {
+                                    toofast[0] = true;
+                                }
+                                else if (Math.round(performance.now() - start_time) >= maxinitiatetime & tooslow[0] == false) {
+                                    tooslow[0] = true;
+                                }
+                            }
+                        }
+                        
+                        // Rotate bar based on vertical mouse movement
+                        if (lastMouseY !== null) {
+                            var deltaY = currentY - lastMouseY;
+                            // Up (negative deltaY) = CCW (increase angle)
+                            // Down (positive deltaY) = CW (decrease angle)
+                            trial.current_orientation -= deltaY * rotationSpeed;
+                            
+                            // Wrap orientation to 0-180° range
+                            while (trial.current_orientation < 0) {
+                                trial.current_orientation += 180;
+                            }
+                            while (trial.current_orientation >= 180) {
+                                trial.current_orientation -= 180;
+                            }
+                        }
+                        
+                        lastMouseY = currentY;
+                    }.bind(this));
+                    
+                    // Click: confirm response
+                    canvas.addEventListener("click", function(e) {
+                        if (responded == false) {
+                            responded = true;
+                            // Response RT
+                            rt.push(performance.now() - start_time);
+                            
+                            // Record orientation response (0-180°)
+                            var response_orientation = trial.current_orientation;
+                            degrees.push(response_orientation);
+                            radians.push(response_orientation * Math.PI / 180);
+                            
+                            // Calculate error (difference from target orientation)
+                            var target_orientation = trial.orientations[targetN];
+                            var error = response_orientation - target_orientation;
+                            
+                            // Wrap error to -90 to +90 range (shortest path)
+                            if (error > 90) {
+                                error = error - 180;
+                            } else if (error < -90) {
+                                error = error + 180;
+                            }
+                            
+                            resp_error.push(error);
+                            derotated_degrees.push(response_orientation); // For compatibility
+                            
+                            // Draw feedback
+                            this.drawOrientationBarFeedback(ctx, trial, midx, midy, targetN, indiv_patch_radius, response_orientation, target_orientation);
+                            
+                            // Calculate points (100 - error percentage)
+                            points.push(100 - Math.round(Math.abs(error) / 90 * 100));
+                            
+                            finished = true;
+                            end_trial();
+                        }
+                    }.bind(this));
+                    
+                    // Continuous redraw for smooth rotation
+                    var animationFrameId;
+                    var self = this;
+                    function animateOrientationBar() {
+                        if (!finished && !endtrial) {
+                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+                            // Redraw white circle
+                            const circle = new Path2D();
+                            circle.arc(midx, midy, startingradius, 0, 2 * Math.PI);
+                            ctx.strokeStyle = 'white';
+                            ctx.stroke(circle);
+                            // Redraw orientation bar
+                            self.drawOrientationBarResponse(ctx, trial, midx, midy, targetN, indiv_patch_radius);
+                            animationFrameId = requestAnimationFrame(animateOrientationBar);
+                        }
+                    }
+                    animateOrientationBar();
+                    
+                    // Store animation frame ID for cleanup in end_trial
+                    trial._orientationBarAnimationId = animationFrameId;
+                    
+                } else {
+                    // ============================================================
+                    // COLOR WHEEL RESPONSE: Original mouse interaction
+                    // ============================================================
+                    
+                    canvas.addEventListener("mousemove", function(e) {
+                        x_mouse = e.offsetX - canvas.width/2;
+                        y_mouse = canvas.height/2 - e.offsetY;
+                    });
 
-                function checkMousePosition() {
+                    function checkMousePosition() {
                     pastXcoords.push(x_mouse);
                     pastYcoords.push(y_mouse);
                     interval_count += 1
@@ -452,10 +842,16 @@ var jsConfidenceWheel = (function (jspsych) {
                         } 
                     }
                 }
-                mousecheckinterval = setInterval(checkMousePosition, interval);                
-              }
+                    mousecheckinterval = setInterval(checkMousePosition, interval);
+                } // End else (color wheel response)
+            } // End if (trial.draw_wheel == true)
 
             const end_trial = () => {
+                // Cancel orientation bar animation if active
+                if (trial._orientationBarAnimationId !== undefined) {
+                    cancelAnimationFrame(trial._orientationBarAnimationId);
+                }
+                
                 // Check for start out of center
                 for (ii = 0; ii < pastYcoords.length; ii++){
                     if (pastYcoords[ii] != 0 || pastXcoords[ii] != 0){
@@ -467,7 +863,9 @@ var jsConfidenceWheel = (function (jspsych) {
                 }
 
                 // ctx.clearRect(0, 0, canvas.width, canvas.height);
-                clearInterval(mousecheckinterval)
+                if (mousecheckinterval) {
+                    clearInterval(mousecheckinterval);
+                }
                 ctx.font = "20px Arial";
                 if (trial.draw_wheel){                    
                     var wait_time = 1000                    

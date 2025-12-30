@@ -967,9 +967,263 @@
             }
         }
         
+    } else if (subexperiment == 3) {
+        // ============================================================
+        // SUB-EXPERIMENT 3: Colored Orientation Bars
+        // ============================================================
+        console.log("Building Sub-Experiment 3 timeline");
+        console.log("Trials:", expt_data.trials ? expt_data.trials.length : 0);
+        console.log("Practice trials:", expt_data.practice_trials ? expt_data.practice_trials.length : 0);
+        
+        // Sub-Experiment 3 specific instructions (using existing for now, will customize later)
+        experiment_timeline.push( wheel1 )
+        experiment_timeline.push( wheel2 )
+        experiment_timeline.push( wheel3 )
+        experiment_timeline.push( wheel4 )
+        experiment_timeline.push( wheel5 )
+        experiment_timeline.push( wheel6 )
+        experiment_timeline.push( practice_screen )
+        
+        // Retention interval duration (750ms)
+        var retention_duration_ms = 750;
+        
+        // Function to get points for feedback plot
+        function getPoints(data) { return data.points[0] }
+        var participantPoints = [];
+        
+        // ============================================================
+        // PRACTICE TRIALS for Sub-Experiment 3
+        // ============================================================
+        if (expt_data.practice_trials && expt_data.practice_trials.length > 0) {
+            for (var p = 0; p < expt_data.practice_trials.length; p++) {
+                var practiceTrial = expt_data.practice_trials[p];
+                
+                // Convert Python data to JavaScript format
+                var practiceColors = convertColorAnglesToRGB(practiceTrial.colors);
+                var practiceColorAngles = practiceTrial.colors; // Already in degrees
+                var practicePositions = convertPositions(practiceTrial.positions);
+                var practiceOrientations = practiceTrial.orientations; // Already in degrees (0-180)
+                
+                // Create practice trial timeline
+                var practice_trial_advance = {
+                    type: jsPsychHtmlButtonResponse,
+                    stimulus: 'Press to proceed to the next practice trial',
+                    choices: ['Next'],
+                    data: {
+                        trial_event: 'practice_trial_start_event',
+                        trial_number: practiceTrial.trial_number,
+                        duration_ms: practiceTrial.duration_ms,
+                        trial_type: practiceTrial.trial_type,
+                        set_size: practiceTrial.set_size,
+                        target: practiceTrial.target,
+                        is_practice: true
+                    },
+                    prompt: 'Practice trial ' + (p + 1) + ' of ' + expt_data.practice_trials.length
+                };
+                
+                var practice_fixation = {
+                    type: jsPsychHtmlKeyboardResponse,
+                    stimulus: '<div style="font-size:25px;">+</div>',
+                    choices: 'NO_KEYS',
+                    trial_duration: 1000, // 1 second fixation
+                    data: {trial_event: 'practice_fixation'}
+                };
+                
+                // Stimulus display: Colored orientation bars
+                var practice_orientation_bars = {
+                    data: {
+                        trial_event: 'practice_orientation_bars_display_event',
+                        trial_number: practiceTrial.trial_number,
+                        duration_ms: practiceTrial.duration_ms,
+                        trial_type: practiceTrial.trial_type,
+                        set_size: practiceTrial.set_size,
+                        target: practiceTrial.target,
+                        is_practice: true
+                    },
+                    type: jsConfidenceWheel,
+                    trial_duration: practiceTrial.duration_ms, // Variable duration from Python
+                    draw_wheel: false,
+                    stimulus_type: 'orientation_bars', // Use orientation bars
+                    choice_colors: practiceColors,
+                    patch_positionalangle: practicePositions,
+                    choice_colorangles: practiceColorAngles,
+                    orientations: practiceOrientations, // Orientation angles (0-180°)
+                    stimulus_height: browser_window_height * .95,
+                    on_start: function(data) {
+                        studyFinished = true; // Turn off tab monitoring
+                    }
+                };
+                
+                // Retention interval with visual mask
+                var practice_retention_interval = {
+                    type: jsConfidenceWheel,
+                    trial_duration: retention_duration_ms,
+                    draw_wheel: false,
+                    show_mask: true, // Enable visual mask
+                    stimulus_height: browser_window_height * .95,
+                    data: {
+                        trial_event: 'practice_retention_interval',
+                        trial_number: practiceTrial.trial_number
+                    },
+                    on_finish: function(data) {
+                        studyFinished = false; // Turn back on tab monitoring
+                    }
+                };
+                
+                // Response phase: Orientation bar response
+                var practice_orientation_response = {
+                    data: {
+                        trial_event: 'practice_orientation_response_event',
+                        trial_number: practiceTrial.trial_number,
+                        trial_type: practiceTrial.trial_type,
+                        set_size: practiceTrial.set_size,
+                        target: practiceTrial.target,
+                        target_orientation: practiceOrientations[practiceTrial.target],
+                        is_practice: true
+                    },
+                    type: jsConfidenceWheel,
+                    trial_duration: 60000, // 60 second max response time
+                    draw_wheel: true,
+                    response_type: 'orientation_bar', // Use orientation bar response
+                    choice_colors: practiceColors,
+                    patch_positionalangle: practicePositions,
+                    choice_colorangles: practiceColorAngles,
+                    orientations: practiceOrientations,
+                    target_index: practiceTrial.target, // Specify target directly
+                    stimulus_height: browser_window_height * .95,
+                    wheel_rotation: sessionWheelRotation,
+                    color_palette: highRGBs,
+                    on_finish: function(data) {
+                        participantPoints.push(getPoints(data));
+                    }
+                };
+                
+                experiment_timeline.push(practice_trial_advance);
+                experiment_timeline.push(practice_fixation);
+                experiment_timeline.push(practice_orientation_bars);
+                experiment_timeline.push(practice_retention_interval);
+                experiment_timeline.push(practice_orientation_response);
+            }
+        }
+        
+        // ============================================================
+        // MAIN TRIALS for Sub-Experiment 3
+        // ============================================================
+        experiment_timeline.push( experimentBegin );
+        
+        if (expt_data.trials && expt_data.trials.length > 0) {
+            for (var t = 0; t < expt_data.trials.length; t++) {
+                var trial = expt_data.trials[t];
+                
+                // Convert Python data to JavaScript format
+                var trialColors = convertColorAnglesToRGB(trial.colors);
+                var trialColorAngles = trial.colors; // Already in degrees
+                var trialPositions = convertPositions(trial.positions);
+                var trialOrientations = trial.orientations; // Already in degrees (0-180)
+                
+                // Create main trial timeline
+                var trial_advance = {
+                    type: jsAdvPlot,
+                    points: participantPoints,
+                    trialN: expt_data.trials.length,
+                    patchN: Array(expt_data.trials.length).fill(trial.set_size) // Set-size for each trial
+                };
+                
+                var trial_fixation = {
+                    type: jsPsychHtmlKeyboardResponse,
+                    stimulus: '<div style="font-size:25px;">+</div>',
+                    choices: 'NO_KEYS',
+                    trial_duration: 200,
+                    data: {
+                        trial_event: 'fixation',
+                        trial_number: t + 1,
+                        trial_type: trial.trial_type,
+                        set_size: trial.set_size
+                    }
+                };
+                
+                // Stimulus display: Colored orientation bars
+                var trial_orientation_bars = {
+                    data: {
+                        trial_event: 'orientation_bars_display_event',
+                        trial_number: t + 1,
+                        duration_ms: trial.duration_ms,
+                        trial_type: trial.trial_type,
+                        set_size: trial.set_size,
+                        target: trial.target,
+                        is_practice: false
+                    },
+                    type: jsConfidenceWheel,
+                    trial_duration: trial.duration_ms, // Variable duration from Python
+                    draw_wheel: false,
+                    stimulus_type: 'orientation_bars', // Use orientation bars
+                    choice_colors: trialColors,
+                    patch_positionalangle: trialPositions,
+                    choice_colorangles: trialColorAngles,
+                    orientations: trialOrientations, // Orientation angles (0-180°)
+                    stimulus_height: browser_window_height * .95,
+                    on_start: function(data) {
+                        studyFinished = true; // Turn off tab monitoring
+                    }
+                };
+                
+                // Retention interval with visual mask
+                var trial_retention_interval = {
+                    type: jsConfidenceWheel,
+                    trial_duration: retention_duration_ms,
+                    draw_wheel: false,
+                    show_mask: true, // Enable visual mask
+                    stimulus_height: browser_window_height * .95,
+                    data: {
+                        trial_event: 'retention_interval',
+                        trial_number: t + 1,
+                        trial_type: trial.trial_type,
+                        set_size: trial.set_size
+                    },
+                    on_finish: function(data) {
+                        studyFinished = false; // Turn back on tab monitoring
+                    }
+                };
+                
+                // Response phase: Orientation bar response
+                var trial_orientation_response = {
+                    data: {
+                        trial_event: 'orientation_response_event',
+                        trial_number: t + 1,
+                        trial_type: trial.trial_type,
+                        set_size: trial.set_size,
+                        target: trial.target,
+                        target_orientation: trialOrientations[trial.target],
+                        is_practice: false
+                    },
+                    type: jsConfidenceWheel,
+                    trial_duration: 60000, // 60 second max response time
+                    draw_wheel: true,
+                    response_type: 'orientation_bar', // Use orientation bar response
+                    choice_colors: trialColors,
+                    patch_positionalangle: trialPositions,
+                    choice_colorangles: trialColorAngles,
+                    orientations: trialOrientations,
+                    target_index: trial.target, // Specify target directly
+                    stimulus_height: browser_window_height * .95,
+                    wheel_rotation: sessionWheelRotation,
+                    color_palette: highRGBs,
+                    on_finish: function(data) {
+                        participantPoints.push(getPoints(data));
+                    }
+                };
+                
+                experiment_timeline.push(trial_advance);
+                experiment_timeline.push(trial_fixation);
+                experiment_timeline.push(trial_orientation_bars);
+                experiment_timeline.push(trial_retention_interval);
+                experiment_timeline.push(trial_orientation_response);
+            }
+        }
+        
     } else {
         // ============================================================
-        // ORIGINAL EXAMPLE EXPERIMENT (for Sub-Experiment 3, or fallback)
+        // ORIGINAL EXAMPLE EXPERIMENT (fallback)
         // ============================================================
         console.log("Building original example experiment timeline");
         
