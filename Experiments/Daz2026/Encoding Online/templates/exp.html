@@ -269,57 +269,119 @@
         }
     }
 
+    // Subexperiment-specific instruction and bot-check configuration
+    const instructionUrls = {
+        "1": "{{url_for('static', filename='html/instructions_subexp1.html')}}",
+        "2": "{{url_for('static', filename='html/instructions_subexp2.html')}}",
+        "3": "{{url_for('static', filename='html/instructions_subexp3.html')}}"
+    };
+    const subexpKey = String(subexperiment);
+    const instructionBaseUrl = instructionUrls[subexpKey] || "{{url_for('static', filename='html/instructions.html')}}";
+    // Cache-bust per subexp so external-html does not reuse a prior fetch
+    const instructionUrl = instructionBaseUrl + "?subexp=" + encodeURIComponent(subexpKey);
+
+    const botCheckConfig = {
+        "1": [
+            {
+                prompt: "What will you be required to do?",
+                options: [
+                    'Determine the motion of a set of dots.',
+                    'Study and recall a list of words.',
+                    'Recall one color patch using a color wheel.'
+                ],
+                correct: 'Recall one color patch using a color wheel.'
+            },
+            {
+                prompt: "How many color patches will be presented at a time?",
+                options: ['Between 2 and 6.', 'Between 1 and 3.', 'Always 6.'],
+                correct: 'Always 6.'
+            },
+            {
+                prompt: "How will you be required to respond?",
+                options: ['Using a keyboard.', 'Using a mouse.', 'Using the force.'],
+                correct: 'Using a mouse.'
+            }
+        ],
+        "2": [
+            {
+                prompt: "What will you be required to do?",
+                options: [
+                    'Determine the motion of a set of dots.',
+                    'Study and recall a list of words.',
+                    'Recall one color patch using a color wheel.'
+                ],
+                correct: 'Recall one color patch using a color wheel.'
+            },
+            {
+                prompt: "How many color patches will be presented at a time?",
+                options: ['Between 1 and 6.', 'Between 1 and 3.', 'Either 4 or 6.'],
+                correct: 'Either 4 or 6.'
+            },
+            {
+                prompt: "How will you be required to respond?",
+                options: ['Using a keyboard.', 'Using a mouse.', 'Using the force.'],
+                correct: 'Using a mouse.'
+            }
+        ],
+        "3": [
+            {
+                prompt: "What will you be required to do?",
+                options: [
+                    'Determine the motion of a set of dots.',
+                    'Study and recall a list of words.',
+                    'Recall the orientation of one colored orientation bar.'
+                ],
+                correct: 'Recall the orientation of one colored orientation bar.'
+            },
+            {
+                prompt: "How many color patches will be presented at a time?",
+                options: ['Either 4 or 6.', 'Between 1 and 3.', 'Always 6.'],
+                correct: 'Either 4 or 6.'
+            },
+            {
+                prompt: "How will you be required to respond?",
+                options: ['Using a keyboard.', 'Using mouse movement and click.', 'Using the force.'],
+                correct: 'Using mouse movement and click.'
+            }
+        ]
+    };
+
+    const activeBotChecks = botCheckConfig[subexpKey] || botCheckConfig["1"];
+    console.log("Instruction URL:", instructionUrl);
+    console.log("Bot-check set:", subexpKey, activeBotChecks);
+    const buildBotCheck = function(index){
+        const config = activeBotChecks[index];
+        const responseKey = 'check' + (index + 1);
+        return {
+            type: jsPsychSurveyMultiChoice,
+            questions: [{
+                prompt: config.prompt,
+                name: responseKey,
+                options: config.options,
+                required: true
+            }],
+            data: {'part':'check'},
+            randomize_question_order: true,
+            on_finish: function(data){
+                const response = jsPsych.data.getLastTrialData().select('response').values[0][responseKey];
+                data.accuracy = response === config.correct;
+            }
+        };
+    };
+
     const instructions = {
-        type: jsPsychExternalHtml, 
-        url: "{{url_for('static', filename='html/instructions.html')}}",
+        type: jsPsychExternalHtml,
+        url: instructionUrl,
+        force_refresh: true,
         cont_btn: "read_instructions",
         data: {'part': 'instructions'}
     };
 
-    var instructions_check1 = {
-        type: jsPsychSurveyMultiChoice,
-        questions: [{
-            prompt: "What will you be required to do?", 
-            name: 'check1', 
-            options: ['Determine the motion of a set of dots.', 'Study and recall a list of words.', 'Recall one color patch using a color wheel.'], 
-            required: true
-        }],
-        data: {'part':'check'}, 
-        randomize_question_order: true,
-        on_finish: function(data){
-            data.accuracy = jsPsych.data.getLastTrialData().select('response').values[0].check1 == 'Recall one color patch using a color wheel.'
-        }
-    }
+    var instructions_check1 = buildBotCheck(0);
 
-    var instructions_check2 = {
-        type: jsPsychSurveyMultiChoice,
-        questions: [{
-            prompt: "How many color patches will be presented at a time?", 
-            name: 'check1', 
-            options: ['Between 2 and 6.', 'Between 1 and 3.', 'Always 6.'], 
-            required: true
-        }],
-        data: {'part':'check'}, 
-        randomize_question_order: true,
-        on_finish: function(data){
-            data.accuracy = jsPsych.data.getLastTrialData().select('response').values[0].check1 == 'Always 6.' 
-        }
-    }
+    var instructions_check2 = buildBotCheck(1);
 
-    var instructions_check3 = {
-        type: jsPsychSurveyMultiChoice,
-        questions: [{
-            prompt: "How will you be required to respond?", 
-            name: 'check1', 
-            options: ['Using a keyboard.', 'Using a mouse.', 'Using the force.'], 
-            required: true
-        }],
-        data: {'part':'check'}, 
-        randomize_question_order: true,
-        on_finish: function(data){
-            data.accuracy = jsPsych.data.getLastTrialData().select('response').values[0].check1 == 'Using a mouse.'
-        }
-    }
+    var instructions_check3 = buildBotCheck(2);
 
     var instructions_check4 = {
         type: jsPsychHtmlKeyboardResponse,

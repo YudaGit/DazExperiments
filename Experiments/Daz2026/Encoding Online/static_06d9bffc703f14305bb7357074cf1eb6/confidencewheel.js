@@ -116,6 +116,18 @@ var jsConfidenceWheel = (function (jspsych) {
             return targetN;
         }
 
+        generateDefaultPositions(count) {
+            if (!count || count <= 0) {
+                return [];
+            }
+            const spacing = 360 / count;
+            const positions = [];
+            for (let i = 0; i < count; i++) {
+                positions.push((i * spacing) % 360);
+            }
+            return positions;
+        }
+
         drawOrientationBars(ctx, trial, centerX, centerY, patchradius, patchRadius) {
             /**
              * Draw colored orientation bars for Sub-Experiment 3
@@ -203,7 +215,7 @@ var jsConfidenceWheel = (function (jspsych) {
             
             ctx.restore();
             
-            display_element.insertBefore(canvas, null);
+            // drawVisualMask only paints on the provided ctx/canvas
         }
 
         drawOrientationBarFeedback(ctx, trial, centerX, centerY, targetN, patchRadius, responseOrientation, targetOrientation) {
@@ -394,8 +406,19 @@ var jsConfidenceWheel = (function (jspsych) {
             // Set Base Variables
             var maxtime = 10000
             var startingradius = Math.round(window.outerHeight * 0.035);
-            var patchradius    = browser_window_height*.1;
+            var windowHeight = (typeof browser_window_height === 'number' && !isNaN(browser_window_height))
+                ? browser_window_height
+                : window.outerHeight;
+            var patchradius    = windowHeight * .1;
             var targetN;
+
+            // Ensure patch positions exist for drawing orientation bars
+            if (!Array.isArray(trial.patch_positionalangle) || trial.patch_positionalangle.length === 0) {
+                const fallbackCount = Array.isArray(trial.choice_colors) && trial.choice_colors.length
+                    ? trial.choice_colors.length
+                    : (Array.isArray(trial.orientations) ? trial.orientations.length : 0);
+                trial.patch_positionalangle = this.generateDefaultPositions(fallbackCount);
+            }
             if (trial.draw_wheel == true){
                 // If target_index is explicitly provided, use it
                 if (trial.target_index !== null && trial.target_index !== undefined) {
@@ -429,10 +452,17 @@ var jsConfidenceWheel = (function (jspsych) {
             //console.log('p', indiv_patch_radius)
             
             if (trial.draw_wheel == false){
+                const displayDuration = (typeof trial.trial_duration === 'number' && !isNaN(trial.trial_duration))
+                    ? trial.trial_duration
+                    : 0;
                 // Set timeout when showing stimuli
                 this.jsPsych.pluginAPI.setTimeout(() => {
                     end_trial();
-                }, trial.trial_duration);
+                }, displayDuration);
+                // Secondary native timeout as a failsafe
+                setTimeout(() => {
+                    end_trial();
+                }, displayDuration + 10);
                 
                 // Check if showing visual mask (for Sub-Experiment 3 retention interval)
                 if (trial.show_mask == true) {
@@ -846,7 +876,11 @@ var jsConfidenceWheel = (function (jspsych) {
                 } // End else (color wheel response)
             } // End if (trial.draw_wheel == true)
 
-            const end_trial = () => {
+            function end_trial() {
+                if (endtrial) {
+                    return;
+                }
+                endtrial = true;
                 // Cancel orientation bar animation if active
                 if (trial._orientationBarAnimationId !== undefined) {
                     cancelAnimationFrame(trial._orientationBarAnimationId);
@@ -912,25 +946,30 @@ var jsConfidenceWheel = (function (jspsych) {
                     this.jsPsych.finishTrial(trial_data);
                 }
                 
-            };
+            }
             
+
+            const safeChoiceColors = Array.isArray(trial.choice_colors) ? trial.choice_colors : [];
+            const safeChoiceAngles = Array.isArray(trial.choice_colorangles) ? trial.choice_colorangles : [];
+            const safePatchAngles = Array.isArray(trial.patch_positionalangle) ? trial.patch_positionalangle : [];
+            const safeTargetIndex = (typeof targetN === 'number' && safeChoiceColors.length > targetN) ? targetN : null;
 
             var trial_data = {
                 // Task Variables
-                num_items: trial.choice_colors.length,
-                target_color: trial.choice_colors[targetN],
-                target_angle_norotation: trial.choice_colorangles[targetN],
+                num_items: safeChoiceColors.length,
+                target_color: safeTargetIndex !== null ? safeChoiceColors[safeTargetIndex] : null,
+                target_angle_norotation: safeTargetIndex !== null ? safeChoiceAngles[safeTargetIndex] : null,
                 rotation: trial.wheel_rotation,
                 redundancy: trial.redundancy,
 
                 // Initial Precision Judgement 
                 response_radians: radians,
-                response_degrees: degrees, 
+                response_degrees: degrees,
                 
-                response_derotated_degress: derotated_degrees, 
-                response_error_deg: resp_error, 
-                response_RT: rt, 
-                leave_center_RT: leavecenterRT, 
+                response_derotated_degress: derotated_degrees,
+                response_error_deg: resp_error,
+                response_RT: rt,
+                leave_center_RT: leavecenterRT,
 
                 points: points,
 
@@ -942,16 +981,15 @@ var jsConfidenceWheel = (function (jspsych) {
                 mouse_movement_rt: mouse_coord_rts,
                 mouse_movement_coords: mouse_coords,
 
-                target_patchN: targetN + 1, 
-                all_patch_angles: trial.choice_colorangles,
-                all_patch_colors: trial.choice_colors,
-                patch_angles_from_center: trial.patch_positionalangle,
+                target_patchN: safeTargetIndex !== null ? safeTargetIndex + 1 : null,
+                all_patch_angles: safeChoiceAngles,
+                all_patch_colors: safeChoiceColors,
+                patch_angles_from_center: safePatchAngles,
                 patch_imaginary_circle: patchradius,
                 patch_indiv_size_radius: indiv_patch_radius,
                 outer_wheel_radius: outer_radius,
                 inner_wheel_radius: inner_radius,
-                wheel_canvas_height_width: [canvas.height, canvas.width], 
-                
+                wheel_canvas_height_width: [canvas.height, canvas.width],
             };
 
         }
