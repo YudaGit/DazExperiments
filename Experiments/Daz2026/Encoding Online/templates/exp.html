@@ -70,6 +70,9 @@
     console.log("========================================");
     
     var studyFinished = true
+    // DEV helper: skip intro screens and jump to practice stage
+    const skipIntro = true;
+    const skipPractice = true; // Set to true to skip practice trials
     var troubleshooting = false
 
     var send_debrief = function(data){
@@ -550,15 +553,17 @@
 
 
     // ###   Experiment Timeline Setup ### //
-    experiment_timeline.push( preload )
-    experiment_timeline.push( fullscreen )
-    experiment_timeline.push( repeat_instruction_loop )    
-    experiment_timeline.push( welcome_screen )
-    experiment_timeline.push( plain_langauge_statement )
-    experiment_timeline.push( consent )
-    experiment_timeline.push( colorblindItem )
-    experiment_timeline.push( ageItem )
-    experiment_timeline.push( genderItem )
+    if (!skipIntro) {
+        experiment_timeline.push( preload )
+        experiment_timeline.push( fullscreen )
+        experiment_timeline.push( repeat_instruction_loop )
+        experiment_timeline.push( welcome_screen )
+        experiment_timeline.push( plain_langauge_statement )
+        experiment_timeline.push( consent )
+        experiment_timeline.push( colorblindItem )
+        experiment_timeline.push( ageItem )
+        experiment_timeline.push( genderItem )
+    }
 
     // ============================================================
     // SUB-EXPERIMENT 1: Encoding Study Implementation
@@ -570,13 +575,17 @@
         console.log("Practice trials:", expt_data.practice_trials ? expt_data.practice_trials.length : 0);
         
         // Sub-Experiment 1 specific instructions (using existing for now)
-        experiment_timeline.push( wheel1 )
-        experiment_timeline.push( wheel2 )
-        experiment_timeline.push( wheel3 )
-        experiment_timeline.push( wheel4 )
-        experiment_timeline.push( wheel5 )
-        experiment_timeline.push( wheel6 )
-        experiment_timeline.push( practice_screen )
+        if (!skipIntro) {
+            experiment_timeline.push( wheel1 )
+            experiment_timeline.push( wheel2 )
+            experiment_timeline.push( wheel3 )
+            experiment_timeline.push( wheel4 )
+            experiment_timeline.push( wheel5 )
+            experiment_timeline.push( wheel6 )
+        }
+        if (!skipPractice) {
+            experiment_timeline.push( practice_screen )
+        }
         
         // Retention interval duration (750ms = 750ms)
         var retention_duration_ms = 750;
@@ -588,7 +597,7 @@
         // ============================================================
         // PRACTICE TRIALS for Sub-Experiment 1
         // ============================================================
-        if (expt_data.practice_trials && expt_data.practice_trials.length > 0) {
+        if (!skipPractice && expt_data.practice_trials && expt_data.practice_trials.length > 0) {
             for (var p = 0; p < expt_data.practice_trials.length; p++) {
                 var practiceTrial = expt_data.practice_trials[p];
                 
@@ -707,7 +716,7 @@
                     type: jsAdvPlot,
                     points: participantPoints,
                     trialN: expt_data.trials.length,
-                    patchN: Array(expt_data.trials.length).fill(trial.set_size) // Set-size for each trial
+                    patchN: expt_data.trials.map(function(t) { return t.set_size; }) // Set-size for each trial
                 };
                 
                 var trial_fixation = {
@@ -801,13 +810,17 @@
         console.log("Practice trials:", expt_data.practice_trials ? expt_data.practice_trials.length : 0);
         
         // Sub-Experiment 2 specific instructions (using existing for now)
-        experiment_timeline.push( wheel1 )
-        experiment_timeline.push( wheel2 )
-        experiment_timeline.push( wheel3 )
-        experiment_timeline.push( wheel4 )
-        experiment_timeline.push( wheel5 )
-        experiment_timeline.push( wheel6 )
-        experiment_timeline.push( practice_screen )
+        if (!skipIntro) {
+            experiment_timeline.push( wheel1 )
+            experiment_timeline.push( wheel2 )
+            experiment_timeline.push( wheel3 )
+            experiment_timeline.push( wheel4 )
+            experiment_timeline.push( wheel5 )
+            experiment_timeline.push( wheel6 )
+        }
+        if (!skipPractice) {
+            experiment_timeline.push( practice_screen )
+        }
         
         // Retention interval duration (750ms)
         var retention_duration_ms = 750;
@@ -819,7 +832,7 @@
         // ============================================================
         // PRACTICE TRIALS for Sub-Experiment 2
         // ============================================================
-        if (expt_data.practice_trials && expt_data.practice_trials.length > 0) {
+        if (!skipPractice && expt_data.practice_trials && expt_data.practice_trials.length > 0) {
             for (var p = 0; p < expt_data.practice_trials.length; p++) {
                 var practiceTrial = expt_data.practice_trials[p];
                 
@@ -909,7 +922,10 @@
                     choice_colorangles: practiceColorAngles,
                     stimulus_height: browser_window_height * .95,
                     wheel_rotation: sessionWheelRotation,
-                    color_palette: highRGBs
+                    color_palette: highRGBs,
+                    on_finish: function(data) {
+                        participantPoints.push(getPoints(data));
+                    }
                 };
                 
                 experiment_timeline.push(practice_trial_advance);
@@ -920,6 +936,14 @@
             }
         }
         
+        // Reset points so main block feedback starts at 0
+        participantPoints.length = 0;
+        experiment_timeline.push({
+            type: jsPsychCallFunction,
+            func: function() {
+                participantPoints.length = 0;
+            }
+        });
         experiment_timeline.push(experimentBegin);
         
         // ============================================================
@@ -1038,13 +1062,17 @@
         console.log("Practice trials:", expt_data.practice_trials ? expt_data.practice_trials.length : 0);
         
         // Sub-Experiment 3 specific instructions (using existing for now, will customize later)
-        experiment_timeline.push( wheel1 )
-        experiment_timeline.push( wheel2 )
-        experiment_timeline.push( wheel3 )
-        experiment_timeline.push( wheel4 )
-        experiment_timeline.push( wheel5 )
-        experiment_timeline.push( wheel6 )
-        experiment_timeline.push( practice_screen )
+        if (!skipIntro) {
+            experiment_timeline.push( wheel1 )
+            experiment_timeline.push( wheel2 )
+            experiment_timeline.push( wheel3 )
+            experiment_timeline.push( wheel4 )
+            experiment_timeline.push( wheel5 )
+            experiment_timeline.push( wheel6 )
+        }
+        if (!skipPractice) {
+            experiment_timeline.push( practice_screen )
+        }
         
         // Retention interval duration (750ms)
         var retention_duration_ms = 750;
@@ -1056,7 +1084,7 @@
         // ============================================================
         // PRACTICE TRIALS for Sub-Experiment 3
         // ============================================================
-        if (expt_data.practice_trials && expt_data.practice_trials.length > 0) {
+        if (!skipPractice && expt_data.practice_trials && expt_data.practice_trials.length > 0) {
             for (var p = 0; p < expt_data.practice_trials.length; p++) {
                 var practiceTrial = expt_data.practice_trials[p];
                 
@@ -1155,9 +1183,7 @@
                     stimulus_height: browser_window_height * .95,
                     wheel_rotation: sessionWheelRotation,
                     color_palette: highRGBs,
-                    on_finish: function(data) {
-                        participantPoints.push(getPoints(data));
-                    }
+                    // No practice point recording (match subexp 1 & 2)
                 };
                 
                 experiment_timeline.push(practice_trial_advance);
@@ -1171,6 +1197,14 @@
         // ============================================================
         // MAIN TRIALS for Sub-Experiment 3
         // ============================================================
+        // Reset points so main block feedback starts at 0
+        participantPoints.length = 0;
+        experiment_timeline.push({
+            type: jsPsychCallFunction,
+            func: function() {
+                participantPoints.length = 0;
+            }
+        });
         experiment_timeline.push( experimentBegin );
         
         if (expt_data.trials && expt_data.trials.length > 0) {
@@ -1188,14 +1222,14 @@
                     type: jsAdvPlot,
                     points: participantPoints,
                     trialN: expt_data.trials.length,
-                    patchN: Array(expt_data.trials.length).fill(trial.set_size) // Set-size for each trial
+                    patchN: expt_data.trials.map(function(t) { return t.set_size; }) // Set-size for each trial
                 };
                 
                 var trial_fixation = {
                     type: jsPsychHtmlKeyboardResponse,
                     stimulus: '<div style="font-size:25px;">+</div>',
                     choices: 'NO_KEYS',
-                    trial_duration: 200,
+                    trial_duration: 1000, // Match subexp 1 & 2 fixation timing
                     data: {
                         trial_event: 'fixation',
                         trial_number: t + 1,

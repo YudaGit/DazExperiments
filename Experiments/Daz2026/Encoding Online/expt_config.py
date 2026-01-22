@@ -490,7 +490,7 @@ def generate_single_trial_subexp3(set_size, redundant_n, duration_ms, trial_type
     if trial_type == 'Baseline':
         # Baseline: All unique colors AND orientations, no redundancy
         colors = generate_unique_colors(set_size, min_spacing=30)
-        orientations = generate_unique_orientations(set_size, min_spacing=10)
+        orientations = generate_unique_orientations(set_size, min_spacing=20)
         positions = generate_positions_evenly_spaced(set_size)
         
         # Target can be any item (all are unique)
@@ -506,7 +506,7 @@ def generate_single_trial_subexp3(set_size, redundant_n, duration_ms, trial_type
         # Generate orientations with redundancy (same as colors)
         # Redundant items must have SAME color AND orientation
         orientations = generate_orientations_with_redundancy(
-            set_size, redundant_n, colors, min_spacing=10
+            set_size, redundant_n, colors, min_spacing=20
         )
         
         # Select target based on cue type
@@ -535,7 +535,7 @@ def generate_single_trial_subexp3(set_size, redundant_n, duration_ms, trial_type
     }
 
 
-def generate_unique_orientations(set_size, min_spacing=10):
+def generate_unique_orientations(set_size, min_spacing=20):
     """
     Generate all unique orientations with minimum spacing constraint.
     Orientations are in degrees, range 0-180.
@@ -574,7 +574,7 @@ def min_linear_distance(value1, value2):
     return abs(value1 - value2)
 
 
-def generate_orientations_with_redundancy(set_size, redundant_n, colors, min_spacing=10):
+def generate_orientations_with_redundancy(set_size, redundant_n, colors, min_spacing=20):
     """
     Generate orientations with redundancy matching colors.
     Redundant items (same color) must also have the same orientation.
@@ -648,6 +648,7 @@ def generate_practice_trials_subexp3():
     # Create balanced distribution
     # For 5 trials: mix of set-sizes and trial types
     practice_set_sizes = [4, 4, 6, 6, 6]
+    random.shuffle(practice_set_sizes)
     # Mix trial types: at least one of each type
     practice_trial_types = ['Baseline', 'R-cue', 'NR-cue', 'R-cue', 'NR-cue']
     random.shuffle(practice_trial_types)
@@ -818,7 +819,7 @@ def generate_single_trial_subexp3(set_size, redundant_n, duration_ms, trial_type
     if trial_type == 'Baseline':
         # Baseline: All unique colors AND orientations, no redundancy
         colors = generate_unique_colors(set_size, min_spacing=30)
-        orientations = generate_unique_orientations(set_size, min_spacing=10)
+        orientations = generate_unique_orientations(set_size, min_spacing=20)
         positions = generate_positions_evenly_spaced(set_size)
         
         # Target can be any item (all are unique)
@@ -834,7 +835,7 @@ def generate_single_trial_subexp3(set_size, redundant_n, duration_ms, trial_type
         # Generate orientations with redundancy (same as colors)
         # Redundant items must have SAME color AND orientation
         orientations = generate_orientations_with_redundancy(
-            set_size, redundant_n, colors, min_spacing=10
+            set_size, redundant_n, colors, min_spacing=20
         )
         
         # Select target based on cue type
@@ -863,7 +864,7 @@ def generate_single_trial_subexp3(set_size, redundant_n, duration_ms, trial_type
     }
 
 
-def generate_unique_orientations(set_size, min_spacing=10):
+def generate_unique_orientations(set_size, min_spacing=20):
     """
     Generate all unique orientations with minimum spacing constraint.
     Orientations are in degrees, range 0-180.
@@ -902,7 +903,7 @@ def min_linear_distance(value1, value2):
     return abs(value1 - value2)
 
 
-def generate_orientations_with_redundancy(set_size, redundant_n, colors, min_spacing=10):
+def generate_orientations_with_redundancy(set_size, redundant_n, colors, min_spacing=20):
     """
     Generate orientations with redundancy matching colors.
     Redundant items (same color) must also have the same orientation.
@@ -1187,7 +1188,7 @@ def generate_single_trial_subexp3(set_size, redundant_n, duration_ms, trial_type
     if trial_type == 'Baseline':
         # Baseline: All unique colors AND orientations, no redundancy
         colors = generate_unique_colors(set_size, min_spacing=30)
-        orientations = generate_unique_orientations(set_size, min_spacing=10)
+        orientations = generate_unique_orientations(set_size, min_spacing=20)
         positions = generate_positions_evenly_spaced(set_size)
         
         # Target can be any item (all are unique)
@@ -1203,7 +1204,7 @@ def generate_single_trial_subexp3(set_size, redundant_n, duration_ms, trial_type
         # Generate orientations with redundancy (same as colors)
         # Redundant items must have SAME color AND orientation
         orientations = generate_orientations_with_redundancy(
-            set_size, redundant_n, colors, min_spacing=10
+            set_size, redundant_n, colors, min_spacing=20
         )
         
         # Select target based on cue type
@@ -1232,7 +1233,7 @@ def generate_single_trial_subexp3(set_size, redundant_n, duration_ms, trial_type
     }
 
 
-def generate_unique_orientations(set_size, min_spacing=10):
+def generate_unique_orientations(set_size, min_spacing=20):
     """
     Generate all unique orientations with minimum spacing constraint.
     Orientations are in degrees, range 0-180.
@@ -1271,7 +1272,7 @@ def min_linear_distance(value1, value2):
     return abs(value1 - value2)
 
 
-def generate_orientations_with_redundancy(set_size, redundant_n, colors, min_spacing=10):
+def generate_orientations_with_redundancy(set_size, redundant_n, colors, min_spacing=20):
     """
     Generate orientations with redundancy matching colors.
     Redundant items (same color) must also have the same orientation.
@@ -1515,7 +1516,7 @@ def generate_single_trial_subexp3(set_size, redundant_n, duration_ms, trial_type
     if trial_type == 'Baseline':
         # Baseline: All unique colors AND orientations, no redundancy
         colors = generate_unique_colors(set_size, min_spacing=30)
-        orientations = generate_unique_orientations(set_size, min_spacing=10)
+        orientations = generate_unique_orientations(set_size, min_spacing=20)
         positions = generate_positions_evenly_spaced(set_size)
         
         # Target can be any item (all are unique)
@@ -1531,7 +1532,7 @@ def generate_single_trial_subexp3(set_size, redundant_n, duration_ms, trial_type
         # Generate orientations with redundancy (same as colors)
         # Redundant items must have SAME color AND orientation
         orientations = generate_orientations_with_redundancy(
-            set_size, redundant_n, colors, min_spacing=10
+            set_size, redundant_n, colors, min_spacing=20
         )
         
         # Select target based on cue type
@@ -1560,7 +1561,7 @@ def generate_single_trial_subexp3(set_size, redundant_n, duration_ms, trial_type
     }
 
 
-def generate_unique_orientations(set_size, min_spacing=10):
+def generate_unique_orientations(set_size, min_spacing=20):
     """
     Generate all unique orientations with minimum spacing constraint.
     Orientations are in degrees, range 0-180.
@@ -1599,7 +1600,7 @@ def min_linear_distance(value1, value2):
     return abs(value1 - value2)
 
 
-def generate_orientations_with_redundancy(set_size, redundant_n, colors, min_spacing=10):
+def generate_orientations_with_redundancy(set_size, redundant_n, colors, min_spacing=20):
     """
     Generate orientations with redundancy matching colors.
     Redundant items (same color) must also have the same orientation.

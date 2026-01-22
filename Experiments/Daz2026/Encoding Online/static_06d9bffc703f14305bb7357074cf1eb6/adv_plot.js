@@ -24,27 +24,31 @@ var jsAdvPlot = (function (jspsych) {
         }
 
         trial(display_element, trial) {
-            var setsize1 = [];
-            var setsize2 = [];
-            var setsize4 = [];
-            var setsize6 = [];
-
-            // Assuming these are the total trial counts for each set size
-            const totalTrialCounts = {
-                1: 15,
-                2: 56,
-                4: 130,
-                6: 204
-            };
-
+            const setSizePoints = {};
+            const setSizeCounts = {};
+            const pointSetSizes = Array.isArray(trial.patchN)
+                ? trial.patchN.slice(0, trial.points.length)
+                : [];
             for (var ii = 0; ii < trial.points.length; ii++) {
-                var point = trial.points[ii];
-                if (point == 0) { point = 1; }
-                if (trial.patchN[ii] == 1) { setsize1.push(point); }
-                if (trial.patchN[ii] == 2) { setsize2.push(point); }
-                if (trial.patchN[ii] == 4) { setsize4.push(point); }
-                if (trial.patchN[ii] == 6) { setsize6.push(point); }
+                var point = Number(trial.points[ii]);
+                if (!Number.isFinite(point) || point <= 0) { point = 1; }
+                var setSize = Number(pointSetSizes[ii]);
+                if (!Number.isFinite(setSize)) {
+                    continue;
+                }
+                if (!setSizePoints[setSize]) {
+                    setSizePoints[setSize] = [];
+                }
+                setSizePoints[setSize].push(point);
             }
+            for (var jj = 0; jj < trial.patchN.length; jj++) {
+                var size = Number(trial.patchN[jj]);
+                if (!Number.isFinite(size)) {
+                    continue;
+                }
+                setSizeCounts[size] = (setSizeCounts[size] || 0) + 1;
+            }
+            const sizes = Object.keys(setSizeCounts).map(Number).sort((a, b) => a - b);
 
             var canvas = document.createElement("canvas");
             canvas.style.margin = "0";
@@ -67,10 +71,23 @@ var jsAdvPlot = (function (jspsych) {
             ctx.textAlign = "center";
             ctx.fillText(trialCountText, ctx.canvas.width / 2, ctx.canvas.height / 2 - 25);
 
-            const baseOffset = canvas.width * 0.05; // Shift everything to the right by 5% of the canvas width
-            const plotSpacing = canvas.width * 0.02; // Space between plots
-            const totalPlotWidth = canvas.width - baseOffset * 2; // Total width available for plots
-            const adjustedPlotWidth = (totalPlotWidth - plotSpacing * 3) / 4; // Adjust plot width for 4 plots
+            const baseOffset = canvas.width * 0.05; // Margin for labels
+            const plotSpacing = 100; // Space between plots (px)
+            const plotCount = Math.max(sizes.length, 1);
+            const barWidthPx = 2;
+            const barGapPx = 2;
+            const leftBarGapPx = 2;
+            const axisLineWidth = 2;
+            const axisTextGapPx = 5;
+            const plotWidths = sizes.map(function (setSize) {
+                const xAxisMax = setSizeCounts[setSize] || 0;
+                if (!xAxisMax) {
+                    return 0;
+                }
+                return leftBarGapPx + (xAxisMax * (barWidthPx + barGapPx)) - barGapPx;
+            });
+            const totalGroupWidth = plotWidths.reduce((sum, w) => sum + w, 0) + plotSpacing * (plotCount - 1);
+            const groupOffset = (canvas.width - totalGroupWidth) / 2;
 
             const xAxisIntervals = {
                 1: 5,
@@ -79,18 +96,19 @@ var jsAdvPlot = (function (jspsych) {
                 6: 50
             };
 
-            function drawLinePlot(setSizePoints, ctx, totalTrials, plotXOffset, lineColor, setSize) {
-                const xAxisMax = totalTrialCounts[setSize];
-                var plotWidth = ctx.canvas.width * 0.15;
+            function drawLinePlot(setSizePoints, ctx, totalTrials, plotXOffset, lineColor, setSize, plotWidth) {
+                const xAxisMax = setSizeCounts[setSize] || setSizePoints.length || trial.trialN;
+                if (!plotWidth || plotWidth <= 0) {
+                    return;
+                }
                 var plotHeight = ctx.canvas.height * 0.3;
-                var plotX = baseOffset + plotXOffset;
+                var plotX = groupOffset + plotXOffset;
                 var plotY = ctx.canvas.height * 0.6;
-                var barWidth = plotWidth / xAxisMax;
+                var barWidth = barWidthPx;
                 ctx.fillStyle = lineColor;
 
                 setSizePoints.forEach(function (point, index) {
-                    //var x = plotX + (index * plotWidth / Math.max(setSizePoints.length, 1));
-                    var x = plotX + (index * barWidth);
+                    var x = plotX + leftBarGapPx + (index * (barWidth + barGapPx));
                     var y = plotY + (1 - point / 100) * plotHeight;
                     var barHeight = (point / 100) * plotHeight;
                     ctx.fillRect(x, y, barWidth, barHeight);
@@ -98,7 +116,7 @@ var jsAdvPlot = (function (jspsych) {
 
                 // Add dynamic axis labeling and other drawing code here as previously outlined
                 //const xAxisInterval = Math.ceil(xAxisMax / 10); // Adjust label density
-                const xAxisInterval = xAxisIntervals[setSize];
+                const xAxisInterval = xAxisIntervals[setSize] || 5;
                 ctx.strokeStyle = 'white';
                 for (let i = 0; i <= xAxisMax; i += xAxisInterval) {
                     let x = plotX + (i / xAxisMax) * plotWidth;
@@ -107,10 +125,11 @@ var jsAdvPlot = (function (jspsych) {
                 }
 
                 // Draw y-axis values
+                const yLabelX = plotX - 5;
                 ctx.textAlign = "right";
                 ctx.textBaseline = "middle";
                 for (let i = 0; i <= 100; i += 100) {
-                    let x = plotX - 5;
+                    let x = yLabelX;
                     let y = plotY + (1 - i / 100) * plotHeight;
                     ctx.fillText(i.toString() + "%", x, y); // Assuming points are percentages
                 }
@@ -130,6 +149,26 @@ var jsAdvPlot = (function (jspsych) {
                 ctx.font = "16px Arial";
                 ctx.fillText('Set Size ' + setSize, plotX + plotWidth / 2, plotY - 30);
 
+                // Draw axis border lines (2px) with 5px separation from text
+                ctx.save();
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = axisLineWidth;
+                // Y axis line (left of y-axis labels)
+                ctx.beginPath();
+                const yAxisLineX = yLabelX + axisTextGapPx;
+                ctx.moveTo(yAxisLineX, plotY);
+                ctx.lineTo(yAxisLineX, plotY + plotHeight);
+                ctx.stroke();
+                // X axis line (above x-axis labels)
+                ctx.beginPath();
+                const xLabelY = plotY + plotHeight + 20;
+                const xLabelFontPx = 16;
+                const xAxisLineY = xLabelY - axisTextGapPx - xLabelFontPx;
+                ctx.moveTo(plotX, xAxisLineY);
+                ctx.lineTo(plotX + plotWidth, xAxisLineY);
+                ctx.stroke();
+                ctx.restore();
+
                 // If there's more than one point, draw a mean line
                 if (setSizePoints.length > 1) {
                     var mean = setSizePoints.reduce((a, b) => a + b, 0) / setSizePoints.length;
@@ -145,20 +184,21 @@ var jsAdvPlot = (function (jspsych) {
 
             }
 
-            const setSizeData = [
-                { setSize: 1, points: setsize1, color: 'Aquamarine' },
-                { setSize: 2, points: setsize2, color: 'Chartreuse' },
-                { setSize: 4, points: setsize4, color: 'Gold' },
-                { setSize: 6, points: setsize6, color: 'Aqua' }
-            ];
+            const setSizeData = sizes.map(function (size) {
+                const colorMap = {1: 'Aquamarine', 2: 'Chartreuse', 4: 'Gold', 6: 'Aqua'};
+                return { setSize: size, points: setSizePoints[size] || [], color: colorMap[size] || 'white' };
+            });
 
             //const plotSpacing = ctx.canvas.width * 0.05; // Add a 2% canvas width as spacing
             //const adjustedPlotWidth = (ctx.canvas.width - plotSpacing * (setSizeData.length - 1)) / setSizeData.length;
 
 
+            let runningOffset = 0;
             setSizeData.forEach(function (data, index) {
-                const plotXOffset = (adjustedPlotWidth + plotSpacing) * index;
-                drawLinePlot(data.points, ctx, trial.trialN, plotXOffset, data.color, data.setSize);
+                const plotWidth = plotWidths[index] || 0;
+                const plotXOffset = runningOffset;
+                drawLinePlot(data.points, ctx, trial.trialN, plotXOffset, data.color, data.setSize, plotWidth);
+                runningOffset += plotWidth + plotSpacing;
             });
 
             display_element.appendChild(canvas);

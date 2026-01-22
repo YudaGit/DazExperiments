@@ -70,6 +70,11 @@ var jsConfidenceWheel = (function (jspsych) {
                 type: jspsych.ParameterType.OBJECT,
                 pretty_name: "Mask Data",
                 default: null,  // Pre-generated mask data (colors, orientations, positions)
+            },
+            mask_scale: {
+                type: jspsych.ParameterType.FLOAT,
+                pretty_name: "Mask Bar Scale",
+                default: 0.8,  // Mask bar size relative to stimulus bars
             }
         }   
     }
@@ -77,6 +82,7 @@ var jsConfidenceWheel = (function (jspsych) {
     class ConfidenceWheelPlugin {
         constructor(jsPsych) {
             this.jsPsych = jsPsych;
+            this._maskCache = null;
         }
 
         findTargetIndex(colorAngles, isRedundant) {
@@ -239,20 +245,19 @@ var jsConfidenceWheel = (function (jspsych) {
             ctx.strokeRect(-barLength/2, -barWidth/2, barLength, barWidth);
             ctx.restore();
             
-            // Draw correct orientation (green bar, slightly offset)
+            // Draw correct orientation (green outline, centered)
             ctx.save();
             ctx.translate(centerX, centerY);
             ctx.rotate(targetOrientation * Math.PI / 180);
-            ctx.fillStyle = 'lime';
             ctx.strokeStyle = 'lime';
             ctx.lineWidth = 2;
-            // Offset slightly so both bars are visible
-            ctx.translate(barWidth * 1.5, 0);
-            ctx.fillRect(-barLength/2, -barWidth/2, barLength, barWidth);
-            ctx.strokeRect(-barLength/2, -barWidth/2, barLength, barWidth);
+            var outlineScale = 1.10; // 10% larger than stimulus bar
+            var outlineLength = barLength * outlineScale;
+            var outlineWidth = barWidth * outlineScale;
+            ctx.strokeRect(-outlineLength/2, -outlineWidth/2, outlineLength, outlineWidth);
             ctx.restore();
             
-            display_element.insertBefore(canvas, null);
+            // drawVisualMask only paints on the provided ctx/canvas
         }
 
         generateVisualMask(centerX, centerY, maskRadius, barRadius, numBars) {
@@ -359,21 +364,22 @@ var jsConfidenceWheel = (function (jspsych) {
              * covering the entire mask area (circle)
              */
             
-            var maskData;
+            var maskData = this._maskCache;
+            const scale = (typeof trial.mask_scale === 'number' && !isNaN(trial.mask_scale))
+                ? trial.mask_scale
+                : 0.8;
+            const scaledBarRadius = barRadius * scale;
             
-            // Use pre-generated mask data if available, otherwise generate new
-            if (trial.mask_data && trial.mask_data.colors && trial.mask_data.colors.length > 0) {
-                maskData = trial.mask_data;
-            } else {
-                // Generate mask data (dense coverage: ~200 bars for good coverage)
-                var numBars = 200;
-                maskData = this.generateVisualMask(centerX, centerY, maskRadius, barRadius, numBars);
-                // Store for reuse
-                trial.mask_data = maskData;
+            // Use pre-generated mask data if available, otherwise generate once per session
+            if (!maskData || !maskData.colors || maskData.colors.length === 0) {
+                // Generate mask data (dense coverage: ~1500 bars for full coverage)
+                var numBars = 1500;
+                maskData = this.generateVisualMask(centerX, centerY, maskRadius, scaledBarRadius, numBars);
+                this._maskCache = maskData;
             }
             
             // Bar dimensions (same as stimulus bars)
-            var barLength = 2 * barRadius;
+            var barLength = 2 * scaledBarRadius;
             var barWidth = barLength / 7;
             
             // Draw all bars
@@ -399,7 +405,7 @@ var jsConfidenceWheel = (function (jspsych) {
                 ctx.restore();
             }
             
-            display_element.insertBefore(canvas, null);
+            // drawVisualMask only paints on the provided ctx/canvas
         }
 
         trial(display_element, trial) {
@@ -438,14 +444,17 @@ var jsConfidenceWheel = (function (jspsych) {
             ctx.canvas.width  = window.outerWidth * 0.95;
             ctx.canvas.height = window.outerHeight * 0.95;
             
-            //  Add centeral white circle for mouse centering
+            //  Add central white circle for mouse centering (skip for orientation-bar response)
             var midx = ctx.canvas.width/2
             var midy = ctx.canvas.height/2
-            const circle = new Path2D();
-            circle.arc(midx, midy, startingradius, 0, 2 * Math.PI);
-            ctx.strokeStyle = 'white';
-            ctx.border = 'thick';
-            ctx.stroke(circle);
+            if (!(trial.draw_wheel === true && trial.response_type === 'orientation_bar')) {
+                const circle = new Path2D();
+                circle.arc(midx, midy, startingradius, 0, 2 * Math.PI);
+                ctx.strokeStyle = 'white';
+                ctx.border = 'thick';
+                ctx.stroke(circle);
+            }
+            // Always attach canvas; response type decides what is drawn on it
             display_element.insertBefore(canvas, null);
             
             var indiv_patch_radius = Math.round(window.outerHeight * 0.024)
@@ -612,6 +621,91 @@ var jsConfidenceWheel = (function (jspsych) {
 
             var endtrial = false
             var mousecheckinterval
+            var self = this;
+
+            function end_trial() {
+                if (endtrial) {
+                    return;
+                }
+                endtrial = true;
+                // Cancel orientation bar animation if active
+                if (trial._orientationBarAnimationId !== undefined) {
+                    cancelAnimationFrame(trial._orientationBarAnimationId);
+                }
+
+                if (!Array.isArray(pastYcoords)) {
+                    pastYcoords = [];
+                }
+                if (!Array.isArray(pastXcoords)) {
+                    pastXcoords = [];
+                }
+                if (trial.response_type !== 'orientation_bar') {
+                    // Check for start out of center
+                    for (var ii = 0; ii < pastYcoords.length; ii++){
+                        if (pastYcoords[ii] != 0 || pastXcoords[ii] != 0){
+                            break
+                        }
+                    }
+                    if (pastYcoords.length > 0 &&
+                        Math.sqrt( pastYcoords[ii] * pastYcoords[ii] + pastXcoords[ii] * pastXcoords[ii] ) > startingradius ){
+                        startoutofCenter[0] = true;
+                    }
+                }
+
+                // ctx.clearRect(0, 0, canvas.width, canvas.height);
+                if (mousecheckinterval) {
+                    clearInterval(mousecheckinterval);
+                }
+                ctx.font = "20px Arial";
+                if (trial.draw_wheel){
+                    var wait_time = 1000
+                    if (toofast[0] == true ||
+                        tooslow[0] == true ||
+                        startoutofCenter[0] == true ){
+                            wait_time = wait_time * 4
+                        }
+
+                    // Build Feedback Options
+                    var txt = ''
+
+                    if (trial.response_type !== 'orientation_bar') {
+                        if (startoutofCenter[0]){txt = 'Response Started Out Of Center.'}
+                        if (toofast[0]){txt = 'Too Fast Leaving The Center.'}
+                        if (tooslow[0]){txt = 'Too Slow Leaving The Center.'}
+                    } else {
+                        if (toofast[0]){txt = 'Too Fast Clicking.'}
+                    }
+
+                    if (timeout[0] == true){
+                        ctx.textAlign = "center";
+                        ctx.fillStyle = "red";
+                        ctx.fillText('Time Penalty:', midx, canvas.height * .6);
+                        ctx.fillText('Trial Timed Out.', midx, canvas.height * .65);
+                        display_element.insertBefore(canvas, null);
+                    } else if (txt != '') {
+                        ctx.textAlign = "center";
+                        ctx.fillStyle = 'red';
+                        ctx.fillText('Time Penalty:', midx, canvas.height * .6);
+                        ctx.fillText(txt, midx, canvas.height * .65)
+                        display_element.insertBefore(canvas, null);
+                    }
+
+                    setTimeout(() => {
+                        // console.log('trial data triggered')
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.canvas.remove()
+                        self.jsPsych.pluginAPI.clearAllTimeouts();
+                        self.jsPsych.finishTrial(trial_data);
+                    }, wait_time);
+
+                } else {
+                    // document.getElementById("jspsych-button-group").remove()
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.canvas.remove()
+                    self.jsPsych.finishTrial(trial_data);
+                }
+
+            }
             
 
             if (trial.draw_wheel == true & endtrial == false){
@@ -634,27 +728,6 @@ var jsConfidenceWheel = (function (jspsych) {
                     // Rotation happens on mouse movement (no button press needed)
                     canvas.addEventListener("mousemove", function(e) {
                         var currentY = e.offsetY;
-                        
-                        // Check if starting outside center circle (only on first movement)
-                        if (lastMouseY === null) {
-                            var x_mouse = e.offsetX - canvas.width/2;
-                            var y_mouse = canvas.height/2 - e.offsetY;
-                            var distance = Math.sqrt(x_mouse * x_mouse + y_mouse * y_mouse);
-                            if (distance > startingradius) {
-                                startoutofCenter[0] = true;
-                            }
-                            // Check for too fast/slow leaving center
-                            if (distance >= startingradius & leavecenter == false) {
-                                leavecenter = true;
-                                leavecenterRT.push(performance.now() - start_time);
-                                if (Math.round(performance.now() - start_time) <= startinitiatetime & toofast[0] == false) {
-                                    toofast[0] = true;
-                                }
-                                else if (Math.round(performance.now() - start_time) >= maxinitiatetime & tooslow[0] == false) {
-                                    tooslow[0] = true;
-                                }
-                            }
-                        }
                         
                         // Rotate bar based on vertical mouse movement
                         if (lastMouseY !== null) {
@@ -680,7 +753,11 @@ var jsConfidenceWheel = (function (jspsych) {
                         if (responded == false) {
                             responded = true;
                             // Response RT
-                            rt.push(performance.now() - start_time);
+                            var response_time = performance.now() - start_time;
+                            rt.push(response_time);
+                            if (response_time <= startinitiatetime) {
+                                toofast[0] = true;
+                            }
                             
                             // Record orientation response (0-180°)
                             var response_orientation = trial.current_orientation;
@@ -718,11 +795,6 @@ var jsConfidenceWheel = (function (jspsych) {
                     function animateOrientationBar() {
                         if (!finished && !endtrial) {
                             ctx.clearRect(0, 0, canvas.width, canvas.height);
-                            // Redraw white circle
-                            const circle = new Path2D();
-                            circle.arc(midx, midy, startingradius, 0, 2 * Math.PI);
-                            ctx.strokeStyle = 'white';
-                            ctx.stroke(circle);
                             // Redraw orientation bar
                             self.drawOrientationBarResponse(ctx, trial, midx, midy, targetN, indiv_patch_radius);
                             animationFrameId = requestAnimationFrame(animateOrientationBar);
@@ -876,77 +948,6 @@ var jsConfidenceWheel = (function (jspsych) {
                 } // End else (color wheel response)
             } // End if (trial.draw_wheel == true)
 
-            function end_trial() {
-                if (endtrial) {
-                    return;
-                }
-                endtrial = true;
-                // Cancel orientation bar animation if active
-                if (trial._orientationBarAnimationId !== undefined) {
-                    cancelAnimationFrame(trial._orientationBarAnimationId);
-                }
-                
-                // Check for start out of center
-                for (ii = 0; ii < pastYcoords.length; ii++){
-                    if (pastYcoords[ii] != 0 || pastXcoords[ii] != 0){
-                        break
-                    }
-                }
-                if (Math.sqrt( pastYcoords[ii] * pastYcoords[ii] + pastXcoords[ii] * pastXcoords[ii] ) > startingradius ){
-                    startoutofCenter[0] = true;
-                }
-
-                // ctx.clearRect(0, 0, canvas.width, canvas.height);
-                if (mousecheckinterval) {
-                    clearInterval(mousecheckinterval);
-                }
-                ctx.font = "20px Arial";
-                if (trial.draw_wheel){                    
-                    var wait_time = 1000                    
-                    if (toofast[0] == true || 
-                        tooslow[0] == true || 
-                        startoutofCenter[0] == true ){
-                            wait_time = wait_time * 4
-                        }
-
-                    
-                    // Build Feedback Options
-                    var txt = ''
-                    
-                    if (startoutofCenter[0]){txt = 'Response Started Out Of Center.'}
-                    if (toofast[0]){txt = 'Too Fast Leaving The Center.'}
-                    if (tooslow[0]){txt = 'Too Slow Leaving The Center.'}
-                        
-                    if (timeout[0] == true){
-                        ctx.textAlign = "center";
-                        ctx.fillStyle = "red";
-                        ctx.fillText('Time Penalty:', midx, canvas.height * .6);
-                        ctx.fillText('Trial Timed Out.', midx, canvas.height * .65);
-                        display_element.insertBefore(canvas, null);
-                    } else if (txt != '') {
-                        ctx.textAlign = "center";
-                        ctx.fillStyle = 'red';
-                        ctx.fillText('Time Penalty:', midx, canvas.height * .6);
-                        ctx.fillText(txt, midx, canvas.height * .65)
-                        display_element.insertBefore(canvas, null);
-                    }
-                
-                    setTimeout(() => { 
-                        // console.log('trial data triggered')
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        ctx.canvas.remove()
-                        this.jsPsych.pluginAPI.clearAllTimeouts();
-                        this.jsPsych.finishTrial(trial_data);
-                    }, wait_time);
-
-                } else { 
-                    // document.getElementById("jspsych-button-group").remove()
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    ctx.canvas.remove()
-                    this.jsPsych.finishTrial(trial_data);
-                }
-                
-            }
             
 
             const safeChoiceColors = Array.isArray(trial.choice_colors) ? trial.choice_colors : [];
