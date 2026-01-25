@@ -195,6 +195,7 @@
     var browser_window_width = window.outerWidth;
     const h = browser_window_height
     const w = browser_window_width
+    const fixationHtml = '<div style="position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; font-size:25px;">+</div>';
 
     // ============================================================
     // STEP 2: Set experiment name and initialize timeline
@@ -545,7 +546,7 @@
 
     const dsp_fixation = {
         type: jsPsychHtmlKeyboardResponse,
-        stimulus: '<div style="font-size:25px;">+</div>',
+        stimulus: fixationHtml,
         choices: 'NO_KEYS',
         trial_duration: 200,
         data: {trial_event: 'fixation'}
@@ -626,7 +627,7 @@
                 
                 var practice_fixation = {
                     type: jsPsychHtmlKeyboardResponse,
-                    stimulus: '<div style="font-size:25px;">+</div>',
+                    stimulus: fixationHtml,
                     choices: 'NO_KEYS',
                     trial_duration: 1000, // 1 second fixation
                     data: {trial_event: 'practice_fixation'}
@@ -721,7 +722,7 @@
                 
                 var trial_fixation = {
                     type: jsPsychHtmlKeyboardResponse,
-                    stimulus: '<div style="font-size:25px;">+</div>',
+                    stimulus: fixationHtml,
                     choices: 'NO_KEYS',
                     trial_duration: 1000, // 1 second fixation
                     data: {
@@ -863,7 +864,7 @@
                 
                 var practice_fixation = {
                     type: jsPsychHtmlKeyboardResponse,
-                    stimulus: '<div style="font-size:25px;">+</div>',
+                    stimulus: fixationHtml,
                     choices: 'NO_KEYS',
                     trial_duration: 1000, // 1 second fixation
                     data: {trial_event: 'practice_fixation'}
@@ -972,7 +973,7 @@
                 
                 var trial_fixation = {
                     type: jsPsychHtmlKeyboardResponse,
-                    stimulus: '<div style="font-size:25px;">+</div>',
+                    stimulus: fixationHtml,
                     choices: 'NO_KEYS',
                     trial_duration: 1000, // 1 second fixation
                     data: {
@@ -1113,7 +1114,7 @@
                 
                 var practice_fixation = {
                     type: jsPsychHtmlKeyboardResponse,
-                    stimulus: '<div style="font-size:25px;">+</div>',
+                    stimulus: fixationHtml,
                     choices: 'NO_KEYS',
                     trial_duration: 1000, // 1 second fixation
                     data: {trial_event: 'practice_fixation'}
@@ -1227,7 +1228,7 @@
                 
                 var trial_fixation = {
                     type: jsPsychHtmlKeyboardResponse,
-                    stimulus: '<div style="font-size:25px;">+</div>',
+                    stimulus: fixationHtml,
                     choices: 'NO_KEYS',
                     trial_duration: 1000, // Match subexp 1 & 2 fixation timing
                     data: {

@@ -542,8 +542,8 @@ var jsConfidenceWheel = (function (jspsych) {
                     
                 
                     // Draw Color Wheel                
-                    var outer_radius = Math.round( window.outerHeight * 0.354 )
-                    var inner_radius = Math.round(outer_radius - window.outerHeight * 0.028)
+                    var outer_radius = Math.round( window.outerHeight * 0.230 )
+                    var inner_radius = Math.round(outer_radius - window.outerHeight * 0.026)
 
                     
                     var graphics = canvas.getContext("2d");

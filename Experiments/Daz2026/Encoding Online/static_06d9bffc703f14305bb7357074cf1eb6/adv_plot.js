@@ -50,18 +50,20 @@ var jsAdvPlot = (function (jspsych) {
             }
             const sizes = Object.keys(setSizeCounts).map(Number).sort((a, b) => a - b);
 
+            display_element.style.position = 'relative';
+
             var canvas = document.createElement("canvas");
             canvas.style.margin = "0";
             canvas.style.padding = "0";
+            canvas.style.display = "block";
             var ctx = canvas.getContext("2d");
             ctx.canvas.width = window.outerWidth * 0.95;
             ctx.canvas.height = window.outerHeight * 0.95;
+            display_element.appendChild(canvas);
 
             var button = document.createElement('button');
             button.innerHTML = 'Press to continue';
             button.style.position = 'absolute';
-            button.style.top = '50%';
-            button.style.left = '50%';
             button.style.transform = 'translate(-50%, -50%)';
             display_element.appendChild(button);
 
@@ -201,7 +203,10 @@ var jsAdvPlot = (function (jspsych) {
                 runningOffset += plotWidth + plotSpacing;
             });
 
-            display_element.appendChild(canvas);
+            const canvasRect = canvas.getBoundingClientRect();
+            const containerRect = display_element.getBoundingClientRect();
+            button.style.left = (canvasRect.left - containerRect.left + canvasRect.width / 2) + 'px';
+            button.style.top = (canvasRect.top - containerRect.top + canvasRect.height / 2) + 'px';
 
             function end_trial() {
                 display_element.innerHTML = '';
