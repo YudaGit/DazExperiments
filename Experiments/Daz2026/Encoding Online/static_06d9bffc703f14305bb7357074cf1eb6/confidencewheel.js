@@ -75,6 +75,11 @@ var jsConfidenceWheel = (function (jspsych) {
                 type: jspsych.ParameterType.FLOAT,
                 pretty_name: "Mask Bar Scale",
                 default: 0.8,  // Mask bar size relative to stimulus bars
+            },
+            pause_each_stage: {
+                type: jspsych.ParameterType.BOOL,
+                pretty_name: "Pause Each Stage",
+                default: false
             }
         }   
     }
@@ -410,6 +415,7 @@ var jsConfidenceWheel = (function (jspsych) {
 
         trial(display_element, trial) {
             // Set Base Variables
+            var self = this;
             var maxtime = 10000
             var startingradius = Math.round(window.outerHeight * 0.035);
             var windowHeight = (typeof browser_window_height === 'number' && !isNaN(browser_window_height))
@@ -464,14 +470,18 @@ var jsConfidenceWheel = (function (jspsych) {
                 const displayDuration = (typeof trial.trial_duration === 'number' && !isNaN(trial.trial_duration))
                     ? trial.trial_duration
                     : 0;
-                // Set timeout when showing stimuli
-                this.jsPsych.pluginAPI.setTimeout(() => {
-                    end_trial();
-                }, displayDuration);
-                // Secondary native timeout as a failsafe
-                setTimeout(() => {
-                    end_trial();
-                }, displayDuration + 10);
+                if (trial.pause_each_stage) {
+                    setupPauseKey();
+                } else {
+                    // Set timeout when showing stimuli
+                    this.jsPsych.pluginAPI.setTimeout(() => {
+                        end_trial();
+                    }, displayDuration);
+                    // Secondary native timeout as a failsafe
+                    setTimeout(() => {
+                        end_trial();
+                    }, displayDuration + 10);
+                }
                 
                 // Check if showing visual mask (for Sub-Experiment 3 retention interval)
                 if (trial.show_mask == true) {
@@ -621,13 +631,71 @@ var jsConfidenceWheel = (function (jspsych) {
 
             var endtrial = false
             var mousecheckinterval
-            var self = this;
+            var pauseKeyListener = null;
+            var feedbackKeyListener = null;
+
+            function setupPauseKey() {
+                if (!trial.pause_each_stage) {
+                    return;
+                }
+                if (pauseKeyListener) {
+                    return;
+                }
+                pauseKeyListener = self.jsPsych.pluginAPI.getKeyboardResponse({
+                    callback_function: function () {
+                        end_trial();
+                    },
+                    valid_responses: ['n', 'N'],
+                    rt_method: 'performance',
+                    persist: false,
+                    allow_held_key: false,
+                });
+            }
+
+            function teardownPauseKey() {
+                if (!pauseKeyListener) {
+                    return;
+                }
+                self.jsPsych.pluginAPI.cancelKeyboardResponse(pauseKeyListener);
+                pauseKeyListener = null;
+            }
+
+            function setupFeedbackKey() {
+                if (!trial.pause_each_stage) {
+                    return;
+                }
+                if (feedbackKeyListener) {
+                    return;
+                }
+                feedbackKeyListener = self.jsPsych.pluginAPI.getKeyboardResponse({
+                    callback_function: function () {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.canvas.remove()
+                        self.jsPsych.pluginAPI.clearAllTimeouts();
+                        self.jsPsych.finishTrial(trial_data);
+                    },
+                    valid_responses: ['n', 'N'],
+                    rt_method: 'performance',
+                    persist: false,
+                    allow_held_key: false,
+                });
+            }
+
+            function teardownFeedbackKey() {
+                if (!feedbackKeyListener) {
+                    return;
+                }
+                self.jsPsych.pluginAPI.cancelKeyboardResponse(feedbackKeyListener);
+                feedbackKeyListener = null;
+            }
 
             function end_trial() {
                 if (endtrial) {
                     return;
                 }
                 endtrial = true;
+                teardownPauseKey();
+                teardownFeedbackKey();
                 // Cancel orientation bar animation if active
                 if (trial._orientationBarAnimationId !== undefined) {
                     cancelAnimationFrame(trial._orientationBarAnimationId);
@@ -690,13 +758,17 @@ var jsConfidenceWheel = (function (jspsych) {
                         display_element.insertBefore(canvas, null);
                     }
 
-                    setTimeout(() => {
-                        // console.log('trial data triggered')
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        ctx.canvas.remove()
-                        self.jsPsych.pluginAPI.clearAllTimeouts();
-                        self.jsPsych.finishTrial(trial_data);
-                    }, wait_time);
+                    if (trial.pause_each_stage) {
+                        setupFeedbackKey();
+                    } else {
+                        setTimeout(() => {
+                            // console.log('trial data triggered')
+                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+                            ctx.canvas.remove()
+                            self.jsPsych.pluginAPI.clearAllTimeouts();
+                            self.jsPsych.finishTrial(trial_data);
+                        }, wait_time);
+                    }
 
                 } else {
                     // document.getElementById("jspsych-button-group").remove()

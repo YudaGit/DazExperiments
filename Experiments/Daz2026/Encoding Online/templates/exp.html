@@ -73,6 +73,7 @@
     // DEV helper: skip intro screens and jump to practice stage
     const skipIntro = true;
     const skipPractice = true; // Set to true to skip practice trials
+    const pauseEachStage = true; // Press "n" to advance each trial stage
     var troubleshooting = false
 
     var send_debrief = function(data){
@@ -547,8 +548,8 @@
     const dsp_fixation = {
         type: jsPsychHtmlKeyboardResponse,
         stimulus: fixationHtml,
-        choices: 'NO_KEYS',
-        trial_duration: 200,
+        choices: pauseEachStage ? ['n', 'N'] : 'NO_KEYS',
+        trial_duration: pauseEachStage ? null : 200,
         data: {trial_event: 'fixation'}
     }
 
@@ -628,8 +629,8 @@
                 var practice_fixation = {
                     type: jsPsychHtmlKeyboardResponse,
                     stimulus: fixationHtml,
-                    choices: 'NO_KEYS',
-                    trial_duration: 1000, // 1 second fixation
+                    choices: pauseEachStage ? ['n', 'N'] : 'NO_KEYS',
+                    trial_duration: pauseEachStage ? null : 1000, // 1 second fixation
                     data: {trial_event: 'practice_fixation'}
                 };
                 
@@ -649,6 +650,7 @@
                     patch_positionalangle: practicePositions,
                     choice_colorangles: practiceColorAngles,
                     stimulus_height: browser_window_height * .95,
+                    pause_each_stage: pauseEachStage,
                     on_start: function(data) {
                         studyFinished = true; // Turn off tab monitoring
                     }
@@ -657,8 +659,8 @@
                 var practice_retention_interval = {
                     type: jsPsychHtmlKeyboardResponse,
                     stimulus: '',
-                    choices: 'NO_KEYS',
-                    trial_duration: retention_duration_ms,
+                    choices: pauseEachStage ? ['n', 'N'] : 'NO_KEYS',
+                    trial_duration: pauseEachStage ? null : retention_duration_ms,
                     data: {trial_event: 'practice_retention_interval'},
                     on_finish: function(data) {
                         studyFinished = false; // Turn back on tab monitoring
@@ -683,6 +685,7 @@
                     patch_positionalangle: practicePositions,
                     choice_colorangles: practiceColorAngles,
                     stimulus_height: browser_window_height * .95,
+                    pause_each_stage: pauseEachStage,
                     wheel_rotation: sessionWheelRotation,
                     color_palette: highRGBs
                 };
@@ -723,8 +726,8 @@
                 var trial_fixation = {
                     type: jsPsychHtmlKeyboardResponse,
                     stimulus: fixationHtml,
-                    choices: 'NO_KEYS',
-                    trial_duration: 1000, // 1 second fixation
+                    choices: pauseEachStage ? ['n', 'N'] : 'NO_KEYS',
+                    trial_duration: pauseEachStage ? null : 1000, // 1 second fixation
                     data: {
                         trial_event: 'fixation',
                         trial_number: trial.trial_number,
@@ -749,6 +752,7 @@
                     patch_positionalangle: trialPositions,
                     choice_colorangles: trialColorAngles,
                     stimulus_height: browser_window_height * .95,
+                    pause_each_stage: pauseEachStage,
                     on_start: function(data) {
                         studyFinished = true; // Turn off tab monitoring
                     }
@@ -757,8 +761,8 @@
                 var trial_retention_interval = {
                     type: jsPsychHtmlKeyboardResponse,
                     stimulus: '',
-                    choices: 'NO_KEYS',
-                    trial_duration: retention_duration_ms,
+                    choices: pauseEachStage ? ['n', 'N'] : 'NO_KEYS',
+                    trial_duration: pauseEachStage ? null : retention_duration_ms,
                     data: {
                         trial_event: 'retention_interval',
                         trial_number: trial.trial_number
@@ -787,6 +791,7 @@
                     patch_positionalangle: trialPositions,
                     choice_colorangles: trialColorAngles,
                     stimulus_height: browser_window_height * .95,
+                    pause_each_stage: pauseEachStage,
                     wheel_rotation: sessionWheelRotation,
                     color_palette: highRGBs,
                     on_finish: function(data) {
@@ -865,8 +870,8 @@
                 var practice_fixation = {
                     type: jsPsychHtmlKeyboardResponse,
                     stimulus: fixationHtml,
-                    choices: 'NO_KEYS',
-                    trial_duration: 1000, // 1 second fixation
+                    choices: pauseEachStage ? ['n', 'N'] : 'NO_KEYS',
+                    trial_duration: pauseEachStage ? null : 1000, // 1 second fixation
                     data: {trial_event: 'practice_fixation'}
                 };
                 
@@ -887,6 +892,7 @@
                     patch_positionalangle: practicePositions,
                     choice_colorangles: practiceColorAngles,
                     stimulus_height: browser_window_height * .95,
+                    pause_each_stage: pauseEachStage,
                     on_start: function(data) {
                         studyFinished = true; // Turn off tab monitoring
                     }
@@ -895,8 +901,8 @@
                 var practice_retention_interval = {
                     type: jsPsychHtmlKeyboardResponse,
                     stimulus: '',
-                    choices: 'NO_KEYS',
-                    trial_duration: retention_duration_ms,
+                    choices: pauseEachStage ? ['n', 'N'] : 'NO_KEYS',
+                    trial_duration: pauseEachStage ? null : retention_duration_ms,
                     data: {trial_event: 'practice_retention_interval'},
                     on_finish: function(data) {
                         studyFinished = false; // Turn back on tab monitoring
@@ -922,6 +928,7 @@
                     patch_positionalangle: practicePositions,
                     choice_colorangles: practiceColorAngles,
                     stimulus_height: browser_window_height * .95,
+                    pause_each_stage: pauseEachStage,
                     wheel_rotation: sessionWheelRotation,
                     color_palette: highRGBs,
                     on_finish: function(data) {
@@ -974,8 +981,8 @@
                 var trial_fixation = {
                     type: jsPsychHtmlKeyboardResponse,
                     stimulus: fixationHtml,
-                    choices: 'NO_KEYS',
-                    trial_duration: 1000, // 1 second fixation
+                    choices: pauseEachStage ? ['n', 'N'] : 'NO_KEYS',
+                    trial_duration: pauseEachStage ? null : 1000, // 1 second fixation
                     data: {
                         trial_event: 'fixation',
                         trial_number: trial.trial_number,
@@ -1001,6 +1008,7 @@
                     patch_positionalangle: trialPositions,
                     choice_colorangles: trialColorAngles,
                     stimulus_height: browser_window_height * .95,
+                    pause_each_stage: pauseEachStage,
                     on_start: function(data) {
                         studyFinished = true; // Turn off tab monitoring
                     }
@@ -1009,8 +1017,8 @@
                 var trial_retention_interval = {
                     type: jsPsychHtmlKeyboardResponse,
                     stimulus: '',
-                    choices: 'NO_KEYS',
-                    trial_duration: retention_duration_ms,
+                    choices: pauseEachStage ? ['n'] : 'NO_KEYS',
+                    trial_duration: pauseEachStage ? null : retention_duration_ms,
                     data: {
                         trial_event: 'retention_interval',
                         trial_number: trial.trial_number
@@ -1039,6 +1047,7 @@
                     patch_positionalangle: trialPositions,
                     choice_colorangles: trialColorAngles,
                     stimulus_height: browser_window_height * .95,
+                    pause_each_stage: pauseEachStage,
                     wheel_rotation: sessionWheelRotation,
                     color_palette: highRGBs,
                     on_finish: function(data) {
@@ -1115,8 +1124,8 @@
                 var practice_fixation = {
                     type: jsPsychHtmlKeyboardResponse,
                     stimulus: fixationHtml,
-                    choices: 'NO_KEYS',
-                    trial_duration: 1000, // 1 second fixation
+                    choices: pauseEachStage ? ['n'] : 'NO_KEYS',
+                    trial_duration: pauseEachStage ? null : 1000, // 1 second fixation
                     data: {trial_event: 'practice_fixation'}
                 };
                 
@@ -1140,6 +1149,7 @@
                     choice_colorangles: practiceColorAngles,
                     orientations: practiceOrientations, // Orientation angles (0-180°)
                     stimulus_height: browser_window_height * .95,
+                    pause_each_stage: pauseEachStage,
                     on_start: function(data) {
                         studyFinished = true; // Turn off tab monitoring
                     }
@@ -1152,6 +1162,7 @@
                     draw_wheel: false,
                     show_mask: true, // Enable visual mask
                     stimulus_height: browser_window_height * .95,
+                    pause_each_stage: pauseEachStage,
                     data: {
                         trial_event: 'practice_retention_interval',
                         trial_number: practiceTrial.trial_number
@@ -1182,6 +1193,7 @@
                     orientations: practiceOrientations,
                     target_index: practiceTrial.target, // Specify target directly
                     stimulus_height: browser_window_height * .95,
+                    pause_each_stage: pauseEachStage,
                     wheel_rotation: sessionWheelRotation,
                     color_palette: highRGBs,
                     // No practice point recording (match subexp 1 & 2)
@@ -1229,8 +1241,8 @@
                 var trial_fixation = {
                     type: jsPsychHtmlKeyboardResponse,
                     stimulus: fixationHtml,
-                    choices: 'NO_KEYS',
-                    trial_duration: 1000, // Match subexp 1 & 2 fixation timing
+                    choices: pauseEachStage ? ['n'] : 'NO_KEYS',
+                    trial_duration: pauseEachStage ? null : 1000, // Match subexp 1 & 2 fixation timing
                     data: {
                         trial_event: 'fixation',
                         trial_number: t + 1,
@@ -1259,6 +1271,7 @@
                     choice_colorangles: trialColorAngles,
                     orientations: trialOrientations, // Orientation angles (0-180°)
                     stimulus_height: browser_window_height * .95,
+                    pause_each_stage: pauseEachStage,
                     on_start: function(data) {
                         studyFinished = true; // Turn off tab monitoring
                     }
@@ -1271,6 +1284,7 @@
                     draw_wheel: false,
                     show_mask: true, // Enable visual mask
                     stimulus_height: browser_window_height * .95,
+                    pause_each_stage: pauseEachStage,
                     data: {
                         trial_event: 'retention_interval',
                         trial_number: t + 1,
@@ -1303,6 +1317,7 @@
                     orientations: trialOrientations,
                     target_index: trial.target, // Specify target directly
                     stimulus_height: browser_window_height * .95,
+                    pause_each_stage: pauseEachStage,
                     wheel_rotation: sessionWheelRotation,
                     color_palette: highRGBs,
                     on_finish: function(data) {
