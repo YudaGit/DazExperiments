@@ -12,6 +12,9 @@ fprintf('*** SCRIPT VERSION: UPDATED WITH 9 BARS PER GROUP ***\n\n');
 % Data directory (script runs from within the data folder)
 dataDir = '.';
 
+% Participants to include (leave empty to include all)
+participantsToInclude = {'YDL', 'AQ'};
+
 % Find all session files
 files = dir(fullfile(dataDir, 'STInte_*.mat'));
 if isempty(files)
@@ -33,7 +36,16 @@ files = files(sortIdx);
 allTrials = [];
 for i = 1:length(files)
     filepath = fullfile(dataDir, files(i).name);
-    fprintf('Loading session %d...\n', sessionNumbers(sortIdx(i)));
+    participantMatch = regexp(files(i).name, 'STInte_([^_]+)_sess', 'tokens', 'once');
+    if isempty(participantMatch)
+        warning('Skipping file with unrecognized participant: %s', files(i).name);
+        continue;
+    end
+    participantId = participantMatch{1};
+    if ~isempty(participantsToInclude) && ~ismember(participantId, participantsToInclude)
+        continue;
+    end
+    fprintf('Loading %s session %d...\n', participantId, sessionNumbers(sortIdx(i)));
     
     data = load(filepath, 'expTrials');
     if ~isfield(data, 'expTrials')
@@ -44,6 +56,7 @@ for i = 1:length(files)
     trials = data.expTrials;
     if istable(trials)
         trials.Session = repmat(sessionNumbers(sortIdx(i)), height(trials), 1);
+        trials.Participant = repmat({participantId}, height(trials), 1);
     end
     
     if isempty(allTrials)
@@ -53,13 +66,21 @@ for i = 1:length(files)
     end
 end
 
-fprintf('\nTotal trials loaded: %d\n\n', height(allTrials));
-
 % Filter out invalid trials (missing precision or RT)
 validIdx = ~isnan(allTrials.Precision) & ~isnan(allTrials.ResponseTime) & ...
            allTrials.ResponseTime > 0;
 allTrials = allTrials(validIdx, :);
-fprintf('Valid trials: %d\n\n', height(allTrials));
+
+% Split by participant
+allTrialsAll = allTrials;
+participants = unique(allTrialsAll.Participant, 'stable');
+
+for p = 1:length(participants)
+    participantId = participants{p};
+    fprintf('\n=== Participant: %s ===\n', participantId);
+    allTrials = allTrialsAll(strcmp(allTrialsAll.Participant, participantId), :);
+    fprintf('Total trials loaded: %d\n', height(allTrials));
+    fprintf('Valid trials: %d\n\n', height(allTrials));
 
 % Helper function to compute circular SD for a group
 function csd = computeCircSD(errorsDeg)
@@ -300,11 +321,11 @@ for g = 1:nGroups
          'HorizontalAlignment', 'center', 'FontSize', 11, 'FontWeight', 'bold');
 end
 
-sgtitle('Figure 1a: Precision (Circular SD of Absolute Errors) - Error bars: 95% Bootstrap CI', 'FontSize', 14, 'FontWeight', 'bold');
+sgtitle(sprintf('Figure 1a: Precision (Circular SD of Absolute Errors) - %s', participantId), 'FontSize', 14, 'FontWeight', 'bold');
 
 % Save figure
-saveas(fig1a, fullfile(dataDir, 'Figure1a_Precision.png'));
-fprintf('Saved: Figure1a_Precision.png\n\n');
+saveas(fig1a, fullfile(dataDir, sprintf('Figure1a_Precision_%s.png', participantId)));
+fprintf('Saved: Figure1a_Precision_%s.png\n\n', participantId);
 
 % --- Figure 1b: RT ---
 fprintf('Creating Figure 1b: RT...\n');
@@ -354,11 +375,11 @@ for g = 1:nGroups
          'HorizontalAlignment', 'center', 'FontSize', 11, 'FontWeight', 'bold');
 end
 
-sgtitle('Figure 1b: Response Time (Median) - Error bars: 95% Bootstrap CI', 'FontSize', 14, 'FontWeight', 'bold');
+sgtitle(sprintf('Figure 1b: Response Time (Median) - %s', participantId), 'FontSize', 14, 'FontWeight', 'bold');
 
 % Save figure
-saveas(fig1b, fullfile(dataDir, 'Figure1b_RT.png'));
-fprintf('Saved: Figure1b_RT.png\n\n');
+saveas(fig1b, fullfile(dataDir, sprintf('Figure1b_RT_%s.png', participantId)));
+fprintf('Saved: Figure1b_RT_%s.png\n\n', participantId);
 
 % --- Figure 2a: Precision Distributions ---
 fprintf('Creating Figure 2a: Precision Distributions...\n');
@@ -473,11 +494,11 @@ for g = 1:nGroups
          'HorizontalAlignment', 'center', 'FontSize', 11, 'FontWeight', 'bold');
 end
 
-sgtitle('Figure 2a: Precision Distributions (Individual Trials)', 'FontSize', 14, 'FontWeight', 'bold');
+sgtitle(sprintf('Figure 2a: Precision Distributions (Individual Trials) - %s', participantId), 'FontSize', 14, 'FontWeight', 'bold');
 
 % Save figure
-saveas(fig2a, fullfile(dataDir, 'Figure2a_Precision_Distributions.png'));
-fprintf('Saved: Figure2a_Precision_Distributions.png\n\n');
+saveas(fig2a, fullfile(dataDir, sprintf('Figure2a_Precision_Distributions_%s.png', participantId)));
+fprintf('Saved: Figure2a_Precision_Distributions_%s.png\n\n', participantId);
 
 % --- Figure 2b: RT Distributions ---
 fprintf('Creating Figure 2b: RT Distributions...\n');
@@ -590,10 +611,13 @@ for g = 1:nGroups
          'HorizontalAlignment', 'center', 'FontSize', 11, 'FontWeight', 'bold');
 end
 
-sgtitle('Figure 2b: Response Time Distributions (Individual Trials)', 'FontSize', 14, 'FontWeight', 'bold');
+sgtitle(sprintf('Figure 2b: Response Time Distributions (Individual Trials) - %s', participantId), 'FontSize', 14, 'FontWeight', 'bold');
 
 % Save figure
-saveas(fig2b, fullfile(dataDir, 'Figure2b_RT_Distributions.png'));
-fprintf('Saved: Figure2b_RT_Distributions.png\n\n');
+saveas(fig2b, fullfile(dataDir, sprintf('Figure2b_RT_Distributions_%s.png', participantId)));
+fprintf('Saved: Figure2b_RT_Distributions_%s.png\n\n', participantId);
 
-fprintf('=== Plotting Complete ===\n');
+fprintf('=== Plotting Complete (%s) ===\n', participantId);
+end
+
+fprintf('=== Plotting Complete (All Participants) ===\n');
