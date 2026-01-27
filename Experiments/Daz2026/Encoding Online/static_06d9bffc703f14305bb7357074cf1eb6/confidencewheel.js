@@ -601,6 +601,8 @@ var jsConfidenceWheel = (function (jspsych) {
 
             var startinitiatetime  = 1;  // Changed to 1ms so it never triggers (but still checks if starting outside circle)
             var maxinitiatetime  = 3000;  // Trigger penalty if leaving center after 3000ms
+            var responseTooFastMs = 200;
+            var responseTooSlowMs = maxinitiatetime;
 
             var toofast = [false];
             var tooslow = [false];
@@ -738,10 +740,11 @@ var jsConfidenceWheel = (function (jspsych) {
 
                     if (trial.response_type !== 'orientation_bar') {
                         if (startoutofCenter[0]){txt = 'Response Started Out Of Center.'}
-                        if (toofast[0]){txt = 'Too Fast Leaving The Center.'}
-                        if (tooslow[0]){txt = 'Too Slow Leaving The Center.'}
+                        if (toofast[0]){txt = 'Responded Too Quickly'}
+                        if (tooslow[0]){txt = 'Responded Too Slowly'}
                     } else {
-                        if (toofast[0]){txt = 'Too Fast Clicking.'}
+                        if (toofast[0]){txt = 'Responded Too Quickly'}
+                        if (tooslow[0]){txt = 'Responded Too Slowly'}
                     }
 
                     if (timeout[0] == true){
@@ -827,8 +830,11 @@ var jsConfidenceWheel = (function (jspsych) {
                             // Response RT
                             var response_time = performance.now() - start_time;
                             rt.push(response_time);
-                            if (response_time <= startinitiatetime) {
+                            if (response_time <= responseTooFastMs) {
                                 toofast[0] = true;
+                            }
+                            if (response_time >= responseTooSlowMs) {
+                                tooslow[0] = true;
                             }
                             
                             // Record orientation response (0-180°)

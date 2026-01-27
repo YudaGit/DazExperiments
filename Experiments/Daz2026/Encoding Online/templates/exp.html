@@ -479,66 +479,101 @@
     }
 
 
-    var wheel1 = {
-        type: jsPsychCategorizeImage,
-        stimulus: "{{url_for('static', filename='images/stim/NonRedStim.png')}}",
-        key_answer: 'ALL_KEYS',
-        incorrect_text: '',
-        show_stim_with_feedback: false, 
-        feedback_duration: 0,
-        stimulus_width: 100,
-        prompt: "<p>During each trial, you will briefly view between 1 and 6 colored discs.</p> Discs will sometimes comprise different colors.</p> Press any key to contine."
+    const visualInstructionSets = {
+        "1": [
+            {
+                stimulus: "{{url_for('static', filename='images/Subexp1/Stim.png')}}",
+                stimulus_width: 100,
+                prompt: "<p>In each trial, you will be shown 6 colored discs.</p> Some discs will share the same color, while others will have unique colors. </p> Press any key to contine."
+            },
+            {
+                stimulus: "{{url_for('static', filename='images/Subexp1/Wheel.png')}}",
+                prompt: "<p>After viewing the discs, they will be covered and one disc will be cued by a white border.</p> <p>Recall the color of the highlighted disc by moving your mouse to the color's location on the color wheel.</p> Press any key to contine."
+            },
+            {
+                stimulus: "{{url_for('static', filename='images/Subexp1/Response1.png')}}",
+                prompt: "<p> Your responses is shown with a white line on the color wheel. The true color is shown by a green line.</p><p>So you can easily see your response precision.</p>Press any key to contine."
+            },
+            {
+                stimulus: "{{url_for('static', filename='images/Subexp1/Response2.png')}}",
+                prompt: "<p>You will receive a time penalty and explanation if your mouse leaves the center circle too slowly, </p> or does not start from the center of the screen.</p> Press any key to contine."
+            },
+            {
+                stimulus: "{{url_for('static', filename='images/Subexp1/Exp_Feedback.png')}}",
+                prompt: "<p>Lastly, between each trial you can track your per-trial performance as well as your average performance (white dotted line). </p> Press any key to contine."
+            }
+        ],
+        "2": [
+            {
+                stimulus: "{{url_for('static', filename='images/subexp2/Stim.png')}}",
+                stimulus_width: 100,
+                prompt: "<p>In each trial, you will be shown 4 or 6 colored discs.</p> Discs are either all in unique colors, or some can be same color copies.</p> Press any key to contine."
+            },
+            {
+                stimulus: "{{url_for('static', filename='images/Subexp2/Wheel.png')}}",
+                prompt: "<p>After viewing the discs, they will be covered and one disc will be cued by a white border.</p> <p>Recall the color of the highlighted disc by moving your mouse to the color's location on the color wheel.</p> Press any key to contine."
+            },
+            {
+                stimulus: "{{url_for('static', filename='images/Subexp2/Response1.png')}}",
+                prompt: "<p> Your responses is shown with a white line on the color wheel. The true color is shown by a green line.</p><p>So you can easily see your response precision.</p>Press any key to contine."
+            },
+            {
+                stimulus: "{{url_for('static', filename='images/Subexp2/Response2.png')}}",
+                prompt: "<p>You will receive a time penalty and explanation if your mouse leaves the center circle too slowly, </p> or does not start from the center of the screen.</p> Press any key to contine."
+            },
+            {
+                stimulus: "{{url_for('static', filename='images/Subexp2/Exp_Feedback.png')}}",
+                prompt: "<p>Lastly, between each trial you can track your per-trial performance by set-size (4 or 6 items) as well as your average performance (white dotted line). </p> Press any key to contine."
+            }
+        ],
+        "3": [
+            {
+                stimulus: "{{url_for('static', filename='images/subexp3/Stim.png')}}",
+                stimulus_width: 100,
+                prompt: "<p>In each trial, you will be shown 4 or 6 colored orientation bars.</p> Bars are either all in unique colors and orientations, or some can be exact same copies.</p> Press any key to contine."
+            },
+            {
+                stimulus: "{{url_for('static', filename='images/Subexp2/ResponseBar.png')}}",
+                prompt: "<p>At the response stage, one of the bars will be shown at the center. </p> Move mouse up and down to rotate the response bar to its original orientation, and click mouse L button to confirm your response.</p> Press any key to contine."
+            },
+            {
+                stimulus: "{{url_for('static', filename='images/Subexp2/Response1.png')}}",
+                prompt: "<p> After confiming your response, you will see a green outline feedback bar that shows the original orientation.</p><p>So you can easily see your response precision.</p>Press any key to contine."
+            },
+            {
+                stimulus: "{{url_for('static', filename='images/Subexp2/Response2.png')}}",
+                prompt: "<p>You will receive a time penalty and explanation if you responded too quickly without rotating the bar, </p> or took too long (over 3 seconds) to respond.</p> Press any key to contine."
+            },
+            {
+                stimulus: "{{url_for('static', filename='images/Subexp2/Exp_Feedback.png')}}",
+                prompt: "<p>Lastly, between each trial you can track your per-trial performance by set-size (4 or 6 items) as well as your average performance (white dotted line). </p> Press any key to contine."
+            }
+        ]
     };
 
-    var wheel2 = {
-        type: jsPsychCategorizeImage,
-        stimulus: "{{url_for('static', filename='images/stim/RedStim.png')}}",
-        key_answer: 'ALL_KEYS',
-        incorrect_text: '',
-        show_stim_with_feedback: false, 
-        feedback_duration: 0,
-        prompt: "<p>Other times, discs will predominantly comprise one color.</p> Press any key to contine."
+    const buildVisualInstructionTrials = function(subexpKey) {
+        const steps = visualInstructionSets[subexpKey] || visualInstructionSets["1"];
+        return steps.map(function(step) {
+            return {
+                type: jsPsychCategorizeImage,
+                stimulus: step.stimulus,
+                key_answer: 'ALL_KEYS',
+                incorrect_text: '',
+                show_stim_with_feedback: false,
+                feedback_duration: 0,
+                stimulus_width: step.stimulus_width,
+                prompt: step.prompt
+            };
+        });
     };
 
-    var wheel3 = {
-        type: jsPsychCategorizeImage,
-        stimulus: "{{url_for('static', filename='images/stim/Wheel.png')}}",
-        key_answer: 'ALL_KEYS',
-        incorrect_text: '',
-        show_stim_with_feedback: false, 
-        feedback_duration: 0,
-        prompt: "<p>After viewing the discs, they will be covered and one disc will be cued by a white border.</p> <p>Recall the color of the highlighted disc by moving your mouse to the color's location on the color wheel.</p> Press any key to contine."
-    };
+    const visualInstructions = buildVisualInstructionTrials(String(subexperiment));
 
-    var wheel4 = {
-        type: jsPsychCategorizeImage,
-        stimulus: "{{url_for('static', filename='images/stim/Response.png')}}",
-        key_answer: 'ALL_KEYS',
-        incorrect_text: '',
-        show_stim_with_feedback: false, 
-        feedback_duration: 0,
-        prompt: "<p> Responses will create a white line on the color wheel. The true color will be shown by a green line.</p><p>Your accuracy will be recorded and displayed between trials.</p>Press any key to contine."
+    const pushVisualInstructions = function(timeline) {
+        visualInstructions.forEach(function(step) {
+            timeline.push(step);
+        });
     };
-
-    var wheel5 = {
-        type: jsPsychCategorizeImage,
-        stimulus: "{{url_for('static', filename='images/stim/Response.png')}}",
-        key_answer: 'ALL_KEYS',
-        incorrect_text: '',
-        show_stim_with_feedback: false, 
-        feedback_duration: 0,
-        prompt: "<p>You will receive a time penalty and explanation if your mouse leaves the center circle too fast, </p>too slowly, or does not start in the center of the screen.</p> Press any key to contine."
-    };
-
-    var wheel6 = {
-        type: jsPsychCategorizeImage,
-        stimulus: "{{url_for('static', filename='images/stim/Exp_Feedback.png')}}",
-        key_answer: 'ALL_KEYS',
-        incorrect_text: '',
-        show_stim_with_feedback: false, 
-        feedback_duration: 0,
-        prompt: "<p>Lastly, between each trial you can track your accuracy by set-size (1, 2, 4 or 6 discs) as well as your mean score (white dotted line). </p> Press any key to contine."
-    }
 
     const practice_screen = {
       type: jsPsychHtmlKeyboardResponse,
@@ -578,12 +613,7 @@
         
         // Sub-Experiment 1 specific instructions (using existing for now)
         if (!skipIntro) {
-            experiment_timeline.push( wheel1 )
-            experiment_timeline.push( wheel2 )
-            experiment_timeline.push( wheel3 )
-            experiment_timeline.push( wheel4 )
-            experiment_timeline.push( wheel5 )
-            experiment_timeline.push( wheel6 )
+            pushVisualInstructions(experiment_timeline);
         }
         if (!skipPractice) {
             experiment_timeline.push( practice_screen )
@@ -817,12 +847,7 @@
         
         // Sub-Experiment 2 specific instructions (using existing for now)
         if (!skipIntro) {
-            experiment_timeline.push( wheel1 )
-            experiment_timeline.push( wheel2 )
-            experiment_timeline.push( wheel3 )
-            experiment_timeline.push( wheel4 )
-            experiment_timeline.push( wheel5 )
-            experiment_timeline.push( wheel6 )
+            pushVisualInstructions(experiment_timeline);
         }
         if (!skipPractice) {
             experiment_timeline.push( practice_screen )
@@ -1073,12 +1098,7 @@
         
         // Sub-Experiment 3 specific instructions (using existing for now, will customize later)
         if (!skipIntro) {
-            experiment_timeline.push( wheel1 )
-            experiment_timeline.push( wheel2 )
-            experiment_timeline.push( wheel3 )
-            experiment_timeline.push( wheel4 )
-            experiment_timeline.push( wheel5 )
-            experiment_timeline.push( wheel6 )
+            pushVisualInstructions(experiment_timeline);
         }
         if (!skipPractice) {
             experiment_timeline.push( practice_screen )
@@ -1339,12 +1359,7 @@
         // ============================================================
         console.log("Building original example experiment timeline");
         
-        experiment_timeline.push( wheel1 )
-        experiment_timeline.push( wheel2 )
-        experiment_timeline.push( wheel3 )
-        experiment_timeline.push( wheel4 )
-        experiment_timeline.push( wheel5 )
-        experiment_timeline.push( wheel6 )
+        pushVisualInstructions(experiment_timeline);
         experiment_timeline.push( practice_screen )
         
         // Loop to create practice trials
