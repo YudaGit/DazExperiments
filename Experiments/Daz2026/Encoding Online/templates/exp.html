@@ -71,9 +71,9 @@
     
     var studyFinished = true
     // DEV helper: skip intro screens and jump to practice stage
-    const skipIntro = true;
-    const skipPractice = true; // Set to true to skip practice trials
-    const pauseEachStage = true; // Press "n" to advance each trial stage
+    const skipIntro = false;
+    const skipPractice = false; // Set to true to skip practice trials
+    const pauseEachStage = false; // Press "n" to advance each trial stage
     var troubleshooting = false
 
     var send_debrief = function(data){
@@ -533,19 +533,19 @@
                 prompt: "<p>In each trial, you will be shown 4 or 6 colored orientation bars.</p> Bars are either all in unique colors and orientations, or some can be exact same copies.</p> Press any key to contine."
             },
             {
-                stimulus: "{{url_for('static', filename='images/Subexp2/ResponseBar.png')}}",
+                stimulus: "{{url_for('static', filename='images/Subexp3/ResponseBar.png')}}",
                 prompt: "<p>At the response stage, one of the bars will be shown at the center. </p> Move mouse up and down to rotate the response bar to its original orientation, and click mouse L button to confirm your response.</p> Press any key to contine."
             },
             {
-                stimulus: "{{url_for('static', filename='images/Subexp2/Response1.png')}}",
+                stimulus: "{{url_for('static', filename='images/Subexp3/Response1.png')}}",
                 prompt: "<p> After confiming your response, you will see a green outline feedback bar that shows the original orientation.</p><p>So you can easily see your response precision.</p>Press any key to contine."
             },
             {
-                stimulus: "{{url_for('static', filename='images/Subexp2/Response2.png')}}",
+                stimulus: "{{url_for('static', filename='images/Subexp3/Response2.png')}}",
                 prompt: "<p>You will receive a time penalty and explanation if you responded too quickly without rotating the bar, </p> or took too long (over 3 seconds) to respond.</p> Press any key to contine."
             },
             {
-                stimulus: "{{url_for('static', filename='images/Subexp2/Exp_Feedback.png')}}",
+                stimulus: "{{url_for('static', filename='images/Subexp3/Exp_Feedback.png')}}",
                 prompt: "<p>Lastly, between each trial you can track your per-trial performance by set-size (4 or 6 items) as well as your average performance (white dotted line). </p> Press any key to contine."
             }
         ]
@@ -687,11 +687,16 @@
                 };
                 
                 var practice_retention_interval = {
-                    type: jsPsychHtmlKeyboardResponse,
-                    stimulus: '',
-                    choices: pauseEachStage ? ['n', 'N'] : 'NO_KEYS',
-                    trial_duration: pauseEachStage ? null : retention_duration_ms,
+                    type: jsConfidenceWheel,
                     data: {trial_event: 'practice_retention_interval'},
+                    trial_duration: retention_duration_ms,
+                    draw_wheel: false,
+                    show_noise_mask: true,
+                    choice_colors: practiceColors,
+                    patch_positionalangle: practicePositions,
+                    choice_colorangles: practiceColorAngles,
+                    stimulus_height: browser_window_height * .95,
+                    pause_each_stage: pauseEachStage,
                     on_finish: function(data) {
                         studyFinished = false; // Turn back on tab monitoring
                     }
@@ -707,7 +712,7 @@
                         is_practice: true
                     },
                     type: jsConfidenceWheel,
-                    trial_duration: 60000, // 60 second max response time
+                    trial_duration: 10000, // 10 second max response time
                     redundancy: practiceRedundancy,
                     target_index: practiceTrial.target, // Direct target index from Python
                     draw_wheel: true,
@@ -789,14 +794,19 @@
                 };
                 
                 var trial_retention_interval = {
-                    type: jsPsychHtmlKeyboardResponse,
-                    stimulus: '',
-                    choices: pauseEachStage ? ['n', 'N'] : 'NO_KEYS',
-                    trial_duration: pauseEachStage ? null : retention_duration_ms,
+                    type: jsConfidenceWheel,
                     data: {
                         trial_event: 'retention_interval',
                         trial_number: trial.trial_number
                     },
+                    trial_duration: retention_duration_ms,
+                    draw_wheel: false,
+                    show_noise_mask: true,
+                    choice_colors: trialColors,
+                    patch_positionalangle: trialPositions,
+                    choice_colorangles: trialColorAngles,
+                    stimulus_height: browser_window_height * .95,
+                    pause_each_stage: pauseEachStage,
                     on_finish: function(data) {
                         studyFinished = false; // Turn back on tab monitoring
                     }
@@ -813,7 +823,7 @@
                     },
                     type: jsConfidenceWheel,
                     stimulus: "{{url_for('static', filename='images/stim/WhitePointLUV_ColorWheelDarkBg_L54_r9.bmp')}}",
-                    trial_duration: 60000, // 60 second max response time
+                    trial_duration: 10000, // 10 second max response time
                     redundancy: trialRedundancy,
                     target_index: trial.target, // Direct target index from Python
                     draw_wheel: true,
@@ -885,7 +895,7 @@
                         trial_event: 'practice_trial_start_event',
                         trial_number: practiceTrial.trial_number,
                         duration_ms: practiceTrial.duration_ms,
-                        trial_type: practiceTrial.trial_type,
+                        trial_condition: practiceTrial.trial_type,
                         set_size: practiceTrial.set_size,
                         is_practice: true
                     },
@@ -905,7 +915,7 @@
                         trial_event: 'practice_color_patch_display_event',
                         trial_number: practiceTrial.trial_number,
                         duration_ms: practiceTrial.duration_ms,
-                        trial_type: practiceTrial.trial_type,
+                        trial_condition: practiceTrial.trial_type,
                         set_size: practiceTrial.set_size,
                         target: practiceTrial.target,
                         is_practice: true
@@ -924,11 +934,16 @@
                 };
                 
                 var practice_retention_interval = {
-                    type: jsPsychHtmlKeyboardResponse,
-                    stimulus: '',
-                    choices: pauseEachStage ? ['n', 'N'] : 'NO_KEYS',
-                    trial_duration: pauseEachStage ? null : retention_duration_ms,
+                    type: jsConfidenceWheel,
                     data: {trial_event: 'practice_retention_interval'},
+                    trial_duration: retention_duration_ms,
+                    draw_wheel: false,
+                    show_noise_mask: true,
+                    choice_colors: practiceColors,
+                    patch_positionalangle: practicePositions,
+                    choice_colorangles: practiceColorAngles,
+                    stimulus_height: browser_window_height * .95,
+                    pause_each_stage: pauseEachStage,
                     on_finish: function(data) {
                         studyFinished = false; // Turn back on tab monitoring
                     }
@@ -939,13 +954,13 @@
                         trial_event: 'practice_stimulus_wheel_display_event',
                         trial_number: practiceTrial.trial_number,
                         duration_ms: practiceTrial.duration_ms,
-                        trial_type: practiceTrial.trial_type,
+                        trial_condition: practiceTrial.trial_type,
                         set_size: practiceTrial.set_size,
                         target: practiceTrial.target,
                         is_practice: true
                     },
                     type: jsConfidenceWheel,
-                    trial_duration: 60000, // 60 second max response time
+                    trial_duration: 10000, // 10 second max response time
                     redundancy: practiceRedundancy,
                     target_index: practiceTrial.target, // Direct target index from Python
                     draw_wheel: true,
@@ -1012,7 +1027,7 @@
                         trial_event: 'fixation',
                         trial_number: trial.trial_number,
                         duration_ms: trial.duration_ms,
-                        trial_type: trial.trial_type,
+                        trial_condition: trial.trial_type,
                         set_size: trial.set_size
                     }
                 };
@@ -1022,7 +1037,7 @@
                         trial_event: 'color_patch_display_event',
                         trial_number: trial.trial_number,
                         duration_ms: trial.duration_ms,
-                        trial_type: trial.trial_type,
+                        trial_condition: trial.trial_type,
                         set_size: trial.set_size,
                         target: trial.target
                     },
@@ -1040,14 +1055,19 @@
                 };
                 
                 var trial_retention_interval = {
-                    type: jsPsychHtmlKeyboardResponse,
-                    stimulus: '',
-                    choices: pauseEachStage ? ['n'] : 'NO_KEYS',
-                    trial_duration: pauseEachStage ? null : retention_duration_ms,
+                    type: jsConfidenceWheel,
                     data: {
                         trial_event: 'retention_interval',
                         trial_number: trial.trial_number
                     },
+                    trial_duration: retention_duration_ms,
+                    draw_wheel: false,
+                    show_noise_mask: true,
+                    choice_colors: trialColors,
+                    patch_positionalangle: trialPositions,
+                    choice_colorangles: trialColorAngles,
+                    stimulus_height: browser_window_height * .95,
+                    pause_each_stage: pauseEachStage,
                     on_finish: function(data) {
                         studyFinished = false; // Turn back on tab monitoring
                     }
@@ -1058,13 +1078,13 @@
                         trial_event: 'stimulus_wheel_display_event',
                         trial_number: trial.trial_number,
                         duration_ms: trial.duration_ms,
-                        trial_type: trial.trial_type,
+                        trial_condition: trial.trial_type,
                         set_size: trial.set_size,
                         target: trial.target
                     },
                     type: jsConfidenceWheel,
                     stimulus: "{{url_for('static', filename='images/stim/WhitePointLUV_ColorWheelDarkBg_L54_r9.bmp')}}",
-                    trial_duration: 60000, // 60 second max response time
+                    trial_duration: 10000, // 10 second max response time
                     redundancy: trialRedundancy,
                     target_index: trial.target, // Direct target index from Python
                     draw_wheel: true,
@@ -1133,7 +1153,7 @@
                         trial_event: 'practice_trial_start_event',
                         trial_number: practiceTrial.trial_number,
                         duration_ms: practiceTrial.duration_ms,
-                        trial_type: practiceTrial.trial_type,
+                        trial_condition: practiceTrial.trial_type,
                         set_size: practiceTrial.set_size,
                         target: practiceTrial.target,
                         is_practice: true
@@ -1155,7 +1175,7 @@
                         trial_event: 'practice_orientation_bars_display_event',
                         trial_number: practiceTrial.trial_number,
                         duration_ms: practiceTrial.duration_ms,
-                        trial_type: practiceTrial.trial_type,
+                        trial_condition: practiceTrial.trial_type,
                         set_size: practiceTrial.set_size,
                         target: practiceTrial.target,
                         is_practice: true
@@ -1197,14 +1217,14 @@
                     data: {
                         trial_event: 'practice_orientation_response_event',
                         trial_number: practiceTrial.trial_number,
-                        trial_type: practiceTrial.trial_type,
+                        trial_condition: practiceTrial.trial_type,
                         set_size: practiceTrial.set_size,
                         target: practiceTrial.target,
                         target_orientation: practiceOrientations[practiceTrial.target],
                         is_practice: true
                     },
                     type: jsConfidenceWheel,
-                    trial_duration: 60000, // 60 second max response time
+                    trial_duration: 10000, // 10 second max response time
                     draw_wheel: true,
                     response_type: 'orientation_bar', // Use orientation bar response
                     choice_colors: practiceColors,
@@ -1266,7 +1286,7 @@
                     data: {
                         trial_event: 'fixation',
                         trial_number: t + 1,
-                        trial_type: trial.trial_type,
+                        trial_condition: trial.trial_type,
                         set_size: trial.set_size
                     }
                 };
@@ -1277,7 +1297,7 @@
                         trial_event: 'orientation_bars_display_event',
                         trial_number: t + 1,
                         duration_ms: trial.duration_ms,
-                        trial_type: trial.trial_type,
+                        trial_condition: trial.trial_type,
                         set_size: trial.set_size,
                         target: trial.target,
                         is_practice: false
@@ -1308,7 +1328,7 @@
                     data: {
                         trial_event: 'retention_interval',
                         trial_number: t + 1,
-                        trial_type: trial.trial_type,
+                        trial_condition: trial.trial_type,
                         set_size: trial.set_size
                     },
                     on_finish: function(data) {
@@ -1328,7 +1348,7 @@
                         is_practice: false
                     },
                     type: jsConfidenceWheel,
-                    trial_duration: 60000, // 60 second max response time
+                    trial_duration: 10000, // 10 second max response time
                     draw_wheel: true,
                     response_type: 'orientation_bar', // Use orientation bar response
                     choice_colors: trialColors,

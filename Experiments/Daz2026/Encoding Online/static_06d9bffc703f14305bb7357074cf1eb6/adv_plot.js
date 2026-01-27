@@ -97,6 +97,7 @@ var jsAdvPlot = (function (jspsych) {
                 4: 30,
                 6: 50
             };
+            const preferredXAxisInterval = xAxisIntervals[4] || 30;
 
             function drawLinePlot(setSizePoints, ctx, totalTrials, plotXOffset, lineColor, setSize, plotWidth) {
                 const xAxisMax = setSizeCounts[setSize] || setSizePoints.length || trial.trialN;
@@ -118,7 +119,7 @@ var jsAdvPlot = (function (jspsych) {
 
                 // Add dynamic axis labeling and other drawing code here as previously outlined
                 //const xAxisInterval = Math.ceil(xAxisMax / 10); // Adjust label density
-                const xAxisInterval = xAxisIntervals[setSize] || 5;
+                const xAxisInterval = preferredXAxisInterval;
                 ctx.strokeStyle = 'white';
                 for (let i = 0; i <= xAxisMax; i += xAxisInterval) {
                     let x = plotX + (i / xAxisMax) * plotWidth;

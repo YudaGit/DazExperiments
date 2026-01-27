@@ -173,7 +173,51 @@ function getRandomIntegers(min,max,N = 1){
   return randInts;
 }
 
-  var highRGBs = [ 
+// Color palette switch (default: OKLab to match original encoding study)
+var useOkLabPalette = true;
+
+function okLabToLinSRGB(L, a, b) {
+  var l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+  var m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+  var s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+
+  var l3 = l_ * l_ * l_;
+  var m3 = m_ * m_ * m_;
+  var s3 = s_ * s_ * s_;
+
+  var r =  4.0767416621 * l3 + -3.3077115913 * m3 +  0.2309699292 * s3;
+  var g = -1.2684380046 * l3 +  2.6097574011 * m3 + -0.3413193965 * s3;
+  var b2 = -0.0041960863 * l3 + -0.7034186147 * m3 +  1.7076147010 * s3;
+
+  return [r, g, b2];
+}
+
+function linToSrgbChannel(val) {
+  var v = Math.max(0, Math.min(1, val));
+  if (v <= 0.0031308) {
+    return 12.92 * v;
+  }
+  return 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
+}
+
+function buildOkLabPalette() {
+  var L = 0.85;
+  var radius = 0.23;
+  var palette = [];
+  for (let i = 0; i < 360; i++) {
+    var angle = 2 * Math.PI * i / 360;
+    var a = radius * Math.cos(angle);
+    var b = radius * Math.sin(angle);
+    var lin = okLabToLinSRGB(L, a, b);
+    var r = linToSrgbChannel(lin[0]);
+    var g = linToSrgbChannel(lin[1]);
+    var bch = linToSrgbChannel(lin[2]);
+    palette.push([r * 255, g * 255, bch * 255]);
+  }
+  return palette;
+}
+
+  var ciemHighRGBs = [ 
 [	240.5	,	48.91	,	112.22	],
 [	239.94	,	50.83	,	109.19	],
 [	239.36	,	52.7	,	106.1	],
@@ -534,6 +578,8 @@ function getRandomIntegers(min,max,N = 1){
 [	242.05	,	42.73	,	121.02	],
 [	241.55	,	44.86	,	118.13	],
 [	241.03	,	46.92	,	115.2	] ];
+
+var highRGBs = useOkLabPalette ? buildOkLabPalette() : ciemHighRGBs;
   
 var lowRGBs = [
   [	175.76	,	110.78	,	123.91	],

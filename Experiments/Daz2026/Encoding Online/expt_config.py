@@ -183,7 +183,7 @@ def prepare_subexperiment_1():
     redundant_n = 3  # Always 3 redundant items
     durations_ms = [50, 100, 150, 200, 250, 300, 350]  # 7 durations
     cue_types = ['R-cue', 'NR-cue']  # 2 trial types
-    n_trials_per_condition = 10
+    n_trials_per_condition = 1
     n_practice_trials = 5
     
     # Generate all trial combinations
@@ -235,7 +235,7 @@ def prepare_subexperiment_2():
     set_sizes = [4, 6]
     durations_ms = [50, 100, 200]  # 3 durations
     trial_types = ['Baseline', 'R-cue', 'NR-cue']
-    n_trials_per_condition = 10
+    n_trials_per_condition = 1
     
     # Redundancy levels: set-size 4 has 2 redundant, set-size 6 has 3 redundant
     redundancy_by_set_size = {4: 2, 6: 3}
@@ -299,7 +299,7 @@ def prepare_subexperiment_3():
     set_sizes = [4, 6]
     durations_ms = [50, 100, 200]  # 3 durations
     trial_types = ['Baseline', 'R-cue', 'NR-cue']
-    n_trials_per_condition = 10
+    n_trials_per_condition = 1
     
     # Redundancy levels: set-size 4 has 2 redundant, set-size 6 has 3 redundant
     redundancy_by_set_size = {4: 2, 6: 3}
