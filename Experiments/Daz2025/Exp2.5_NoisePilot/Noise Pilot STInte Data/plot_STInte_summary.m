@@ -62,6 +62,20 @@ for i = 1:length(files)
     if isempty(allTrials)
         allTrials = trials;
     else
+        % Align table variables before concatenation
+        allVarNames = union(allTrials.Properties.VariableNames, trials.Properties.VariableNames);
+        for v = 1:numel(allVarNames)
+            varName = allVarNames{v};
+            if ~ismember(varName, allTrials.Properties.VariableNames)
+                allTrials.(varName) = makeMissingColumn(trials.(varName), height(allTrials));
+            end
+            if ~ismember(varName, trials.Properties.VariableNames)
+                trials.(varName) = makeMissingColumn(allTrials.(varName), height(trials));
+            end
+        end
+        % Ensure same variable order
+        allTrials = allTrials(:, allVarNames);
+        trials = trials(:, allVarNames);
         allTrials = [allTrials; trials];
     end
 end
@@ -75,6 +89,24 @@ allTrials = allTrials(validIdx, :);
 allTrialsAll = allTrials;
 participants = unique(allTrialsAll.Participant, 'stable');
 
+% Prepare data for plotting
+% Groups: N=4 (high noise), N=6 (high noise)
+% For each group: Baseline, AggR-cue, AggNR-cue, RS_TimeOnly_R, RS_TimeOnly_NR,
+%                 RS_SpaceTime_R, RS_SpaceTime_NR, RedundantGrouped_R, RedundantGrouped_NR
+itemNs = [4, 6];
+xGroups = {'N=4', 'N=6'};
+nGroups = length(xGroups);
+barsPerGroup = 9;  % Baseline, AggR-cue, AggNR-cue, RS_TimeOnly_R, RS_TimeOnly_NR,
+                   % RS_SpaceTime_R, RS_SpaceTime_NR, RedundantGrouped_R, RedundantGrouped_NR
+
+% Compute global axis limits from all participants combined
+[~, ~, allBarData, allBarCI_upper, ~, allRTBarData, allRTBarCI_upper, ~] = ...
+    computeSTInteStats(allTrialsAll, itemNs, barsPerGroup);
+globalPrecisionYMax = max(allBarData + allBarCI_upper) * 1.1;
+globalRTYMaxValue = max(allRTBarData + allRTBarCI_upper) * 1.1;
+globalPrecisionDistYMax = max(abs(allTrialsAll.Precision)) * 1.1;
+globalRTDistYMax = max(allTrialsAll.ResponseTime) * 1.1;
+
 for p = 1:length(participants)
     participantId = participants{p};
     fprintf('\n=== Participant: %s ===\n', participantId);
@@ -82,165 +114,9 @@ for p = 1:length(participants)
     fprintf('Total trials loaded: %d\n', height(allTrials));
     fprintf('Valid trials: %d\n\n', height(allTrials));
 
-% Helper function to compute circular SD for a group
-function csd = computeCircSD(errorsDeg)
-    % Convert to radians
-    errorsRad = deg2rad(errorsDeg);
-    % Compute mean resultant length
-    R = sqrt(mean(cos(errorsRad)).^2 + mean(sin(errorsRad)).^2);
-    % Avoid log(0) or log(negative)
-    if R >= 1
-        csd = 0;
-    elseif R <= 0
-        csd = 180; % Maximum spread
-    else
-        csd = rad2deg(sqrt(-2 * log(R)));
-    end
-end
-
-% Helper function for bootstrap CI
-function ci = bootstrapCI(data, nBootstrap, alpha)
-    if isempty(data) || length(data) < 2
-        ci = [NaN, NaN];
-        return;
-    end
-    n = length(data);
-    bootStats = zeros(nBootstrap, 1);
-    for b = 1:nBootstrap
-        bootSample = data(randi(n, n, 1));
-        bootStats(b) = median(bootSample);
-    end
-    ci = prctile(bootStats, [alpha/2*100, (1-alpha/2)*100]);
-end
-
-% Prepare data for plotting
-% Groups: N=4 (high noise), N=6 (high noise)
-% For each group: Baseline, AggR-cue, AggNR-cue, RS_TimeOnly_R, RS_TimeOnly_NR, 
-%                 RS_SpaceTime_R, RS_SpaceTime_NR, RedundantGrouped_R, RedundantGrouped_NR
-
-itemNs = [4, 6];
-xGroups = {'N=4', 'N=6'};
-nGroups = length(xGroups);
-barsPerGroup = 9;  % Baseline, AggR-cue, AggNR-cue, RS_TimeOnly_R, RS_TimeOnly_NR, 
-                   % RS_SpaceTime_R, RS_SpaceTime_NR, RedundantGrouped_R, RedundantGrouped_NR
-
-% Initialize storage for all data
-allPrecisionData = cell(nGroups, barsPerGroup);
-allRTData = cell(nGroups, barsPerGroup);
-
-% Collect data for each group and condition
-for g = 1:nGroups
-    itemN = itemNs(g);
-    
-    % 1. Baseline
-    idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'Baseline');
-    if sum(idx) > 0
-        allPrecisionData{g, 1} = abs(allTrials.Precision(idx));
-        allRTData{g, 1} = allTrials.ResponseTime(idx);
-    end
-    
-    % 2. Aggregated R-cue (RS_TimeOnly + RS_SpaceTime + RedundantGrouped, CueType='R')
-    idx = allTrials.ItemN == itemN & ...
-          ismember(allTrials.Condition, {'RS_TimeOnly', 'RS_SpaceTime', 'RedundantGrouped'}) & ...
-          strcmp(allTrials.CueType, 'R');
-    if sum(idx) > 0
-        allPrecisionData{g, 2} = abs(allTrials.Precision(idx));
-        allRTData{g, 2} = allTrials.ResponseTime(idx);
-    end
-    
-    % 3. Aggregated NR-cue (RS_TimeOnly + RS_SpaceTime + RedundantGrouped, CueType='NR')
-    idx = allTrials.ItemN == itemN & ...
-          ismember(allTrials.Condition, {'RS_TimeOnly', 'RS_SpaceTime', 'RedundantGrouped'}) & ...
-          strcmp(allTrials.CueType, 'NR');
-    if sum(idx) > 0
-        allPrecisionData{g, 3} = abs(allTrials.Precision(idx));
-        allRTData{g, 3} = allTrials.ResponseTime(idx);
-    end
-    
-    % 4. RS_TimeOnly_R (R-cue only)
-    idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RS_TimeOnly') & ...
-          strcmp(allTrials.CueType, 'R');
-    if sum(idx) > 0
-        allPrecisionData{g, 4} = abs(allTrials.Precision(idx));
-        allRTData{g, 4} = allTrials.ResponseTime(idx);
-    end
-    
-    % 5. RS_TimeOnly_NR (NR-cue only)
-    idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RS_TimeOnly') & ...
-          strcmp(allTrials.CueType, 'NR');
-    if sum(idx) > 0
-        allPrecisionData{g, 5} = abs(allTrials.Precision(idx));
-        allRTData{g, 5} = allTrials.ResponseTime(idx);
-    end
-    
-    % 6. RS_SpaceTime_R (R-cue only)
-    idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RS_SpaceTime') & ...
-          strcmp(allTrials.CueType, 'R');
-    if sum(idx) > 0
-        allPrecisionData{g, 6} = abs(allTrials.Precision(idx));
-        allRTData{g, 6} = allTrials.ResponseTime(idx);
-    end
-    
-    % 7. RS_SpaceTime_NR (NR-cue only)
-    idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RS_SpaceTime') & ...
-          strcmp(allTrials.CueType, 'NR');
-    if sum(idx) > 0
-        allPrecisionData{g, 7} = abs(allTrials.Precision(idx));
-        allRTData{g, 7} = allTrials.ResponseTime(idx);
-    end
-    
-    % 8. RedundantGrouped_R (R-cue only)
-    idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RedundantGrouped') & ...
-          strcmp(allTrials.CueType, 'R');
-    if sum(idx) > 0
-        allPrecisionData{g, 8} = abs(allTrials.Precision(idx));
-        allRTData{g, 8} = allTrials.ResponseTime(idx);
-    end
-    
-    % 9. RedundantGrouped_NR (NR-cue only)
-    idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RedundantGrouped') & ...
-          strcmp(allTrials.CueType, 'NR');
-    if sum(idx) > 0
-        allPrecisionData{g, 9} = abs(allTrials.Precision(idx));
-        allRTData{g, 9} = allTrials.ResponseTime(idx);
-    end
-end
-
-% Compute summary statistics
-allBarData = zeros(nGroups * barsPerGroup, 1);
-allBarCI_upper = zeros(nGroups * barsPerGroup, 1);
-allBarCI_lower = zeros(nGroups * barsPerGroup, 1);
-allRTBarData = zeros(nGroups * barsPerGroup, 1);
-allRTBarCI_upper = zeros(nGroups * barsPerGroup, 1);
-allRTBarCI_lower = zeros(nGroups * barsPerGroup, 1);
-
-for g = 1:nGroups
-    for b = 1:barsPerGroup
-        idx = (g-1)*barsPerGroup + b;
-        
-        % Precision: circular SD
-        if ~isempty(allPrecisionData{g, b})
-            allBarData(idx) = computeCircSD(allPrecisionData{g, b});
-            % Bootstrap CI for circular SD
-            nBootstrap = 1000;
-            bootStats = zeros(nBootstrap, 1);
-            for boot = 1:nBootstrap
-                bootSample = allPrecisionData{g, b}(randi(length(allPrecisionData{g, b}), length(allPrecisionData{g, b}), 1));
-                bootStats(boot) = computeCircSD(bootSample);
-            end
-            allBarCI_upper(idx) = prctile(bootStats, 97.5);
-            allBarCI_lower(idx) = prctile(bootStats, 2.5);
-        end
-        
-        % RT: median
-        if ~isempty(allRTData{g, b})
-            allRTBarData(idx) = median(allRTData{g, b});
-            ci = bootstrapCI(allRTData{g, b}, 1000, 0.05);
-            allRTBarCI_upper(idx) = ci(2);
-            allRTBarCI_lower(idx) = ci(1);
-        end
-    end
-end
+[allPrecisionData, allRTData, allBarData, allBarCI_upper, allBarCI_lower, ...
+    allRTBarData, allRTBarCI_upper, allRTBarCI_lower] = ...
+    computeSTInteStats(allTrials, itemNs, barsPerGroup);
 
 % --- Figure 1a: Precision ---
 fprintf('Creating Figure 1a: Precision...\n');
@@ -249,7 +125,7 @@ fprintf('*** DEBUG: total bars = %d ***\n', length(allBarData));
 fig1a = figure('Position', [100, 100, 1600, 500], 'Color', 'w');
 
 % Determine global Y-axis max
-globalYMax = max(allBarData + allBarCI_upper) * 1.1;
+globalYMax = globalPrecisionYMax;
 
 % Set up x-positions
 barSpacing = 0.6;  % Spacing between bars within a group (reduced for more bars)
@@ -332,7 +208,7 @@ fprintf('Creating Figure 1b: RT...\n');
 fig1b = figure('Position', [100, 100, 1600, 500], 'Color', 'w');
 
 % Determine global Y-axis max
-globalRTYMax = max(allRTBarData + allRTBarCI_upper) * 1.1;
+globalRTYMax = globalRTYMaxValue;
 
 % Use same x-positions and labels
 b = bar(xPositions, allRTBarData, 0.4, 'FaceColor', 'flat');  % 0.4 = narrower bar width
@@ -471,7 +347,7 @@ set(gca, 'XTick', xPositions);
 set(gca, 'XTickLabel', xLabels);
 set(gca, 'XTickLabelRotation', 45);
 ylabel('Absolute Error (deg)');
-yMax = max(allYValues) * 1.1;
+yMax = globalPrecisionDistYMax;
 ylim([0, yMax]);
 grid on;
 
@@ -588,7 +464,7 @@ set(gca, 'XTick', xPositions);
 set(gca, 'XTickLabel', xLabels);
 set(gca, 'XTickLabelRotation', 45);
 ylabel('Response Time (s)');
-yMax = max(allYValues) * 1.1;
+yMax = globalRTDistYMax;
 ylim([0, yMax]);
 grid on;
 
@@ -621,3 +497,144 @@ fprintf('=== Plotting Complete (%s) ===\n', participantId);
 end
 
 fprintf('=== Plotting Complete (All Participants) ===\n');
+
+function col = makeMissingColumn(templateColumn, nRows)
+    if isnumeric(templateColumn)
+        col = nan(nRows, 1);
+    elseif islogical(templateColumn)
+        col = false(nRows, 1);
+    elseif isstring(templateColumn)
+        col = strings(nRows, 1);
+    elseif iscategorical(templateColumn)
+        col = categorical(repmat(missing, nRows, 1));
+    elseif iscell(templateColumn)
+        col = cell(nRows, 1);
+    else
+        col = repmat(missing, nRows, 1);
+    end
+end
+
+% Helper function to compute circular SD for a group
+function csd = computeCircSD(errorsDeg)
+    % Convert to radians
+    errorsRad = deg2rad(errorsDeg);
+    % Compute mean resultant length
+    R = sqrt(mean(cos(errorsRad)).^2 + mean(sin(errorsRad)).^2);
+    % Avoid log(0) or log(negative)
+    if R >= 1
+        csd = 0;
+    elseif R <= 0
+        csd = 180; % Maximum spread
+    else
+        csd = rad2deg(sqrt(-2 * log(R)));
+    end
+end
+
+% Helper function for bootstrap CI
+function ci = bootstrapCI(data, nBootstrap, alpha)
+    if isempty(data) || length(data) < 2
+        ci = [NaN, NaN];
+        return;
+    end
+    n = length(data);
+    bootStats = zeros(nBootstrap, 1);
+    for b = 1:nBootstrap
+        bootSample = data(randi(n, n, 1));
+        bootStats(b) = median(bootSample);
+    end
+    ci = prctile(bootStats, [alpha/2*100, (1-alpha/2)*100]);
+end
+
+function [allPrecisionData, allRTData, allBarData, allBarCI_upper, allBarCI_lower, ...
+    allRTBarData, allRTBarCI_upper, allRTBarCI_lower] = computeSTInteStats(allTrials, itemNs, barsPerGroup)
+    nGroups = length(itemNs);
+    allPrecisionData = cell(nGroups, barsPerGroup);
+    allRTData = cell(nGroups, barsPerGroup);
+    for g = 1:nGroups
+        itemN = itemNs(g);
+        idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'Baseline');
+        if sum(idx) > 0
+            allPrecisionData{g, 1} = abs(allTrials.Precision(idx));
+            allRTData{g, 1} = allTrials.ResponseTime(idx);
+        end
+        idx = allTrials.ItemN == itemN & ...
+              ismember(allTrials.Condition, {'RS_TimeOnly', 'RS_SpaceTime', 'RedundantGrouped'}) & ...
+              strcmp(allTrials.CueType, 'R');
+        if sum(idx) > 0
+            allPrecisionData{g, 2} = abs(allTrials.Precision(idx));
+            allRTData{g, 2} = allTrials.ResponseTime(idx);
+        end
+        idx = allTrials.ItemN == itemN & ...
+              ismember(allTrials.Condition, {'RS_TimeOnly', 'RS_SpaceTime', 'RedundantGrouped'}) & ...
+              strcmp(allTrials.CueType, 'NR');
+        if sum(idx) > 0
+            allPrecisionData{g, 3} = abs(allTrials.Precision(idx));
+            allRTData{g, 3} = allTrials.ResponseTime(idx);
+        end
+        idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RS_TimeOnly') & ...
+              strcmp(allTrials.CueType, 'R');
+        if sum(idx) > 0
+            allPrecisionData{g, 4} = abs(allTrials.Precision(idx));
+            allRTData{g, 4} = allTrials.ResponseTime(idx);
+        end
+        idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RS_TimeOnly') & ...
+              strcmp(allTrials.CueType, 'NR');
+        if sum(idx) > 0
+            allPrecisionData{g, 5} = abs(allTrials.Precision(idx));
+            allRTData{g, 5} = allTrials.ResponseTime(idx);
+        end
+        idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RS_SpaceTime') & ...
+              strcmp(allTrials.CueType, 'R');
+        if sum(idx) > 0
+            allPrecisionData{g, 6} = abs(allTrials.Precision(idx));
+            allRTData{g, 6} = allTrials.ResponseTime(idx);
+        end
+        idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RS_SpaceTime') & ...
+              strcmp(allTrials.CueType, 'NR');
+        if sum(idx) > 0
+            allPrecisionData{g, 7} = abs(allTrials.Precision(idx));
+            allRTData{g, 7} = allTrials.ResponseTime(idx);
+        end
+        idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RedundantGrouped') & ...
+              strcmp(allTrials.CueType, 'R');
+        if sum(idx) > 0
+            allPrecisionData{g, 8} = abs(allTrials.Precision(idx));
+            allRTData{g, 8} = allTrials.ResponseTime(idx);
+        end
+        idx = allTrials.ItemN == itemN & strcmp(allTrials.Condition, 'RedundantGrouped') & ...
+              strcmp(allTrials.CueType, 'NR');
+        if sum(idx) > 0
+            allPrecisionData{g, 9} = abs(allTrials.Precision(idx));
+            allRTData{g, 9} = allTrials.ResponseTime(idx);
+        end
+    end
+
+    allBarData = zeros(nGroups * barsPerGroup, 1);
+    allBarCI_upper = zeros(nGroups * barsPerGroup, 1);
+    allBarCI_lower = zeros(nGroups * barsPerGroup, 1);
+    allRTBarData = zeros(nGroups * barsPerGroup, 1);
+    allRTBarCI_upper = zeros(nGroups * barsPerGroup, 1);
+    allRTBarCI_lower = zeros(nGroups * barsPerGroup, 1);
+    for g = 1:nGroups
+        for b = 1:barsPerGroup
+            idx = (g-1)*barsPerGroup + b;
+            if ~isempty(allPrecisionData{g, b})
+                allBarData(idx) = computeCircSD(allPrecisionData{g, b});
+                nBootstrap = 1000;
+                bootStats = zeros(nBootstrap, 1);
+                for boot = 1:nBootstrap
+                    bootSample = allPrecisionData{g, b}(randi(length(allPrecisionData{g, b}), length(allPrecisionData{g, b}), 1));
+                    bootStats(boot) = computeCircSD(bootSample);
+                end
+                allBarCI_upper(idx) = prctile(bootStats, 97.5);
+                allBarCI_lower(idx) = prctile(bootStats, 2.5);
+            end
+            if ~isempty(allRTData{g, b})
+                allRTBarData(idx) = median(allRTData{g, b});
+                ci = bootstrapCI(allRTData{g, b}, 1000, 0.05);
+                allRTBarCI_upper(idx) = ci(2);
+                allRTBarCI_lower(idx) = ci(1);
+            end
+        end
+    end
+end

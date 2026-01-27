@@ -59,6 +59,20 @@ for i = 1:length(files)
     if isempty(allTrials)
         allTrials = trials;
     else
+        % Align table variables before concatenation
+        allVarNames = union(allTrials.Properties.VariableNames, trials.Properties.VariableNames);
+        for v = 1:numel(allVarNames)
+            varName = allVarNames{v};
+            if ~ismember(varName, allTrials.Properties.VariableNames)
+                allTrials.(varName) = makeMissingColumn(trials.(varName), height(allTrials));
+            end
+            if ~ismember(varName, trials.Properties.VariableNames)
+                trials.(varName) = makeMissingColumn(allTrials.(varName), height(trials));
+            end
+        end
+        % Ensure same variable order
+        allTrials = allTrials(:, allVarNames);
+        trials = trials(:, allVarNames);
         allTrials = [allTrials; trials];
     end
 end
@@ -71,6 +85,19 @@ allTrials = allTrials(validIdx, :);
 % Split by participant
 allTrialsAll = allTrials;
 participants = unique(allTrialsAll.Participant, 'stable');
+
+% Prepare data for plotting
+% Group by: NoiseLevel × ItemN × Condition
+noiseLevels = {'low', 'high'};
+itemNs = [2, 6];
+conditions = {'Baseline', 'Homo_Space', 'Homo_Time', 'Homo_SpaceTime'};
+
+% Compute global axis limits from all participants combined
+resultsGlobal = buildResults(allTrialsAll, noiseLevels, itemNs, conditions);
+globalPrecisionYMax = computeGlobalPrecisionYMax(resultsGlobal, noiseLevels, itemNs, conditions);
+globalRTYMaxValue = computeGlobalRTYMax(resultsGlobal, noiseLevels, itemNs, conditions);
+globalPrecisionDistYMax = max(abs(allTrialsAll.Precision)) * 1.1;
+globalRTDistYMax = max(allTrialsAll.ResponseTime) * 1.1;
 
 for p = 1:length(participants)
     participantId = participants{p};
@@ -94,63 +121,7 @@ circSD = rad2deg(sqrt(-2 * log(R)));
 % we might want to use regular SD or circular SD appropriately
 % Let's compute both and use circular SD for now
 
-% Helper function to compute circular SD for a group
-function csd = computeCircSD(errorsDeg)
-    % Convert to radians
-    errorsRad = deg2rad(errorsDeg);
-    % Compute mean resultant length
-    R = sqrt(mean(cos(errorsRad)).^2 + mean(sin(errorsRad)).^2);
-    % Avoid log(0) or log(negative)
-    if R >= 1
-        csd = 0;
-    elseif R <= 0
-        csd = 180; % Maximum spread
-    else
-        csd = rad2deg(sqrt(-2 * log(R)));
-    end
-end
-
-% Prepare data for plotting
-% Group by: NoiseLevel × ItemN × Condition
-
-noiseLevels = {'low', 'high'};
-itemNs = [2, 6];
-conditions = {'Baseline', 'Homo_Space', 'Homo_Time', 'Homo_SpaceTime'};
-
-% Initialize storage
-results = struct();
-results.precision = struct();  % Will store circSD
-results.rt = struct();         % Will store median
-
-% Compute statistics for each combination
-for n = 1:length(noiseLevels)
-    noise = noiseLevels{n};
-    for i = 1:length(itemNs)
-        itemN = itemNs(i);
-        for c = 1:length(conditions)
-            cond = conditions{c};
-            
-            % Filter trials
-            idx = strcmp(allTrials.NoiseLevel, noise) & ...
-                  allTrials.ItemN == itemN & ...
-                  strcmp(allTrials.Condition, cond);
-            
-            if sum(idx) > 0
-                % Precision: circular SD of absolute errors
-                absErrs = abs(allTrials.Precision(idx));
-                results.precision.(sprintf('N%d_%s_%s', itemN, noise, cond)) = computeCircSD(absErrs);
-                
-                % RT: median
-                rts = allTrials.ResponseTime(idx);
-                results.rt.(sprintf('N%d_%s_%s', itemN, noise, cond)) = median(rts);
-                
-                % Also store for CI calculation
-                results.precision_data.(sprintf('N%d_%s_%s', itemN, noise, cond)) = absErrs;
-                results.rt_data.(sprintf('N%d_%s_%s', itemN, noise, cond)) = rts;
-            end
-        end
-    end
-end
+results = buildResults(allTrials, noiseLevels, itemNs, conditions);
 
 % Create figure 1a: Precision
 fprintf('Creating Figure 1a: Precision...\n');
@@ -162,65 +133,7 @@ nGroups = length(xGroups);
 barsPerGroup = 5;  % Baseline, HomoR, Space, Time, SpaceTime
 totalBars = nGroups * barsPerGroup;
 
-% First, collect all data to determine global Y-axis limits
-allPrecisionMeans = [];
-allPrecisionCIs = [];
-
-for g = 1:nGroups
-    % Parse group
-    if contains(xGroups{g}, 'Low')
-        noise = 'low';
-    else
-        noise = 'high';
-    end
-    if contains(xGroups{g}, 'N=2')
-        itemN = 2;
-    else
-        itemN = 6;
-    end
-    
-    baselineKey = sprintf('N%d_%s_Baseline', itemN, noise);
-    homoRKeys = {sprintf('N%d_%s_Homo_Space', itemN, noise), ...
-                  sprintf('N%d_%s_Homo_Time', itemN, noise), ...
-                  sprintf('N%d_%s_Homo_SpaceTime', itemN, noise)};
-    
-    % Collect Baseline stats
-    if isfield(results.precision_data, baselineKey)
-        baselineData = results.precision_data.(baselineKey);
-        baselineMean = computeCircSD(baselineData);
-        baselineCI = bootci(1000, @computeCircSD, baselineData);
-        allPrecisionMeans = [allPrecisionMeans, baselineMean];
-        allPrecisionCIs = [allPrecisionCIs, baselineCI(2)];
-    end
-    
-    % Collect HomoR aggregated stats
-    homoRData = [];
-    for k = 1:length(homoRKeys)
-        if isfield(results.precision_data, homoRKeys{k})
-            homoRData = [homoRData; results.precision_data.(homoRKeys{k})];
-        end
-    end
-    if ~isempty(homoRData)
-        homoRMean = computeCircSD(homoRData);
-        homoRCI = bootci(1000, @computeCircSD, homoRData);
-        allPrecisionMeans = [allPrecisionMeans, homoRMean];
-        allPrecisionCIs = [allPrecisionCIs, homoRCI(2)];
-    end
-    
-    % Collect individual HomoR condition stats
-    for k = 1:length(homoRKeys)
-        if isfield(results.precision_data, homoRKeys{k})
-            data = results.precision_data.(homoRKeys{k});
-            homoMean = computeCircSD(data);
-            ci = bootci(1000, @computeCircSD, data);
-            allPrecisionMeans = [allPrecisionMeans, homoMean];
-            allPrecisionCIs = [allPrecisionCIs, ci(2)];
-        end
-    end
-end
-
-% Determine global Y-axis limit
-globalYMax = max(allPrecisionMeans + allPrecisionCIs) * 1.15;
+globalYMax = globalPrecisionYMax;
 
 % Prepare data for all bars
 allBarData = [];
@@ -377,65 +290,7 @@ nGroups = length(xGroups);
 barsPerGroup = 5;  % Baseline, HomoR, Space, Time, SpaceTime
 totalBars = nGroups * barsPerGroup;
 
-% First, collect all RT data to determine global Y-axis limits
-allRTMedians = [];
-allRTCIs = [];
-
-for g = 1:nGroups
-    % Parse group
-    if contains(xGroups{g}, 'Low')
-        noise = 'low';
-    else
-        noise = 'high';
-    end
-    if contains(xGroups{g}, 'N=2')
-        itemN = 2;
-    else
-        itemN = 6;
-    end
-    
-    baselineKey = sprintf('N%d_%s_Baseline', itemN, noise);
-    homoRKeys = {sprintf('N%d_%s_Homo_Space', itemN, noise), ...
-                  sprintf('N%d_%s_Homo_Time', itemN, noise), ...
-                  sprintf('N%d_%s_Homo_SpaceTime', itemN, noise)};
-    
-    % Collect Baseline stats
-    if isfield(results.rt_data, baselineKey)
-        baselineData = results.rt_data.(baselineKey);
-        baselineMedian = median(baselineData);
-        baselineCI = bootci(1000, @median, baselineData);
-        allRTMedians = [allRTMedians, baselineMedian];
-        allRTCIs = [allRTCIs, baselineCI(2)];
-    end
-    
-    % Collect HomoR aggregated stats
-    homoRData = [];
-    for k = 1:length(homoRKeys)
-        if isfield(results.rt_data, homoRKeys{k})
-            homoRData = [homoRData; results.rt_data.(homoRKeys{k})];
-        end
-    end
-    if ~isempty(homoRData)
-        homoRMedian = median(homoRData);
-        homoRCI = bootci(1000, @median, homoRData);
-        allRTMedians = [allRTMedians, homoRMedian];
-        allRTCIs = [allRTCIs, homoRCI(2)];
-    end
-    
-    % Collect individual HomoR condition stats
-    for k = 1:length(homoRKeys)
-        if isfield(results.rt_data, homoRKeys{k})
-            data = results.rt_data.(homoRKeys{k});
-            homoMedian = median(data);
-            ci = bootci(1000, @median, data);
-            allRTMedians = [allRTMedians, homoMedian];
-            allRTCIs = [allRTCIs, ci(2)];
-        end
-    end
-end
-
-% Determine global Y-axis limit
-globalRTYMax = max(allRTMedians + allRTCIs) * 1.15;
+globalRTYMax = globalRTYMaxValue;
 
 % Prepare data for all bars
 allBarData = [];
@@ -732,7 +587,7 @@ set(gca, 'XTick', xPositions);
 set(gca, 'XTickLabel', xLabels);
 set(gca, 'XTickLabelRotation', 45);
 ylabel('Absolute Error (deg)');
-yMax = max(allYValues) * 1.1;
+yMax = globalPrecisionDistYMax;
 ylim([0, yMax]);
 grid on;
 
@@ -900,7 +755,7 @@ set(gca, 'XTick', xPositions);
 set(gca, 'XTickLabel', xLabels);
 set(gca, 'XTickLabelRotation', 45);
 ylabel('Response Time (s)');
-yMax = max(allYValues) * 1.1;
+yMax = globalRTDistYMax;
 ylim([0, yMax]);
 grid on;
 
@@ -933,4 +788,166 @@ fprintf('=== Plotting Complete (%s) ===\n', participantId);
 end
 
 fprintf('=== Plotting Complete (All Participants) ===\n');
+
+% Helper function to compute circular SD for a group
+function csd = computeCircSD(errorsDeg)
+    % Convert to radians
+    errorsRad = deg2rad(errorsDeg);
+    % Compute mean resultant length
+    R = sqrt(mean(cos(errorsRad)).^2 + mean(sin(errorsRad)).^2);
+    % Avoid log(0) or log(negative)
+    if R >= 1
+        csd = 0;
+    elseif R <= 0
+        csd = 180; % Maximum spread
+    else
+        csd = rad2deg(sqrt(-2 * log(R)));
+    end
+end
+
+function col = makeMissingColumn(templateColumn, nRows)
+    if isnumeric(templateColumn)
+        col = nan(nRows, 1);
+    elseif islogical(templateColumn)
+        col = false(nRows, 1);
+    elseif isstring(templateColumn)
+        col = strings(nRows, 1);
+    elseif iscategorical(templateColumn)
+        col = categorical(repmat(missing, nRows, 1));
+    elseif iscell(templateColumn)
+        col = cell(nRows, 1);
+    else
+        col = repmat(missing, nRows, 1);
+    end
+end
+
+function results = buildResults(allTrials, noiseLevels, itemNs, conditions)
+    results = struct();
+    results.precision = struct();
+    results.rt = struct();
+    for n = 1:length(noiseLevels)
+        noise = noiseLevels{n};
+        for i = 1:length(itemNs)
+            itemN = itemNs(i);
+            for c = 1:length(conditions)
+                cond = conditions{c};
+                idx = strcmp(allTrials.NoiseLevel, noise) & ...
+                      allTrials.ItemN == itemN & ...
+                      strcmp(allTrials.Condition, cond);
+                if sum(idx) > 0
+                    absErrs = abs(allTrials.Precision(idx));
+                    results.precision.(sprintf('N%d_%s_%s', itemN, noise, cond)) = computeCircSD(absErrs);
+                    rts = allTrials.ResponseTime(idx);
+                    results.rt.(sprintf('N%d_%s_%s', itemN, noise, cond)) = median(rts);
+                    results.precision_data.(sprintf('N%d_%s_%s', itemN, noise, cond)) = absErrs;
+                    results.rt_data.(sprintf('N%d_%s_%s', itemN, noise, cond)) = rts;
+                end
+            end
+        end
+    end
+end
+
+function globalYMax = computeGlobalPrecisionYMax(results, noiseLevels, itemNs, conditions)
+    allPrecisionMeans = [];
+    allPrecisionCIs = [];
+    xGroups = {'Low N=2', 'High N=2', 'Low N=6', 'High N=6'};
+    nGroups = length(xGroups);
+    for g = 1:nGroups
+        if contains(xGroups{g}, 'Low')
+            noise = 'low';
+        else
+            noise = 'high';
+        end
+        if contains(xGroups{g}, 'N=2')
+            itemN = 2;
+        else
+            itemN = 6;
+        end
+        baselineKey = sprintf('N%d_%s_Baseline', itemN, noise);
+        homoRKeys = {sprintf('N%d_%s_Homo_Space', itemN, noise), ...
+                      sprintf('N%d_%s_Homo_Time', itemN, noise), ...
+                      sprintf('N%d_%s_Homo_SpaceTime', itemN, noise)};
+        if isfield(results.precision_data, baselineKey)
+            baselineData = results.precision_data.(baselineKey);
+            baselineMean = computeCircSD(baselineData);
+            baselineCI = bootci(1000, @computeCircSD, baselineData);
+            allPrecisionMeans = [allPrecisionMeans, baselineMean];
+            allPrecisionCIs = [allPrecisionCIs, baselineCI(2)];
+        end
+        homoRData = [];
+        for k = 1:length(homoRKeys)
+            if isfield(results.precision_data, homoRKeys{k})
+                homoRData = [homoRData; results.precision_data.(homoRKeys{k})];
+            end
+        end
+        if ~isempty(homoRData)
+            homoRMean = computeCircSD(homoRData);
+            homoRCI = bootci(1000, @computeCircSD, homoRData);
+            allPrecisionMeans = [allPrecisionMeans, homoRMean];
+            allPrecisionCIs = [allPrecisionCIs, homoRCI(2)];
+        end
+        for k = 1:length(homoRKeys)
+            if isfield(results.precision_data, homoRKeys{k})
+                data = results.precision_data.(homoRKeys{k});
+                homoMean = computeCircSD(data);
+                ci = bootci(1000, @computeCircSD, data);
+                allPrecisionMeans = [allPrecisionMeans, homoMean];
+                allPrecisionCIs = [allPrecisionCIs, ci(2)];
+            end
+        end
+    end
+    globalYMax = max(allPrecisionMeans + allPrecisionCIs) * 1.15;
+end
+
+function globalYMax = computeGlobalRTYMax(results, noiseLevels, itemNs, conditions)
+    allRTMedians = [];
+    allRTCIs = [];
+    xGroups = {'Low N=2', 'High N=2', 'Low N=6', 'High N=6'};
+    nGroups = length(xGroups);
+    for g = 1:nGroups
+        if contains(xGroups{g}, 'Low')
+            noise = 'low';
+        else
+            noise = 'high';
+        end
+        if contains(xGroups{g}, 'N=2')
+            itemN = 2;
+        else
+            itemN = 6;
+        end
+        baselineKey = sprintf('N%d_%s_Baseline', itemN, noise);
+        homoRKeys = {sprintf('N%d_%s_Homo_Space', itemN, noise), ...
+                      sprintf('N%d_%s_Homo_Time', itemN, noise), ...
+                      sprintf('N%d_%s_Homo_SpaceTime', itemN, noise)};
+        if isfield(results.rt_data, baselineKey)
+            baselineData = results.rt_data.(baselineKey);
+            baselineMedian = median(baselineData);
+            baselineCI = bootci(1000, @median, baselineData);
+            allRTMedians = [allRTMedians, baselineMedian];
+            allRTCIs = [allRTCIs, baselineCI(2)];
+        end
+        homoRData = [];
+        for k = 1:length(homoRKeys)
+            if isfield(results.rt_data, homoRKeys{k})
+                homoRData = [homoRData; results.rt_data.(homoRKeys{k})];
+            end
+        end
+        if ~isempty(homoRData)
+            homoRMedian = median(homoRData);
+            homoRCI = bootci(1000, @median, homoRData);
+            allRTMedians = [allRTMedians, homoRMedian];
+            allRTCIs = [allRTCIs, homoRCI(2)];
+        end
+        for k = 1:length(homoRKeys)
+            if isfield(results.rt_data, homoRKeys{k})
+                data = results.rt_data.(homoRKeys{k});
+                homoMedian = median(data);
+                ci = bootci(1000, @median, data);
+                allRTMedians = [allRTMedians, homoMedian];
+                allRTCIs = [allRTCIs, ci(2)];
+            end
+        end
+    end
+    globalYMax = max(allRTMedians + allRTCIs) * 1.15;
+end
 
