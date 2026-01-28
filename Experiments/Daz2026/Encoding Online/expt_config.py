@@ -108,7 +108,7 @@ def _allocate_subexperiment():
     quotas = _get_allocation_quotas(state)
     available = [k for k in quotas if counts.get(str(k), 0) < quotas[k]]
     if not available:
-        return None
+        return random.choice(list(quotas.keys()))
     return random.choice(available)
 
 
@@ -201,10 +201,7 @@ def get_data(opts):
         # Quota-based random assignment across available sub-experiments
         subexperiment = _allocate_subexperiment()
 
-    if subexperiment is None:
-        return {
-            '_error': "All sub-experiments have reached their quotas. Please try again later."
-        }
+    # When all quotas are filled, still allow random assignment
     
     print(f"Assigned participant to Sub-Experiment {subexperiment}")
     

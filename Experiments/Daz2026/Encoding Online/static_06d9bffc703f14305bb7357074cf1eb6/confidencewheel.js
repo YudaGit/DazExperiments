@@ -81,6 +81,11 @@ var jsConfidenceWheel = (function (jspsych) {
                 pretty_name: "Mask Bar Scale",
                 default: 0.8,  // Mask bar size relative to stimulus bars
             },
+            stimulus_scale: {
+                type: jspsych.ParameterType.FLOAT,
+                pretty_name: "Stimulus Scale",
+                default: 1.0,  // Scale for stimulus size (patchradius and patch size)
+            },
             noise_mask_scale: {
                 type: jspsych.ParameterType.FLOAT,
                 pretty_name: "Noise Mask Scale",
@@ -161,8 +166,8 @@ var jsConfidenceWheel = (function (jspsych) {
             
             // Bar length = diameter of color patch
             var barLength = 2 * patchRadius;
-            // Bar width = length / 7 (1:7 ratio)
-            var barWidth = barLength / 7;
+            // Bar width = 1.5:7 ratio
+            var barWidth = barLength * (1.5 / 7);
             
             // Draw each bar
             for (var ii = 0; ii < trial.patch_positionalangle.length; ii++) {
@@ -256,8 +261,8 @@ var jsConfidenceWheel = (function (jspsych) {
             
             // Bar length = diameter of color patch
             var barLength = 2 * patchRadius;
-            // Bar width = length / 7 (1:7 ratio)
-            var barWidth = barLength / 7;
+            // Bar width = 1.5:7 ratio
+            var barWidth = barLength * (1.5 / 7);
             
             // Get target color (bar color matches target item)
             var targetColor = trial.choice_colors[targetN];
@@ -292,7 +297,7 @@ var jsConfidenceWheel = (function (jspsych) {
              */
             
             var barLength = 2 * patchRadius;
-            var barWidth = barLength / 7;
+            var barWidth = barLength * (1.5 / 7);
             var targetColor = trial.choice_colors[targetN];
             
             // Draw response orientation (white bar)
@@ -344,7 +349,7 @@ var jsConfidenceWheel = (function (jspsych) {
             
             // Bar dimensions (same as stimulus bars)
             var barLength = 2 * barRadius;
-            var barWidth = barLength / 7;
+            var barWidth = barLength * (1.5 / 7);
             
             // Generate random bars covering the mask area
             // Use a grid-based approach with some randomness for dense coverage
@@ -441,7 +446,7 @@ var jsConfidenceWheel = (function (jspsych) {
             
             // Bar dimensions (same as stimulus bars)
             var barLength = 2 * scaledBarRadius;
-            var barWidth = barLength / 7;
+            var barWidth = barLength * (1.5 / 7);
             
             // Draw all bars
             for (var i = 0; i < maskData.colors.length; i++) {
@@ -508,8 +513,13 @@ var jsConfidenceWheel = (function (jspsych) {
             ctx.canvas.height = viewportHeight * 0.95;
             
             var startingradius = Math.round(ctx.canvas.height * 0.035);
-            var patchradius = ctx.canvas.height * 0.1;
-            var indiv_patch_radius = Math.round(ctx.canvas.height * 0.024);
+            var basePatchRadius = ctx.canvas.height * 0.1;
+            var baseIndivPatchRadius = Math.round(ctx.canvas.height * 0.024);
+            var stimulusScale = (typeof trial.stimulus_scale === 'number' && !isNaN(trial.stimulus_scale))
+                ? trial.stimulus_scale
+                : 1.0;
+            var patchradius = basePatchRadius * stimulusScale;
+            var indiv_patch_radius = Math.round(baseIndivPatchRadius * stimulusScale);
             
             //  Add central white circle for mouse centering (skip for orientation-bar response)
             var midx = ctx.canvas.width/2
@@ -664,7 +674,7 @@ var jsConfidenceWheel = (function (jspsych) {
             var pastYcoords = [];
 
             var startinitiatetime  = 1;  // Changed to 1ms so it never triggers (but still checks if starting outside circle)
-            var maxinitiatetime  = 3000;  // Trigger penalty if leaving center after 3000ms
+            var maxinitiatetime  = 6000;  // Trigger penalty if leaving center after 6000ms
             var responseTooFastMs = 200;
             var responseTooSlowMs = maxinitiatetime;
 
@@ -1104,7 +1114,6 @@ var jsConfidenceWheel = (function (jspsych) {
                 // Initial Precision Judgement 
                 response_radians: radians,
                 response_degrees: degrees,
-                response_orientation_deg: (degrees.length ? degrees[0] : null),
                 
                 response_derotated_degress: derotated_degrees,
                 response_error_deg: resp_error,
