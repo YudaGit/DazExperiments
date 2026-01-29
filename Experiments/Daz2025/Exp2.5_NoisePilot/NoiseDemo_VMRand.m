@@ -66,7 +66,6 @@ P.K_HighNoise     = 1;         % concentration parameter (lower = wider distribu
 % Note: For better discriminability, aim for kappa ratio > 10:1
 %       (e.g., Low=50, High=3 gives ~17:1 ratio)
 P.redundancyMode  = 'statistical';  % 'statistical' or 'exact'
-P.statisticalMethod = 'splitHalf';  % statistical mode sampling method
 P.durMs          = 500;      % per-stim duration
 P.ISI            = 0.300;    % seconds, stages 5/6
 P.angles4        = [0 90 180 270];  % R,U,L,D (deg)
@@ -614,25 +613,8 @@ else
     error('noiseLevel must be ''low'' or ''high''');
 end
 
-% Random samples from Von Mises using split-half by side
-nHalf = floor(nTiles / 2);
-nOther = nTiles - nHalf;
-baseInNeg = rand < 0.5;  % which half contains the base hue (0 offset)
-
-if baseInNeg
-    negCount = max(0, nHalf - 1);  % one slot reserved for base hue
-    posCount = nOther;
-    huesNeg = [hueDeg; sampleVonMisesSide(hueDeg, K, negCount, 'neg')];
-    huesPos = sampleVonMisesSide(hueDeg, K, posCount, 'pos');
-else
-    negCount = nHalf;
-    posCount = max(0, nOther - 1); % one slot reserved for base hue
-    huesNeg = sampleVonMisesSide(hueDeg, K, negCount, 'neg');
-    huesPos = [hueDeg; sampleVonMisesSide(hueDeg, K, posCount, 'pos')];
-end
-
-huesDeg = [huesNeg; huesPos];
-huesDeg = huesDeg(randperm(numel(huesDeg)));
+% Random samples from Von Mises (no quantiles, no side constraints)
+huesDeg = sampleVonMisesDegrees(hueDeg, K, nTiles);
 
 % Convert each hue to RGB from your wheel
 rgb01 = wheelRGB01_fromDegrees(huesDeg, P.cMap360_255);   % n×3, 0..1
