@@ -539,6 +539,14 @@ global V                 % uses V.window, V.stim.* and V.color.map
 % colour map: 360 × 3 uint8, one row per wheel index
 cMap = V.color.map(1 : size(V.color.map,1)/360 : size(V.color.map,1), :);
 
+% =========TEMP color pallette output==========
+rgb = V.color.map;                 % 360x3 in 0–255
+idx = (0:359)';
+T = table(idx, rgb(:,1), rgb(:,2), rgb(:,3), 'VariableNames', {'index','r','g','b'});
+writetable(T, 'oklab_palette_matlab.csv');
+%=====================
+
+
 fixation(0);             % keeps your existing fixation routine
 
 dotR   = V.stim.radius;          % dot (disc) radius  [px]

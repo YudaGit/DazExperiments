@@ -65,6 +65,7 @@ P.K_HighNoise     = 0.8;         % concentration parameter (lower = wider distri
                                 
 % Note: For better discriminability, aim for kappa ratio > 10:1
 %       (e.g., Low=50, High=3 gives ~17:1 ratio)
+P.redundancyMode  = 'statistical';  % 'statistical' or 'exact'
 P.durMs          = 500;      % per-stim duration
 P.ISI            = 0.300;    % seconds, stages 5/6
 P.angles4        = [0 90 180 270];  % R,U,L,D (deg)
@@ -101,25 +102,25 @@ while keepGoing
             info = sprintf(['Stage 1: Single Stimulus\n' ...
                             'Noise: Low (K=%.1f)\n' ...
                             'Set Size: 1'], P.K_LowNoise);
-            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'low',  P, true, 'stage1'), info, ...
+            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'low',  P, false, 'stage1'), info, ...
                 @() generateTargetOffset_single(V, 90, 'low', P));
         case 2
             info = sprintf(['Stage 2: Single Stimulus\n' ...
                             'Noise: High (K=%.1f)\n' ...
                             'Set Size: 1'], P.K_HighNoise);
-            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'high', P, true, 'stage2'), info, ...
+            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'high', P, false, 'stage2'), info, ...
                 @() generateTargetOffset_single(V, 90, 'high', P));
         case 3
             info = sprintf(['Stage 3: Four Stimuli with Replicas\n' ...
                             'Noise: Low (K=%.1f)\n' ...
                             'Set Size: 4'], P.K_LowNoise);
-            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'low', true, 'stage3'), info, ...
+            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'low', false, 'stage3'), info, ...
                 @() generateTargetOffset_four(V, P, 'low'));
         case 4
             info = sprintf(['Stage 4: Four Stimuli with Replicas\n' ...
                             'Noise: High (K=%.1f)\n' ...
                             'Set Size: 4'], P.K_HighNoise);
-            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'high', true, 'stage4'), info, ...
+            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'high', false, 'stage4'), info, ...
                 @() generateTargetOffset_four(V, P, 'high'));
         case 5
             info = sprintf(['Stage 5: Two-Interval Same Location\n' ...
@@ -237,9 +238,9 @@ FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
 uniquePattern1 = wheelRGB01_fromDegrees(uniqueHues1, P.cMap360_255);
 uniquePattern2 = wheelRGB01_fromDegrees(uniqueHues2, P.cMap360_255);
 
-% Generate independent patterns for redundant items (R & L) using same baseHue target
-[repPatternR, repHuesR] = makeNoisyPattern(V, baseHue, noiseLevel, P);
-[repPatternL, repHuesL] = makeNoisyPattern(V, baseHue, noiseLevel, P);
+% Generate redundant patterns (exact or statistical) using same baseHue target
+[repPatternR, repHuesR, repPatternL, repHuesL] = ...
+    getRedundantPatterns(V, baseHue, noiseLevel, P);
 
 % Update mean offsets for redundant items (calculated from actual generated patterns)
 if isnan(meanOffsets(1))
@@ -317,9 +318,9 @@ else
     meanOffset = calculateMeanOffset(huesDeg, hue);
 end
 
-% interval 1 - generate independent pattern
+% interval 1 - generate redundant pattern (mode-dependent)
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-[pat1, ~] = makeNoisyPattern(V, hue, noiseLevel, P);
+[pat1, ~, pat2, ~] = getRedundantPatterns(V, hue, noiseLevel, P);
 presentNoisySquareAt(V, hue, noiseLevel, angle1, P.durMs, P, pat1, false, false);
 % Note: presentNoisySquareAt already waits for P.durMs internally, no extra WaitSecs needed
 
@@ -327,9 +328,8 @@ presentNoisySquareAt(V, hue, noiseLevel, angle1, P.durMs, P, pat1, false, false)
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
 Screen('Flip', V.window); WaitSecs(P.ISI);
 
-% interval 2 at different angle - generate independent pattern (same target hue)
+% interval 2 at different angle - generate redundant pattern (same target hue)
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-[pat2, ~] = makeNoisyPattern(V, hue, noiseLevel, P);
 presentNoisySquareAt(V, hue, noiseLevel, angle2, P.durMs, P, pat2, false, false);
 % Note: presentNoisySquareAt already waits for P.durMs internally, no extra WaitSecs needed
 targetDeg = hue;
@@ -352,9 +352,9 @@ else
     meanOffset = calculateMeanOffset(huesDeg, hue);
 end
 
-% interval 1 - generate independent pattern
+% interval 1 - generate redundant pattern (mode-dependent)
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-[pat1, ~] = makeNoisyPattern(V, hue, noiseLevel, P);
+[pat1, ~, pat2, ~] = getRedundantPatterns(V, hue, noiseLevel, P);
 presentNoisySquareAt(V, hue, noiseLevel, angleDeg, P.durMs, P, pat1, false, false);
 % Note: presentNoisySquareAt already waits for P.durMs internally, no extra WaitSecs needed
 
@@ -362,9 +362,8 @@ presentNoisySquareAt(V, hue, noiseLevel, angleDeg, P.durMs, P, pat1, false, fals
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
 Screen('Flip', V.window); WaitSecs(P.ISI);
 
-% interval 2 - generate independent pattern (same target hue)
+% interval 2 - generate redundant pattern (same target hue)
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-[pat2, ~] = makeNoisyPattern(V, hue, noiseLevel, P);
 presentNoisySquareAt(V, hue, noiseLevel, angleDeg, P.durMs, P, pat2, false, false);
 % Note: presentNoisySquareAt already waits for P.durMs internally, no extra WaitSecs needed
 targetDeg = hue;
@@ -591,11 +590,39 @@ else
     error('noiseLevel must be ''low'' or ''high''');
 end
 
+function [patternA, huesA, patternB, huesB] = getRedundantPatterns(V, baseHue, noiseLevel, P)
+% Returns two patterns for redundant items based on selected mode
+% - 'statistical': independent samples from same PDF
+% - 'exact': same multiset of hues, different tile assignment
+    if isfield(P, 'redundancyMode') && strcmpi(P.redundancyMode, 'exact')
+        [patternA, huesA] = makeNoisyPattern(V, baseHue, noiseLevel, P);
+        huesB = huesA(randperm(numel(huesA)));
+        patternB = wheelRGB01_fromDegrees(huesB, P.cMap360_255);
+    else
+        [patternA, huesA] = makeNoisyPattern(V, baseHue, noiseLevel, P);
+        [patternB, huesB] = makeNoisyPattern(V, baseHue, noiseLevel, P);
+    end
+end
+
 % Sample hues using quantile-based Von Mises (no truncation needed)
 huesDeg = sampleVonMisesQuantiles(hueDeg, K, nTiles);
 
 % Convert each hue to RGB from your wheel
 rgb01 = wheelRGB01_fromDegrees(huesDeg, P.cMap360_255);   % n×3, 0..1
+end
+
+function [patternA, huesA, patternB, huesB] = getRedundantPatterns(V, baseHue, noiseLevel, P)
+% Returns two patterns for redundant items based on selected mode
+% - 'statistical': independent samples from same PDF
+% - 'exact': same multiset of hues, different tile assignment
+    if isfield(P, 'redundancyMode') && strcmpi(P.redundancyMode, 'exact')
+        [patternA, huesA] = makeNoisyPattern(V, baseHue, noiseLevel, P);
+        huesB = huesA(randperm(numel(huesA)));
+        patternB = wheelRGB01_fromDegrees(huesB, P.cMap360_255);
+    else
+        [patternA, huesA] = makeNoisyPattern(V, baseHue, noiseLevel, P);
+        [patternB, huesB] = makeNoisyPattern(V, baseHue, noiseLevel, P);
+    end
 end
 
 function meanOffset = calculateMeanOffset(huesDeg, targetHueDeg)
