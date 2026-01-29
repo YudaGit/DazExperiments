@@ -59,13 +59,14 @@ P.K_LowNoise      = 25;       % concentration parameter (high = narrow distribut
                                 % Typical range: 20-100 for low noise
 
 % High noise parameters:
-P.K_HighNoise     = 0.8;         % concentration parameter (lower = wider distribution)
+P.K_HighNoise     = 1;         % concentration parameter (lower = wider distribution)
                                 % Lower kappa = wider spread around target
                                 % Typical range: 1-10 for high noise
                                 
 % Note: For better discriminability, aim for kappa ratio > 10:1
 %       (e.g., Low=50, High=3 gives ~17:1 ratio)
 P.redundancyMode  = 'statistical';  % 'statistical' or 'exact'
+P.statisticalMethod = 'splitHalf';  % statistical mode sampling method
 P.durMs          = 500;      % per-stim duration
 P.ISI            = 0.300;    % seconds, stages 5/6
 P.angles4        = [0 90 180 270];  % R,U,L,D (deg)
@@ -190,7 +191,7 @@ if ~isempty(storedStimData) && isfield(storedStimData, 'target') && ~isempty(sto
 else
     % Fallback: generate new if not set
     targetHueDeg = randi([0 359]);
-    [rgb01, huesDeg] = makeNoisyPattern(V, targetHueDeg, noiseLevel, P);
+    [rgb01, huesDeg] = getPatternByMode(V, targetHueDeg, noiseLevel, P);
     meanOffset = calculateMeanOffset(huesDeg, targetHueDeg);
 end
 % deferFlip=false means it will flip immediately and show for durMs
@@ -590,20 +591,6 @@ else
     error('noiseLevel must be ''low'' or ''high''');
 end
 
-function [patternA, huesA, patternB, huesB] = getRedundantPatterns(V, baseHue, noiseLevel, P)
-% Returns two patterns for redundant items based on selected mode
-% - 'statistical': independent samples from same PDF
-% - 'exact': same multiset of hues, different tile assignment
-    if isfield(P, 'redundancyMode') && strcmpi(P.redundancyMode, 'exact')
-        [patternA, huesA] = makeNoisyPattern(V, baseHue, noiseLevel, P);
-        huesB = huesA(randperm(numel(huesA)));
-        patternB = wheelRGB01_fromDegrees(huesB, P.cMap360_255);
-    else
-        [patternA, huesA] = makeNoisyPattern(V, baseHue, noiseLevel, P);
-        [patternB, huesB] = makeNoisyPattern(V, baseHue, noiseLevel, P);
-    end
-end
-
 % Sample hues using quantile-based Von Mises (no truncation needed)
 huesDeg = sampleVonMisesQuantiles(hueDeg, K, nTiles);
 
@@ -611,6 +598,57 @@ huesDeg = sampleVonMisesQuantiles(hueDeg, K, nTiles);
 rgb01 = wheelRGB01_fromDegrees(huesDeg, P.cMap360_255);   % n×3, 0..1
 end
 
+function [rgb01, huesDeg] = makeNoisyPatternRandom(V, hueDeg, noiseLevel, P)
+% Returns nTiles×3 double in [0,1] and nTiles×1 hue degrees
+% noiseLevel: 'low' or 'high' (determines Von Mises kappa parameter)
+% Uses random sampling from Von Mises PDF (no quantiles)
+B      = V.square.B;
+nTiles = B * B;
+
+% Get Von Mises kappa parameter based on noise level
+if strcmpi(noiseLevel, 'low')
+    K = P.K_LowNoise;
+elseif strcmpi(noiseLevel, 'high')
+    K = P.K_HighNoise;
+else
+    error('noiseLevel must be ''low'' or ''high''');
+end
+
+% Random samples from Von Mises using split-half by side
+nHalf = floor(nTiles / 2);
+nOther = nTiles - nHalf;
+baseInNeg = rand < 0.5;  % which half contains the base hue (0 offset)
+
+if baseInNeg
+    negCount = max(0, nHalf - 1);  % one slot reserved for base hue
+    posCount = nOther;
+    huesNeg = [hueDeg; sampleVonMisesSide(hueDeg, K, negCount, 'neg')];
+    huesPos = sampleVonMisesSide(hueDeg, K, posCount, 'pos');
+else
+    negCount = nHalf;
+    posCount = max(0, nOther - 1); % one slot reserved for base hue
+    huesNeg = sampleVonMisesSide(hueDeg, K, negCount, 'neg');
+    huesPos = [hueDeg; sampleVonMisesSide(hueDeg, K, posCount, 'pos')];
+end
+
+huesDeg = [huesNeg; huesPos];
+huesDeg = huesDeg(randperm(numel(huesDeg)));
+
+% Convert each hue to RGB from your wheel
+rgb01 = wheelRGB01_fromDegrees(huesDeg, P.cMap360_255);   % n×3, 0..1
+end
+
+function [rgb01, huesDeg] = getPatternByMode(V, hueDeg, noiseLevel, P)
+% Returns pattern based on redundancy mode
+% - 'statistical': random sampling from Von Mises PDF
+% - 'exact' (default): quantile-based sampling
+    if isfield(P, 'redundancyMode') && strcmpi(P.redundancyMode, 'statistical')
+        [rgb01, huesDeg] = makeNoisyPatternRandom(V, hueDeg, noiseLevel, P);
+    else
+        [rgb01, huesDeg] = makeNoisyPattern(V, hueDeg, noiseLevel, P);
+    end
+end
+
 function [patternA, huesA, patternB, huesB] = getRedundantPatterns(V, baseHue, noiseLevel, P)
 % Returns two patterns for redundant items based on selected mode
 % - 'statistical': independent samples from same PDF
@@ -620,8 +658,8 @@ function [patternA, huesA, patternB, huesB] = getRedundantPatterns(V, baseHue, n
         huesB = huesA(randperm(numel(huesA)));
         patternB = wheelRGB01_fromDegrees(huesB, P.cMap360_255);
     else
-        [patternA, huesA] = makeNoisyPattern(V, baseHue, noiseLevel, P);
-        [patternB, huesB] = makeNoisyPattern(V, baseHue, noiseLevel, P);
+        [patternA, huesA] = makeNoisyPatternRandom(V, baseHue, noiseLevel, P);
+        [patternB, huesB] = makeNoisyPatternRandom(V, baseHue, noiseLevel, P);
     end
 end
 
@@ -641,7 +679,7 @@ function targetOffset = generateTargetOffset_single(V, angleDeg, noiseLevel, P)
 % Also stores values in global storedStimData for stage_single to use
 global storedStimData
 targetHueDeg = randi([0 359]);
-[rgb01, huesDeg] = makeNoisyPattern(V, targetHueDeg, noiseLevel, P);
+[rgb01, huesDeg] = getPatternByMode(V, targetHueDeg, noiseLevel, P);
 meanOffset = calculateMeanOffset(huesDeg, targetHueDeg);
 targetOffset = [targetHueDeg, meanOffset];
 % Store for stage_single to use
@@ -661,10 +699,10 @@ uniqueHue1 = mod(baseHue + 60,  360);
 uniqueHue2 = mod(baseHue + 180, 360);
 
 % Generate patterns for unique items (for display/mean offset calculation)
-[~, uniqueHues1] = makeNoisyPattern(V, uniqueHue1, noiseLevel, P);
-[~, uniqueHues2] = makeNoisyPattern(V, uniqueHue2, noiseLevel, P);
+[~, uniqueHues1] = getPatternByMode(V, uniqueHue1, noiseLevel, P);
+[~, uniqueHues2] = getPatternByMode(V, uniqueHue2, noiseLevel, P);
 % Generate one sample for redundant items (for mean offset display only)
-[~, repHuesSample] = makeNoisyPattern(V, baseHue, noiseLevel, P);
+[~, repHuesSample] = getPatternByMode(V, baseHue, noiseLevel, P);
 
 targetDegs = [baseHue, uniqueHue1, baseHue, uniqueHue2];
 meanOffsets = [calculateMeanOffset(repHuesSample, baseHue), ...
@@ -907,6 +945,28 @@ end
 % Wrap to [0, 360) degrees
 out = angle(exp(1i*out));                 % wrap to (-pi,pi]
 huesDeg = mod(rad2deg(out), 360);        % 0..360
+end
+
+function huesDeg = sampleVonMisesSide(muDeg, kappa, n, side)
+% Sample n hues from one side of the Von Mises distribution
+% side: 'neg' for offsets < 0, 'pos' for offsets > 0
+    if n <= 0
+        huesDeg = zeros(0, 1);
+        return;
+    end
+    huesDeg = [];
+    while numel(huesDeg) < n
+        batchN = max(n, 20);
+        candidates = sampleVonMisesDegrees(muDeg, kappa, batchN);
+        offsets = mod(candidates - muDeg + 180, 360) - 180;
+        if strcmpi(side, 'neg')
+            keep = offsets < 0;
+        else
+            keep = offsets > 0;
+        end
+        huesDeg = [huesDeg; candidates(keep)']; %#ok<AGROW>
+    end
+    huesDeg = huesDeg(1:n);
 end
 
 
@@ -1248,7 +1308,7 @@ V.stim.positionradius  = round(degpx * 1.82);   % legacy ring (unused here but k
 % ---- Square stimulus spec (upright) ----
 V.square.R_deg         = 0.80;      % inscribing circle radius in deg (≈ your 0.8° size)
 V.square.coverage_c    = 1.00;      % 1.00 => corners touch the inscribing circle
-V.square.B             = 8;        % B×B tiles
+V.square.B             = 10;        % B×B tiles
 
 side_deg_full          = V.square.coverage_c * sqrt(2) * V.square.R_deg;
 side_px_full           = max(V.square.B, round(side_deg_full * V.pxPerDeg));
@@ -1498,6 +1558,26 @@ for i = 1:nBins
     Screen('FillRect', V.window, barCol, barRect);
 end
 
+% Draw Von Mises PDF curve in statistical mode
+if isfield(P, 'redundancyMode') && strcmpi(P.redundancyMode, 'statistical')
+    nPdfPts = 200;
+    theta = linspace(-pi, pi, nPdfPts);
+    pdfVals = exp(kappa * cos(theta)) / (2*pi*besseli(0, kappa));
+    if max(pdfVals) > 0
+        pdfVals = pdfVals / max(pdfVals);
+    end
+    xVals = histX + (rad2deg(theta) + 180) / 360 * histW;
+    yVals = histY + histH - pdfVals * histH;
+    if isfield(V, 'useFloat') && V.useFloat
+        pdfCol = [1.0 0.85 0.2];
+    else
+        pdfCol = [255 217 51];
+    end
+    for i = 1:(nPdfPts-1)
+        Screen('DrawLine', V.window, pdfCol, xVals(i), yVals(i), xVals(i+1), yVals(i+1), 2);
+    end
+end
+
 % Draw target line (at 0 offset)
 targetX = histX + histW/2;
 Screen('DrawLine', V.window, textCol, targetX, histY, targetX, histY+histH, 2);
@@ -1512,7 +1592,11 @@ end
 
 % Draw title
 Screen('TextSize', V.window, 16);
-titleText = sprintf('%s Noise Distribution', [upper(noiseLevel(1)) noiseLevel(2:end)]);
+modeLabel = 'Exact';
+if isfield(P, 'redundancyMode') && strcmpi(P.redundancyMode, 'statistical')
+    modeLabel = 'Statistical';
+end
+titleText = sprintf('%s Noise Distribution (%s)', [upper(noiseLevel(1)) noiseLevel(2:end)], modeLabel);
 DrawFormattedText(V.window, titleText, vizX+10, vizY+10, textCol);
 
 % Draw statistics text
