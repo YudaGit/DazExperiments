@@ -100,8 +100,9 @@ P.samplingMode   = 'statistical'; % 'statistical' or 'deterministic'
 P.DebugVerify    = DebugVerify;          % true: run limited trials and print checks
 P.DebugVerifyTrials = DebugVerifyTrials; % number of trials to run before stopping
 P.DebugSkipInstructions = DebugSkipInstructions;    % skip instructions in debug verify
-P.PrecomputeStimuli = true;        % precompute tile patterns and target hue
-P.WarnDuplicateRedundant = true;   % warn if redundant items are identical
+P.PrecomputeStimuli = false;       % precompute tile patterns and target hue (false = on-the-fly)
+P.AssertUniqueRedundant = true;   % error if redundant items are identical (rounded)
+P.LogRedundantFingerprint = false;% if true, print mean/std/sum(round(h)) per item for debugging
 % Prepare color map for noisy stimuli (360-row lookup)
 if size(V.color.map,1) == 360
     P.cMap360_255 = V.color.map;
@@ -321,7 +322,7 @@ function DrawStimulusSegment(trial, idx)
                isfield(P, 'samplingMode') && strcmpi(P.samplingMode, 'statistical')
                 maxResample = 10;
                 resampleCount = 0;
-                while any(cellfun(@(h) isequal(h, huesDeg), StimStats.tileHues(1:k-1)))
+                while any(cellfun(@(h) isequal(round(h), round(huesDeg)), StimStats.tileHues(1:k-1)))
                     [rgb01, huesDeg] = getPatternByMode(V, targetHueDeg, noiseLevel, P);
                     resampleCount = resampleCount + 1;
                     if resampleCount >= maxResample
@@ -340,24 +341,8 @@ function DrawStimulusSegment(trial, idx)
     end
 
     if strcmpi(StimStats.condition, 'Homo_Space') && ...
-       isfield(P, 'samplingMode') && strcmpi(P.samplingMode, 'statistical') && ...
-       isfield(P, 'WarnDuplicateRedundant') && P.WarnDuplicateRedundant
-        hasDup = false;
-        for a = 1:numel(StimStats.tileHues)
-            for b = (a+1):numel(StimStats.tileHues)
-                ha = round(StimStats.tileHues{a});
-                hb = round(StimStats.tileHues{b});
-                if isequal(ha, hb)
-                    hasDup = true;
-                    break;
-                end
-            end
-            if hasDup, break; end
-        end
-        if hasDup
-            warning('Duplicate redundant stimuli detected (trial %d, N=%d, precompute=%d).', ...
-                StimStats.trialIndex, numel(StimStats.tileHues), usedPrecompute);
-        end
+       isfield(P, 'samplingMode') && strcmpi(P.samplingMode, 'statistical')
+        checkRedundantUniqueness(StimStats.tileHues, P, StimStats.trialIndex, usedPrecompute);
     end
 end
 
@@ -1677,6 +1662,41 @@ function targetHue = computeTargetHueFromArrays(condition, targetIdx, baseHues, 
     end
 end
 
+function checkRedundantUniqueness(tileHues, P, trialIndex, usedPrecompute)
+% Check that within a redundant set, no two tileHues are identical (after rounding).
+% If P.AssertUniqueRedundant: error on duplicate; else: warn.
+% If P.LogRedundantFingerprint: print fingerprints (mean, std, sum rounded hues).
+    if nargin < 4
+        usedPrecompute = []; %#ok<NASGU>
+    end
+    dupPairs = [];
+    for a = 1:numel(tileHues)
+        for b = (a+1):numel(tileHues)
+            ha = round(tileHues{a});
+            hb = round(tileHues{b});
+            if isequal(ha, hb)
+                dupPairs = [dupPairs; a, b]; %#ok<AGROW>
+            end
+        end
+    end
+    if isfield(P, 'LogRedundantFingerprint') && P.LogRedundantFingerprint
+        for j = 1:numel(tileHues)
+            h = tileHues{j};
+            fprintf('Trial %d item %d: mean=%.2f std=%.2f sumRounded=%d\n', ...
+                trialIndex, j, mean(h), std(h), sum(round(h)));
+        end
+    end
+    if ~isempty(dupPairs)
+        msg = sprintf('Duplicate redundant stimuli (trial %d, N=%d, precompute=%d). Pairs: %s', ...
+            trialIndex, numel(tileHues), usedPrecompute, mat2str(dupPairs));
+        if isfield(P, 'AssertUniqueRedundant') && P.AssertUniqueRedundant
+            error('%s', msg);
+        else
+            warning('%s', msg);
+        end
+    end
+end
+
 function T = precomputeStimuli(T, P)
 % Precompute tile patterns, mean offsets, base hues, and target hue
     global V
@@ -1696,7 +1716,7 @@ function T = precomputeStimuli(T, P)
                strcmpi(P.samplingMode, 'statistical')
                 maxResample = 10;
                 resampleCount = 0;
-                while any(cellfun(@(h) isequal(h, huesDeg), tileHues(1:k-1)))
+                while any(cellfun(@(h) isequal(round(h), round(huesDeg)), tileHues(1:k-1)))
                     [rgb01, huesDeg] = getPatternByMode(V, cols(k), T.NoiseLevel{i}, P);
                     resampleCount = resampleCount + 1;
                     if resampleCount >= maxResample
@@ -1713,6 +1733,9 @@ function T = precomputeStimuli(T, P)
         T.MeanOffsets{i} = meanOffsets;
         T.BaseHues{i} = baseHues;
         T.TargetHue(i) = computeTargetHueFromArrays(cond, targetIdx, baseHues, meanOffsets);
+        if strcmp(cond, 'Homo_Space') && isfield(P, 'samplingMode') && strcmpi(P.samplingMode, 'statistical')
+            checkRedundantUniqueness(tileHues, P, i, true);
+        end
     end
 end
 
