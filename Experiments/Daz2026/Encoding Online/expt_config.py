@@ -9,6 +9,7 @@ import copy
 import config
 import json
 import requests
+import os
 # If you are developing your experiment
 # then set the DEBUG flag to True
 DEBUG = config.DEBUG
@@ -37,6 +38,78 @@ study_list_length = 5
 test_list_length = 10
 
 stimulus_file = "word-list.json.gz"
+
+# Subexperiment allocation quotas (set to 1 for testing)
+ALLOCATION_QUOTAS = {1: 1, 2: 1, 3: 1}
+ALLOCATION_STATE_FILE = "subexp_allocation_counts.json"
+
+
+def _allocation_state_path():
+    return os.path.join(os.path.dirname(__file__), ALLOCATION_STATE_FILE)
+
+
+def _load_allocation_state():
+    path = _allocation_state_path()
+    if not os.path.isfile(path):
+        return {
+            "counts": {str(k): 0 for k in ALLOCATION_QUOTAS},
+            "quotas": {str(k): ALLOCATION_QUOTAS[k] for k in ALLOCATION_QUOTAS},
+        }
+    try:
+        with open(path, "r", encoding="utf-8") as fp:
+            data = json.load(fp)
+        if "counts" not in data:
+            data["counts"] = {}
+        if "quotas" not in data:
+            data["quotas"] = {str(k): ALLOCATION_QUOTAS[k] for k in ALLOCATION_QUOTAS}
+        return data
+    except Exception:
+        return {
+            "counts": {str(k): 0 for k in ALLOCATION_QUOTAS},
+            "quotas": {str(k): ALLOCATION_QUOTAS[k] for k in ALLOCATION_QUOTAS},
+        }
+
+
+def _save_allocation_state(state):
+    path = _allocation_state_path()
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as fp:
+        json.dump(state, fp, indent=2, sort_keys=True)
+    os.replace(tmp_path, path)
+
+
+def _get_allocation_quotas(state):
+    quotas = state.get("quotas", {})
+    if not quotas:
+        return ALLOCATION_QUOTAS
+    # Ensure int keys with int values
+    out = {}
+    for k, v in quotas.items():
+        try:
+            out[int(k)] = int(v)
+        except Exception:
+            continue
+    return out or ALLOCATION_QUOTAS
+
+
+def increment_subexperiment_count(subexp):
+    if subexp not in ALLOCATION_QUOTAS:
+        return
+    state = _load_allocation_state()
+    counts = state.get("counts", {})
+    counts[str(subexp)] = counts.get(str(subexp), 0) + 1
+    state["counts"] = counts
+    _save_allocation_state(state)
+
+
+def _allocate_subexperiment():
+    state = _load_allocation_state()
+    counts = state.get("counts", {})
+    quotas = _get_allocation_quotas(state)
+    available = [k for k in quotas if counts.get(str(k), 0) < quotas[k]]
+    if not available:
+        return random.choice(list(quotas.keys()))
+    return random.choice(available)
 
 
 
@@ -113,20 +186,22 @@ def get_data(opts):
     # Check if sub-experiment is manually specified via URL parameter
     # e.g., http://localhost:5000/unique-expt?subexp=1
     if 'subexp' in opts:
-        # Manual assignment via URL parameter
+        # Manual assignment via URL parameter (does not consume quota)
         try:
             subexperiment = int(opts['subexp'])
             # Validate: must be 1, 2, or 3
             if subexperiment not in [1, 2, 3]:
-                print(f"Warning: Invalid subexp={subexperiment}, using random assignment")
-                subexperiment = random.choice([1, 2, 3])
+                print(f"Warning: Invalid subexp={subexperiment}, using quota-based assignment")
+                subexperiment = _allocate_subexperiment()
         except (ValueError, TypeError):
-            # If conversion fails, use random assignment
-            print(f"Warning: Could not parse subexp={opts.get('subexp')}, using random assignment")
-            subexperiment = random.choice([1, 2, 3])
+            # If conversion fails, use quota-based assignment
+            print(f"Warning: Could not parse subexp={opts.get('subexp')}, using quota-based assignment")
+            subexperiment = _allocate_subexperiment()
     else:
-        # Random assignment: randomly choose 1 of 3 sub-experiments
-        subexperiment = random.choice([1, 2, 3])
+        # Quota-based random assignment across available sub-experiments
+        subexperiment = _allocate_subexperiment()
+
+    # When all quotas are filled, still allow random assignment
     
     print(f"Assigned participant to Sub-Experiment {subexperiment}")
     
@@ -183,7 +258,7 @@ def prepare_subexperiment_1():
     redundant_n = 3  # Always 3 redundant items
     durations_ms = [50, 100, 150, 200, 250, 300, 350]  # 7 durations
     cue_types = ['R-cue', 'NR-cue']  # 2 trial types
-    n_trials_per_condition = 10
+    n_trials_per_condition = 1
     n_practice_trials = 5
     
     # Generate all trial combinations
@@ -235,7 +310,7 @@ def prepare_subexperiment_2():
     set_sizes = [4, 6]
     durations_ms = [50, 100, 200]  # 3 durations
     trial_types = ['Baseline', 'R-cue', 'NR-cue']
-    n_trials_per_condition = 10
+    n_trials_per_condition = 1
     
     # Redundancy levels: set-size 4 has 2 redundant, set-size 6 has 3 redundant
     redundancy_by_set_size = {4: 2, 6: 3}
@@ -299,7 +374,7 @@ def prepare_subexperiment_3():
     set_sizes = [4, 6]
     durations_ms = [50, 100, 200]  # 3 durations
     trial_types = ['Baseline', 'R-cue', 'NR-cue']
-    n_trials_per_condition = 10
+    n_trials_per_condition = 1
     
     # Redundancy levels: set-size 4 has 2 redundant, set-size 6 has 3 redundant
     redundancy_by_set_size = {4: 2, 6: 3}

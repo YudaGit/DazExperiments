@@ -66,6 +66,11 @@ var jsConfidenceWheel = (function (jspsych) {
                 pretty_name: "Show Visual Mask",
                 default: false,  // Show visual mask (for Sub-Experiment 3 retention interval)
             },
+            show_noise_mask:{
+                type: jspsych.ParameterType.BOOL,
+                pretty_name: "Show Noise Mask",
+                default: false,  // Show per-item noise mask (for Sub-Experiment 1 retention interval)
+            },
             mask_data:{
                 type: jspsych.ParameterType.OBJECT,
                 pretty_name: "Mask Data",
@@ -75,6 +80,16 @@ var jsConfidenceWheel = (function (jspsych) {
                 type: jspsych.ParameterType.FLOAT,
                 pretty_name: "Mask Bar Scale",
                 default: 0.8,  // Mask bar size relative to stimulus bars
+            },
+            stimulus_scale: {
+                type: jspsych.ParameterType.FLOAT,
+                pretty_name: "Stimulus Scale",
+                default: 1.0,  // Scale for stimulus size (patchradius and patch size)
+            },
+            noise_mask_scale: {
+                type: jspsych.ParameterType.FLOAT,
+                pretty_name: "Noise Mask Scale",
+                default: 1.3,  // Noise mask radius relative to stimulus patch radius
             },
             pause_each_stage: {
                 type: jspsych.ParameterType.BOOL,
@@ -151,8 +166,8 @@ var jsConfidenceWheel = (function (jspsych) {
             
             // Bar length = diameter of color patch
             var barLength = 2 * patchRadius;
-            // Bar width = length / 7 (1:7 ratio)
-            var barWidth = barLength / 7;
+            // Bar width = 1.5:7 ratio
+            var barWidth = barLength * (1.5 / 7);
             
             // Draw each bar
             for (var ii = 0; ii < trial.patch_positionalangle.length; ii++) {
@@ -189,6 +204,52 @@ var jsConfidenceWheel = (function (jspsych) {
             }
         }
 
+        generateNoiseCanvas(diameterPx) {
+            const canvas = document.createElement("canvas");
+            canvas.width = diameterPx;
+            canvas.height = diameterPx;
+            const ctx = canvas.getContext("2d");
+            const img = ctx.createImageData(diameterPx, diameterPx);
+            const data = img.data;
+            for (let i = 0; i < data.length; i += 4) {
+                const noise = Math.floor(128 + (Math.random() * 2 - 1) * 64);
+                data[i] = noise;
+                data[i + 1] = noise;
+                data[i + 2] = noise;
+                data[i + 3] = 255;
+            }
+            ctx.putImageData(img, 0, 0);
+            return canvas;
+        }
+
+        drawNoiseMaskDisks(ctx, trial, centerX, centerY, patchradius, patchRadius) {
+            /**
+             * Draw per-item noise masks (slightly larger than stimulus patches).
+             * Matches the Matlab mask: noisy disk overlay on each item.
+             */
+            const scale = (typeof trial.noise_mask_scale === 'number' && !isNaN(trial.noise_mask_scale))
+                ? trial.noise_mask_scale
+                : 1.3;
+            const maskRadius = patchRadius * scale;
+            const diameter = Math.ceil(maskRadius * 2);
+
+            for (let ii = 0; ii < trial.patch_positionalangle.length; ii++) {
+                const posAngle = trial.patch_positionalangle[ii] * Math.PI / 180;
+                const maskCenterX = centerX + patchradius * Math.cos(posAngle);
+                const maskCenterY = centerY + patchradius * Math.sin(posAngle);
+                const noiseCanvas = this.generateNoiseCanvas(diameter);
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(maskCenterX, maskCenterY, maskRadius, 0, 2 * Math.PI);
+                ctx.fillStyle = 'black';
+                ctx.fill();
+                ctx.clip();
+                ctx.drawImage(noiseCanvas, maskCenterX - maskRadius, maskCenterY - maskRadius);
+                ctx.restore();
+            }
+        }
+
         drawOrientationBarResponse(ctx, trial, centerX, centerY, targetN, patchRadius) {
             /**
              * Draw orientation bar response interface for Sub-Experiment 3
@@ -200,8 +261,8 @@ var jsConfidenceWheel = (function (jspsych) {
             
             // Bar length = diameter of color patch
             var barLength = 2 * patchRadius;
-            // Bar width = length / 7 (1:7 ratio)
-            var barWidth = barLength / 7;
+            // Bar width = 1.5:7 ratio
+            var barWidth = barLength * (1.5 / 7);
             
             // Get target color (bar color matches target item)
             var targetColor = trial.choice_colors[targetN];
@@ -236,7 +297,7 @@ var jsConfidenceWheel = (function (jspsych) {
              */
             
             var barLength = 2 * patchRadius;
-            var barWidth = barLength / 7;
+            var barWidth = barLength * (1.5 / 7);
             var targetColor = trial.choice_colors[targetN];
             
             // Draw response orientation (white bar)
@@ -288,7 +349,7 @@ var jsConfidenceWheel = (function (jspsych) {
             
             // Bar dimensions (same as stimulus bars)
             var barLength = 2 * barRadius;
-            var barWidth = barLength / 7;
+            var barWidth = barLength * (1.5 / 7);
             
             // Generate random bars covering the mask area
             // Use a grid-based approach with some randomness for dense coverage
@@ -385,7 +446,7 @@ var jsConfidenceWheel = (function (jspsych) {
             
             // Bar dimensions (same as stimulus bars)
             var barLength = 2 * scaledBarRadius;
-            var barWidth = barLength / 7;
+            var barWidth = barLength * (1.5 / 7);
             
             // Draw all bars
             for (var i = 0; i < maskData.colors.length; i++) {
@@ -417,11 +478,12 @@ var jsConfidenceWheel = (function (jspsych) {
             // Set Base Variables
             var self = this;
             var maxtime = 10000
-            var startingradius = Math.round(window.outerHeight * 0.035);
-            var windowHeight = (typeof browser_window_height === 'number' && !isNaN(browser_window_height))
-                ? browser_window_height
+            const viewportHeight = (typeof window.innerHeight === 'number' && !isNaN(window.innerHeight))
+                ? window.innerHeight
                 : window.outerHeight;
-            var patchradius    = windowHeight * .1;
+            const viewportWidth = (typeof window.innerWidth === 'number' && !isNaN(window.innerWidth))
+                ? window.innerWidth
+                : window.outerWidth;
             var targetN;
 
             // Ensure patch positions exist for drawing orientation bars
@@ -447,8 +509,17 @@ var jsConfidenceWheel = (function (jspsych) {
             canvas.style.margin = "0";
             canvas.style.padding = "0";
             var ctx = canvas.getContext("2d");
-            ctx.canvas.width  = window.outerWidth * 0.95;
-            ctx.canvas.height = window.outerHeight * 0.95;
+            ctx.canvas.width  = viewportWidth * 0.95;
+            ctx.canvas.height = viewportHeight * 0.95;
+            
+            var startingradius = Math.round(ctx.canvas.height * 0.035);
+            var basePatchRadius = ctx.canvas.height * 0.1;
+            var baseIndivPatchRadius = Math.round(ctx.canvas.height * 0.024);
+            var stimulusScale = (typeof trial.stimulus_scale === 'number' && !isNaN(trial.stimulus_scale))
+                ? trial.stimulus_scale
+                : 1.0;
+            var patchradius = basePatchRadius * stimulusScale;
+            var indiv_patch_radius = Math.round(baseIndivPatchRadius * stimulusScale);
             
             //  Add central white circle for mouse centering (skip for orientation-bar response)
             var midx = ctx.canvas.width/2
@@ -462,8 +533,6 @@ var jsConfidenceWheel = (function (jspsych) {
             }
             // Always attach canvas; response type decides what is drawn on it
             display_element.insertBefore(canvas, null);
-            
-            var indiv_patch_radius = Math.round(window.outerHeight * 0.024)
             //console.log('p', indiv_patch_radius)
             
             if (trial.draw_wheel == false){
@@ -483,8 +552,13 @@ var jsConfidenceWheel = (function (jspsych) {
                     }, displayDuration + 10);
                 }
                 
+                // Check if showing per-item noise mask (Sub-Experiment 1 retention interval)
+                if (trial.show_noise_mask === true) {
+                    this.drawNoiseMaskDisks(ctx, trial, midx, midy, patchradius, indiv_patch_radius);
+                    display_element.insertBefore(canvas, null);
+                }
                 // Check if showing visual mask (for Sub-Experiment 3 retention interval)
-                if (trial.show_mask == true) {
+                else if (trial.show_mask == true) {
                     // Calculate mask radius (larger than stimulus area to fully cover it)
                     // Stimulus centers are on a circle, so bars extend outside that circle
                     // Mask radius = patch radius + bar length (to fully cover)
@@ -552,8 +626,8 @@ var jsConfidenceWheel = (function (jspsych) {
                     
                 
                     // Draw Color Wheel                
-                    var outer_radius = Math.round( window.outerHeight * 0.230 )
-                    var inner_radius = Math.round(outer_radius - window.outerHeight * 0.026)
+                    var outer_radius = Math.round(ctx.canvas.height * 0.230);
+                    var inner_radius = Math.round(outer_radius - ctx.canvas.height * 0.026);
 
                     
                     var graphics = canvas.getContext("2d");
@@ -600,7 +674,9 @@ var jsConfidenceWheel = (function (jspsych) {
             var pastYcoords = [];
 
             var startinitiatetime  = 1;  // Changed to 1ms so it never triggers (but still checks if starting outside circle)
-            var maxinitiatetime  = 3000;  // Trigger penalty if leaving center after 3000ms
+            var maxinitiatetime  = 6000;  // Trigger penalty if leaving center after 6000ms
+            var responseTooFastMs = 200;
+            var responseTooSlowMs = maxinitiatetime;
 
             var toofast = [false];
             var tooslow = [false];
@@ -738,10 +814,11 @@ var jsConfidenceWheel = (function (jspsych) {
 
                     if (trial.response_type !== 'orientation_bar') {
                         if (startoutofCenter[0]){txt = 'Response Started Out Of Center.'}
-                        if (toofast[0]){txt = 'Too Fast Leaving The Center.'}
-                        if (tooslow[0]){txt = 'Too Slow Leaving The Center.'}
+                        if (toofast[0]){txt = 'Responded Too Quickly'}
+                        if (tooslow[0]){txt = 'Responded Too Slowly'}
                     } else {
-                        if (toofast[0]){txt = 'Too Fast Clicking.'}
+                        if (toofast[0]){txt = 'Responded Too Quickly'}
+                        if (tooslow[0]){txt = 'Responded Too Slowly'}
                     }
 
                     if (timeout[0] == true){
@@ -827,8 +904,11 @@ var jsConfidenceWheel = (function (jspsych) {
                             // Response RT
                             var response_time = performance.now() - start_time;
                             rt.push(response_time);
-                            if (response_time <= startinitiatetime) {
+                            if (response_time <= responseTooFastMs) {
                                 toofast[0] = true;
+                            }
+                            if (response_time >= responseTooSlowMs) {
+                                tooslow[0] = true;
                             }
                             
                             // Record orientation response (0-180°)
@@ -840,12 +920,8 @@ var jsConfidenceWheel = (function (jspsych) {
                             var target_orientation = trial.orientations[targetN];
                             var error = response_orientation - target_orientation;
                             
-                            // Wrap error to -90 to +90 range (shortest path)
-                            if (error > 90) {
-                                error = error - 180;
-                            } else if (error < -90) {
-                                error = error + 180;
-                            }
+                            // Wrap error to shortest path in orientation space (0-180)
+                            error = ((error + 90) % 180) - 90;
                             
                             resp_error.push(error);
                             derotated_degrees.push(response_orientation); // For compatibility
@@ -1057,6 +1133,7 @@ var jsConfidenceWheel = (function (jspsych) {
                 target_patchN: safeTargetIndex !== null ? safeTargetIndex + 1 : null,
                 all_patch_angles: safeChoiceAngles,
                 all_patch_colors: safeChoiceColors,
+                all_patch_orientations: Array.isArray(trial.orientations) ? trial.orientations : null,
                 patch_angles_from_center: safePatchAngles,
                 patch_imaginary_circle: patchradius,
                 patch_indiv_size_radius: indiv_patch_radius,
