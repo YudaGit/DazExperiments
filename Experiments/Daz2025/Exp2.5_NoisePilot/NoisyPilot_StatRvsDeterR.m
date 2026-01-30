@@ -48,7 +48,7 @@ if DebugVerify && DebugNoPTB
     V.color.map = buildColorMapNoPTB();
     P.K_LowNoise  = 25;
     P.K_HighNoise = 0.8;
-    P.samplingMode = 'statistical';
+    P.samplingMode = 'deterministic';
     if size(V.color.map,1) == 360
         P.cMap360_255 = V.color.map;
     else
@@ -103,6 +103,7 @@ P.DebugSkipInstructions = DebugSkipInstructions;    % skip instructions in debug
 P.PrecomputeStimuli = false;       % precompute tile patterns and target hue (false = on-the-fly)
 P.AssertUniqueRedundant = true;   % error if redundant items are identical (rounded)
 P.LogRedundantFingerprint = false;% if true, print mean/std/sum(round(h)) per item for debugging
+P.SaveStimulusSnap = true;       % if true, save each trial's stimulus display as PNG for inspection
 % Prepare color map for noisy stimuli (360-row lookup)
 if size(V.color.map,1) == 360
     P.cMap360_255 = V.color.map;
@@ -114,6 +115,17 @@ end
 % Precompute stimuli patterns + offsets if enabled
 if isfield(P, 'PrecomputeStimuli') && P.PrecomputeStimuli
     expTrials = precomputeStimuli(expTrials, P);
+end
+
+% Per-trial stimulus snap: directory for saving stimulus screenshots (when P.SaveStimulusSnap is true)
+snapDir = [];
+if isfield(P, 'SaveStimulusSnap') && P.SaveStimulusSnap
+    saveDirBase = 'Noise Pilot StatRvsDeterR Data';
+    snapDir = fullfile(saveDirBase, 'StimulusSnaps', sprintf('%s_sess%d_%s', participantID, sessionN, timestamp));
+    if ~isfolder(snapDir)
+        mkdir(snapDir);
+    end
+    fprintf('Stimulus snap folder: %s\n', snapDir);
 end
 
 try
@@ -159,6 +171,9 @@ try
             end
             DrawStimulusSegment(tr, idxList);         % now handles vector or scalar
             Screen('Flip', win);
+            if ~isempty(snapDir)
+                saveTrialStimulusSnap(win, ii, seg, snapDir);
+            end
             WaitSecs(design.SegmentDur);
         
             % Track locations shown in this segment
@@ -1528,6 +1543,20 @@ function [] = printScreen(filename, window)
         img = Screen('GetImage', window);
         filename = fullfile(saveDir, filename);
         imwrite(img, filename);
+    end
+end
+
+function [] = saveTrialStimulusSnap(win, trialIdx, segIdx, snapDir)
+% Save the current stimulus display as a PNG for inspection.
+% Called after Screen('Flip') so the image matches what was shown.
+% trialIdx: trial number (1-based), segIdx: segment number (1-based).
+    fname = sprintf('StimulusSnap_trial%03d_seg%02d.png', trialIdx, segIdx);
+    fullpath = fullfile(snapDir, fname);
+    try
+        img = Screen('GetImage', win);
+        imwrite(img, fullpath);
+    catch ME
+        warning('saveTrialStimulusSnap: failed to save %s: %s', fullpath, ME.message);
     end
 end
 
