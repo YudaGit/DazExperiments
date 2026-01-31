@@ -100,7 +100,7 @@ P.samplingMode   = 'statistical'; % 'statistical' or 'deterministic'
 P.DebugVerify    = DebugVerify;          % true: run limited trials and print checks
 P.DebugVerifyTrials = DebugVerifyTrials; % number of trials to run before stopping
 P.DebugSkipInstructions = DebugSkipInstructions;    % skip instructions in debug verify
-P.PrecomputeStimuli = false;       % precompute tile patterns and target hue (false = on-the-fly)
+P.PrecomputeStimuli = true;       % precompute tile patterns and target hue (false = on-the-fly)
 P.AssertUniqueRedundant = true;   % error if redundant items are identical (rounded)
 P.LogRedundantFingerprint = false;% if true, print mean/std/sum(round(h)) per item for debugging
 P.SaveStimulusSnap = true;       % if true, save each trial's stimulus display as PNG for inspection
