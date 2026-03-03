@@ -217,6 +217,50 @@ function buildOkLabPalette() {
   return palette;
 }
 
+// CIE L*a*b* (D65) to sRGB. L in [0,100], a,b unbounded. Returns [R,G,B] 0-255.
+function cieLabToSrgb(L, a, b) {
+  var Xn = 0.95047, Yn = 1, Zn = 1.08883;
+  var delta = 6 / 29;
+  var fy = (L + 16) / 116;
+  var fx = a / 500 + fy;
+  var fz = fy - b / 200;
+  function f(t) {
+    return t > delta ? t * t * t : (t - 4 / 29) * (3 * delta * delta);
+  }
+  var X = Xn * f(fx);
+  var Y = Yn * f(fy);
+  var Z = Zn * f(fz);
+  var r =  3.2404542 * X - 1.5371385 * Y - 0.4985314 * Z;
+  var g = -0.9692660 * X + 1.8760108 * Y + 0.0415560 * Z;
+  var blin = 0.0556434 * X - 0.2040259 * Y + 1.0572252 * Z;
+  r = Math.max(0, Math.min(1, linToSrgbChannel(r)));
+  g = Math.max(0, Math.min(1, linToSrgbChannel(g)));
+  blin = Math.max(0, Math.min(1, linToSrgbChannel(blin)));
+  return [r * 255, g * 255, blin * 255];
+}
+
+// CIE LAB color wheel (Exp1_Encoding_1.m: useCIE_LABcolorwheel branch). L=65, a=20, b=0, radius=70, 360 spokes.
+function buildCieLabPalette() {
+  var L = 65, aCenter = 20, bCenter = 0, radius = 70;
+  var palette = [];
+  for (var i = 0; i < 360; i++) {
+    var angle = 2 * Math.PI * i / 360;
+    var a = aCenter + radius * Math.cos(angle);
+    var b = bCenter + radius * Math.sin(angle);
+    palette.push(cieLabToSrgb(L, a, b));
+  }
+  return palette;
+}
+
+// Call after expt_data/subexperiment is set. Subexp 3 uses CIE LAB; subexp 1 and 2 use OKLab (or ciemHighRGBs).
+function setColorPaletteForSubexp(subexp) {
+  if (subexp === 3) {
+    highRGBs = buildCieLabPalette();
+  } else {
+    highRGBs = useOkLabPalette ? buildOkLabPalette() : ciemHighRGBs;
+  }
+}
+
   var ciemHighRGBs = [ 
 [	240.5	,	48.91	,	112.22	],
 [	239.94	,	50.83	,	109.19	],
