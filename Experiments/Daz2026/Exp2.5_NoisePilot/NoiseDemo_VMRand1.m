@@ -59,7 +59,7 @@ P.K_LowNoise      = 25;       % concentration parameter (high = narrow distribut
                                 % Typical range: 20-100 for low noise
 
 % High noise parameters:
-P.K_HighNoise     = 2;         % concentration parameter (lower = wider distribution)
+P.K_HighNoise     = 0.8;         % concentration parameter (lower = wider distribution)
                                 % Lower kappa = wider spread around target
                                 % Typical range: 1-10 for high noise
                                 
@@ -102,49 +102,49 @@ while keepGoing
             info = sprintf(['Stage 1: Single Stimulus\n' ...
                             'Noise: Low (K=%.1f)\n' ...
                             'Set Size: 1'], P.K_LowNoise);
-            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'low',  P, false, 'stage1'), info, ...
+            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'low',  P, true, 'stage1'), info, ...
                 @() generateTargetOffset_single(V, 90, 'low', P));
         case 2
             info = sprintf(['Stage 2: Single Stimulus\n' ...
                             'Noise: High (K=%.1f)\n' ...
                             'Set Size: 1'], P.K_HighNoise);
-            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'high', P, false, 'stage2'), info, ...
+            action = stage_click_to_repeat(win, @() stage_single(V, 90,  'high', P, true, 'stage2'), info, ...
                 @() generateTargetOffset_single(V, 90, 'high', P));
         case 3
             info = sprintf(['Stage 3: Four Stimuli with Replicas\n' ...
                             'Noise: Low (K=%.1f)\n' ...
                             'Set Size: 4'], P.K_LowNoise);
-            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'low', false, 'stage3'), info, ...
+            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'low', true, 'stage3'), info, ...
                 @() generateTargetOffset_four(V, P, 'low'));
         case 4
             info = sprintf(['Stage 4: Four Stimuli with Replicas\n' ...
                             'Noise: High (K=%.1f)\n' ...
                             'Set Size: 4'], P.K_HighNoise);
-            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'high', false, 'stage4'), info, ...
+            action = stage_click_to_repeat(win, @() stage_four_with_replicas(V, P, 'high', true, 'stage4'), info, ...
                 @() generateTargetOffset_four(V, P, 'high'));
         case 5
             info = sprintf(['Stage 5: Two-Interval Same Location\n' ...
                             'Noise: Low (K=%.1f)\n' ...
                             'Set Size: 1 (two intervals)'], P.K_LowNoise);
-            action = stage_click_to_repeat(win, @() stage_two_interval_same_loc(V, 90, 'low', P), info, ...
+            action = stage_click_to_repeat(win, @() stage_two_interval_same_loc(V, 90, 'low', P, true, 'stage5'), info, ...
                 @() generateTargetOffset_single(V, 90, 'low', P));
         case 6
             info = sprintf(['Stage 6: Two-Interval Different Location\n' ...
                             'Noise: Low (K=%.1f)\n' ...
                             'Set Size: 1 (two intervals)'], P.K_LowNoise);
-            action = stage_click_to_repeat(win, @() stage_two_interval_diff_loc(V, 90, 270, 'low', P), info, ...
+            action = stage_click_to_repeat(win, @() stage_two_interval_diff_loc(V, 90, 270, 'low', P, true, 'stage6'), info, ...
                 @() generateTargetOffset_single(V, 90, 'low', P));
         case 7
             info = sprintf(['Stage 7: Two-Interval Same Location\n' ...
                             'Noise: High (K=%.1f)\n' ...
                             'Set Size: 1 (two intervals)'], P.K_HighNoise);
-            action = stage_click_to_repeat(win, @() stage_two_interval_same_loc(V, 90, 'high', P), info, ...
+            action = stage_click_to_repeat(win, @() stage_two_interval_same_loc(V, 90, 'high', P, true, 'stage7'), info, ...
                 @() generateTargetOffset_single(V, 90, 'high', P));
         case 8
             info = sprintf(['Stage 8: Two-Interval Different Location\n' ...
                             'Noise: High (K=%.1f)\n' ...
                             'Set Size: 1 (two intervals)'], P.K_HighNoise);
-            action = stage_click_to_repeat(win, @() stage_two_interval_diff_loc(V, 90, 270, 'high', P), info, ...
+            action = stage_click_to_repeat(win, @() stage_two_interval_diff_loc(V, 90, 270, 'high', P, true, 'stage8'), info, ...
                 @() generateTargetOffset_single(V, 90, 'high', P));
         otherwise
             action = 'quit';
@@ -176,7 +176,7 @@ function [targetDeg, meanOffset] = stage_single(V, angleDeg, noiseLevel, P, save
 % saveShot: enable screen capture (default: false)
 % shotTag: tag for screenshot filename (default: 'stage1' or 'stage2' based on noiseLevel)
 global storedStimData
-if nargin < 5, saveShot = false; end
+if nargin < 5, saveShot = true; end
 if nargin < 6, shotTag = sprintf('stage%d', strcmpi(noiseLevel, 'high') + 1); end
 
 if ~isempty(storedStimData) && isfield(storedStimData, 'target') && ~isempty(storedStimData.target)
@@ -205,7 +205,7 @@ function [targetDegs, meanOffsets] = stage_four_with_replicas(V, P, noiseLevel, 
 % saveShot: enable screen capture (default: false)
 % shotTag: tag for screenshot filename (default: 'stage3' or 'stage4' based on noiseLevel)
 global storedStimData
-if nargin < 4, saveShot = false; end
+if nargin < 4, saveShot = true; end
 if nargin < 5, shotTag = sprintf('stage%d', strcmpi(noiseLevel, 'high') + 3); end
 if ~isempty(storedStimData) && isfield(storedStimData, 'baseHue') && ~isempty(storedStimData.baseHue)
     % Use stored values
@@ -301,10 +301,12 @@ end
 WaitSecs(P.durMs/1000);
 end
 
-function [targetDeg, meanOffset] = stage_two_interval_diff_loc(V, angle1, angle2, noiseLevel, P)
+function [targetDeg, meanOffset] = stage_two_interval_diff_loc(V, angle1, angle2, noiseLevel, P, saveShot, shotTag)
 % Get stored target from generateTargetOffset_single (via global)
 % Redundant items (interval 1 & 2) share the same hue target but are sampled independently
 global storedStimData
+if nargin < 6, saveShot = false; end
+if nargin < 7, shotTag = 'stage6'; end
 if ~isempty(storedStimData) && isfield(storedStimData, 'target') && ~isempty(storedStimData.target)
     % Use stored target hue only
     hue = storedStimData.target;
@@ -321,7 +323,7 @@ end
 % interval 1 - generate redundant pattern (mode-dependent)
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
 [pat1, ~, pat2, ~] = getRedundantPatterns(V, hue, noiseLevel, P);
-presentNoisySquareAt(V, hue, noiseLevel, angle1, P.durMs, P, pat1, false, false);
+presentNoisySquareAt(V, hue, noiseLevel, angle1, P.durMs, P, pat1, false, saveShot, P.shotDir, [shotTag '_int1']);
 % Note: presentNoisySquareAt already waits for P.durMs internally, no extra WaitSecs needed
 
 % ISI
@@ -330,15 +332,17 @@ Screen('Flip', V.window); WaitSecs(P.ISI);
 
 % interval 2 at different angle - generate redundant pattern (same target hue)
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-presentNoisySquareAt(V, hue, noiseLevel, angle2, P.durMs, P, pat2, false, false);
+presentNoisySquareAt(V, hue, noiseLevel, angle2, P.durMs, P, pat2, false, saveShot, P.shotDir, [shotTag '_int2']);
 % Note: presentNoisySquareAt already waits for P.durMs internally, no extra WaitSecs needed
 targetDeg = hue;
 end
 
-function [targetDeg, meanOffset] = stage_two_interval_same_loc(V, angleDeg, noiseLevel, P)
+function [targetDeg, meanOffset] = stage_two_interval_same_loc(V, angleDeg, noiseLevel, P, saveShot, shotTag)
 % Get stored target from generateTargetOffset_single (via global)
 % Redundant items (interval 1 & 2) share the same hue target but are sampled independently
 global storedStimData
+if nargin < 5, saveShot = false; end
+if nargin < 6, shotTag = 'stage5'; end
 if ~isempty(storedStimData) && isfield(storedStimData, 'target') && ~isempty(storedStimData.target)
     % Use stored target hue only
     hue = storedStimData.target;
@@ -355,7 +359,7 @@ end
 % interval 1 - generate redundant pattern (mode-dependent)
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
 [pat1, ~, pat2, ~] = getRedundantPatterns(V, hue, noiseLevel, P);
-presentNoisySquareAt(V, hue, noiseLevel, angleDeg, P.durMs, P, pat1, false, false);
+presentNoisySquareAt(V, hue, noiseLevel, angleDeg, P.durMs, P, pat1, false, saveShot, P.shotDir, [shotTag '_int1']);
 % Note: presentNoisySquareAt already waits for P.durMs internally, no extra WaitSecs needed
 
 % ISI
@@ -364,7 +368,7 @@ Screen('Flip', V.window); WaitSecs(P.ISI);
 
 % interval 2 - generate redundant pattern (same target hue)
 FillBG(V); drawFixation(V,[.25 .25 .25],[.75 .75 .75]);
-presentNoisySquareAt(V, hue, noiseLevel, angleDeg, P.durMs, P, pat2, false, false);
+presentNoisySquareAt(V, hue, noiseLevel, angleDeg, P.durMs, P, pat2, false, saveShot, P.shotDir, [shotTag '_int2']);
 % Note: presentNoisySquareAt already waits for P.durMs internally, no extra WaitSecs needed
 targetDeg = hue;
 end
@@ -501,7 +505,7 @@ function presentNoisySquareAt(V, hueDeg, noiseLevel, angleDeg, durMs, P, prePatt
 % Based on original working version from SqNoisyStim_Demo1.m
 
 if nargin < 8 || isempty(deferFlip), deferFlip = false; end
-if nargin < 9 || isempty(saveShot), saveShot = false; end
+if nargin < 9 || isempty(saveShot), saveShot = true; end
 if nargin < 10 || isempty(shotDir), shotDir = 'stim_captures'; end
 if nargin < 11 || isempty(shotTag), shotTag = 'stage'; end
 if nargin < 12 || isempty(cropMode), cropMode = 'stim'; end

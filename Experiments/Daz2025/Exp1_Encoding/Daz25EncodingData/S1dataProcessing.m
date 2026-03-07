@@ -169,6 +169,24 @@ else
 end
 ylCSD  = [0, 180];                            % circular SD range in degrees
 
+% PresDur axis labels: always display as ms (convert from seconds if needed)
+if max(presDurs) <= 10
+    presDurMs = presDurs * 1000;   % convert s -> ms for display
+else
+    presDurMs = presDurs;           % already in ms
+end
+presDurLabels = arrayfun(@(x) sprintf('%.0f ms', x), presDurMs, 'UniformOutput', false);
+presDurXLabel = 'Presentation Duration (ms)';
+
+% Precision/error y-limits for figures that need them (set once, used by Fig 8–11)
+pAll = precision(~isnan(precision) & isfinite(precision));
+if isempty(pAll)
+    ylP = [0 360];
+else
+    pr = prctile(pAll, [1 99]); span = max(1, pr(2)-pr(1)); pad = 0.05*span;
+    ylP = [pr(1)-pad, pr(2)+pad];
+end
+
 % Bootstrap settings
 nBoot = 2000; alpha = 0.05;
 
@@ -240,14 +258,14 @@ for k = 1:min(5, numel(IDs))
     end
 
     set(ax,'XTick',xCenters, ...
-           'XTickLabel', arrayfun(@(x) sprintf('%.2f', x), presDurs, 'UniformOutput',false), ...
+           'XTickLabel', presDurLabels, ...
            'FontSize',11, 'LineWidth',1.2);
     ylim(ax, ylRT);
     xlim(ax, [0.5, nDur+0.5]); box(ax,'on'); grid(ax,'on');
     ax.GridAlpha = 0.15; ax.Layer='top';
     title(ax, char(thisID), 'FontWeight','bold');
 
-    if k>3, xlabel(ax,'Presentation Duration (s)'); end
+    if k>3, xlabel(ax, presDurXLabel); end
     if any(k==[1,4]), ylabel(ax,'RT (ms)'); end
 end
 
@@ -323,13 +341,13 @@ for k = 1:min(5, numel(IDs))
     end
 
     set(ax,'XTick',xCenters, ...
-           'XTickLabel', arrayfun(@(x) sprintf('%.2f', x), presDurs, 'UniformOutput',false), ...
+           'XTickLabel', presDurLabels, ...
            'FontSize',11, 'LineWidth',1.2);
     ylim(ax, ylCSD); xlim(ax, [0.5, nDur+0.5]); box(ax,'on'); grid(ax,'on');
     ax.GridAlpha = 0.15; ax.Layer='top';
     title(ax, char(thisID), 'FontWeight','bold');
 
-    if k>3, xlabel(ax,'Presentation Duration (s)'); end
+    if k>3, xlabel(ax, presDurXLabel); end
     if any(k==[1,4])
         ylab = 'Circ. SD (deg)';
         if ~isCircularAngle, ylab = 'SD (deg)'; end
@@ -409,13 +427,13 @@ for k = 1:min(5, numel(IDs))
     end
 
     set(ax,'XTick',xCenters, ...
-           'XTickLabel', arrayfun(@(x) sprintf('%.2f', x), presDurs, 'UniformOutput',false), ...
+           'XTickLabel', presDurLabels, ...
            'FontSize',11, 'LineWidth',1.2);
     ylim(ax, ylRT); xlim(ax, [0.5, nDur+0.5]); box(ax,'on'); grid(ax,'on');
     ax.GridAlpha = 0.15; ax.Layer='top';
     title(ax, char(thisID), 'FontWeight','bold');
 
-    if k>3, xlabel(ax,'Presentation Duration (s)'); end
+    if k>3, xlabel(ax, presDurXLabel); end
     if any(k==[1,4]), ylabel(ax,'RT (ms)'); end
 end
 
@@ -450,7 +468,24 @@ for k = 1:min(5, numel(IDs))
     p = precision(rows);
 
     cOrd = categories(c); nC = numel(cOrd);
+    jitterWidth = 0.04;   % match Fig 1 for raw-data scatter
 
+    % Raw scatter: absolute circular error (deg, same scale as Circular SD)
+    for iDur = 1:nDur
+        for iC = 1:nC
+            idx = (d == presDurs(iDur)) & (c == cOrd{iC});
+            if ~any(idx), continue; end
+            baseX = xCenters(iDur) + offsets2(iC);
+            vals = p(idx);
+            absErr = abs(mod(double(vals(:)) + 180, 360) - 180);
+            xJ = (rand(numel(absErr), 1)*2 - 1) * jitterWidth;
+            scatter(ax, baseX + xJ, absErr, 10, ...
+                'MarkerFaceColor', cueColors(iC,:), 'MarkerEdgeColor', 'none', ...
+                'MarkerFaceAlpha', 0.15, 'MarkerEdgeAlpha', 0.05);
+        end
+    end
+
+    % Circular SD summary (point + SE)
     for iDur = 1:nDur
         for iC = 1:nC
             idx = (d == presDurs(iDur)) & (c == cOrd{iC});
@@ -477,12 +512,12 @@ for k = 1:min(5, numel(IDs))
     end
 
     set(ax,'XTick',xCenters, ...
-           'XTickLabel', arrayfun(@(x) sprintf('%.2f', x), presDurs, 'UniformOutput',false), ...
+           'XTickLabel', presDurLabels, ...
            'FontSize',11,'LineWidth',1.2);
     ylim(ax, ylCSD); xlim(ax, [0.5, nDur+0.5]); box(ax,'on'); grid(ax,'on'); ax.GridAlpha=0.15; ax.Layer='top';
     title(ax, char(thisID), 'FontWeight','bold');
 
-    if k>3, xlabel(ax,'Presentation Duration (s)'); end
+    if k>3, xlabel(ax, presDurXLabel); end
     if any(k==[1,4])
         ylab = 'Circ. SD (deg)';
         if ~isCircularAngle, ylab = 'SD (deg)'; end
@@ -779,12 +814,12 @@ for k = 1:min(5, numel(IDs))
 
     % Axes cosmetics
     set(ax,'XTick',xCenters, ...
-           'XTickLabel', arrayfun(@(x) sprintf('%.2f', x), presDurs, 'UniformOutput',false), ...
+           'XTickLabel', presDurLabels, ...
            'FontSize',11,'LineWidth',1.2);
     ylim(ax, ylP); xlim(ax, [0.5, numel(presDurs)+0.5]);
     box(ax,'on'); grid(ax,'on'); ax.GridAlpha=0.15; ax.Layer='top';
     title(ax, char(thisID), 'FontWeight','bold');
-    if k>3, xlabel(ax,'Presentation Duration (s)'); end
+    if k>3, xlabel(ax, presDurXLabel); end
     if any(k==[1,4]), ylabel(ax,'Raw Precision (deg)'); end
 end
 
@@ -844,11 +879,11 @@ for k = 1:min(5, numel(IDs))
     end
 
     set(ax,'XTick',xCenters, ...
-           'XTickLabel',arrayfun(@(x)sprintf('%.2f',x),presDurs,'UniformOutput',false), ...
+           'XTickLabel', presDurLabels, ...
            'FontSize',11,'LineWidth',1.2);
     ylim(ax,[pmin pmax]); xlim(ax,[0.5, nDur+0.5]); box(ax,'on'); grid(ax,'on'); ax.GridAlpha=0.15; ax.Layer='top';
     title(ax, char(thisID), 'FontWeight','bold');
-    if k>3, xlabel(ax,'Presentation Duration (s)'); end
+    if k>3, xlabel(ax, presDurXLabel); end
     if any(k==[1,4]), ylabel(ax,'Raw Precision (deg)'); end
 end
 
@@ -886,7 +921,7 @@ for k = 1:min(5, numel(IDs))
 
     % ---- Cue = R (solid) ----
     for j = 1:nDur
-        idx = (d == presDurs(j)) & (c == 'R');
+        idx = (d == presDurs(j)) & (string(c) == "R");
         if ~any(idx), continue; end
         pj = e(idx);
         if exist('quantile','file') == 2
@@ -903,7 +938,7 @@ for k = 1:min(5, numel(IDs))
 
     % ---- Cue = NR (dashed) ----
     for j = 1:nDur
-        idx = (d == presDurs(j)) & (c == 'NR');
+        idx = (d == presDurs(j)) & (string(c) == "NR");
         if ~any(idx), continue; end
         pj = e(idx);
         if exist('quantile','file') == 2
@@ -937,7 +972,7 @@ for ii = 1:numel(idxShow)
     j = idxShow(ii);
     plot([0.05 0.32],[yy  yy], '-',  'Color', Rcolors(j,:),  'LineWidth', 3); hold on;
     plot([0.05 0.32],[yy-0.05 yy-0.05], '--', 'Color', NRcolors(j,:), 'LineWidth', 3);
-    text(0.35, yy-0.025, sprintf('Dur = %.2fs', presDurs(j)), 'FontSize',10);
+    text(0.35, yy-0.025, sprintf('Dur = %s', presDurLabels{j}), 'FontSize',10);
     yy = yy - dy;
 end
 axis([0 1 0 1]); axis off;
@@ -1029,12 +1064,12 @@ for k = 1:min(5, numel(IDs))
     end
 
     set(ax, 'XTick', xCenters, ...
-            'XTickLabel', arrayfun(@(x) sprintf('%.2f', x), presDurs, 'UniformOutput', false), ...
+            'XTickLabel', presDurLabels, ...
             'FontSize', 11, 'LineWidth', 1.2);
     ylim(ax, ylE); xlim(ax, [0.5, nDur + 0.5]);
     box(ax,'on'); grid(ax,'on'); ax.GridAlpha=0.15; ax.Layer='top';
     title(ax, char(thisID), 'FontWeight','bold');
-    if k>3, xlabel(ax,'Presentation Duration (s)'); end
+    if k>3, xlabel(ax, presDurXLabel); end
     if any(k==[1,4]), ylabel(ax,'Abs circular error (deg)'); end
 end
 
