@@ -11,20 +11,20 @@ const EXPERIMENT_CONFIG = {
   uniformTaskLength: 4, // used when taskLengthMode is 'uniform'.
 };
 
-const DEADLINE_OPTIONS = [10, 15, 20, 25];
+const DEADLINE_OPTIONS = [12, 18, 24, 30];
 
 const WORD_LENGTH_RANGES = {
-  shortS: [2, 4],
-  midS: [4, 6],
-  midL: [5, 8],
-  longL: [7, 10],
+  SS: [2, 4],
+  MS: [4, 6],
+  ML: [5, 8],
+  LL: [7, 10],
 };
 
 const TASK_LENGTH_RANGES = {
-  short: [1, 3],
-  mid: [2, 5],
-  midL: [4, 7],
-  long: [6, 10],
+  sS: [1, 3],
+  mS: [2, 5],
+  mL: [4, 7],
+  lL: [6, 10],
 };
 
 const WORD_LENGTH_KEYS = Object.keys(WORD_LENGTH_RANGES);
@@ -40,7 +40,7 @@ const taskTemplates = [
 const state = {
   stage: 'welcome',
   participant: {
-    name: 'YDL',
+    name: '_',
     id: '—',
     age: '',
     gender: '',
@@ -138,7 +138,7 @@ function getRandomInt(min, max) {
 }
 
 function getTaskLengthFromCategory(category) {
-  const range = TASK_LENGTH_RANGES[category] || TASK_LENGTH_RANGES.short;
+  const range = TASK_LENGTH_RANGES[category] || TASK_LENGTH_RANGES.sS;
   return getRandomInt(range[0], range[1]);
 }
 
