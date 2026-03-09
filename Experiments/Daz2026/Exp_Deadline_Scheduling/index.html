@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Deadline Typing Sprint</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div>
+          <p class="small-label">Deadline typing experiment</p>
+          <h1>Typing Race Scheduler</h1>
+        </div>
+        <div class="hero-meta">
+          <p>Visual deadlines. Real-time typing.</p>
+        </div>
+      </header>
+      <main class="layout">
+        <section class="info-panel">
+          <div class="score-board">
+            <div class="score-row">
+              <span>Name</span>
+              <span id="player-name">YDL</span>
+            </div>
+            <div class="score-row">
+              <span>Score</span>
+              <span id="player-score">0</span>
+            </div>
+            <div class="score-row">
+              <span>Participant</span>
+              <span id="player-id">ID: —</span>
+            </div>
+            <div class="score-row">
+              <span>Age / Gender</span>
+              <span id="player-demographics">—</span>
+            </div>
+          </div>
+          <div class="reward-panel">
+            <h2>Reward</h2>
+            <div class="reward-row">
+              <span>Letter</span>
+              <span id="reward-letter">Y (5 pts)</span>
+            </div>
+            <div class="reward-row">
+              <span>Word</span>
+              <span id="reward-word">Y (20 pts)</span>
+            </div>
+            <div class="reward-row">
+              <span>Task</span>
+              <span id="reward-task">Y (120 pts)</span>
+            </div>
+          </div>
+          <div class="order-panel">
+            <h2>Task order</h2>
+            <ol id="order-list">
+              <li>—</li>
+            </ol>
+          </div>
+          <div class="stage-flow" id="stage-flow">
+            <div class="stage-screen active" data-stage="welcome">
+              <h3>Welcome</h3>
+              <p>
+                Welcome to the typing deadline sprint. You will practice hitting words while four tasks race toward the finish line.
+              </p>
+              <button data-next-stage="participant">Enter participant info</button>
+            </div>
+            <div class="stage-screen" data-stage="participant">
+              <h3>Participant info</h3>
+              <form id="participant-form">
+                <label>
+                  Name
+                  <input type="text" id="participant-name" placeholder="Enter your name" />
+                </label>
+                <label>
+                  ID
+                  <input type="text" id="participant-id" placeholder="e.g. P001" />
+                </label>
+                <label>
+                  Age
+                  <input type="number" id="participant-age" min="16" placeholder="Age" />
+                </label>
+                <label>
+                  Gender
+                  <select id="participant-gender">
+                    <option value="">Prefer not to say</option>
+                    <option value="female">Female</option>
+                    <option value="male">Male</option>
+                    <option value="nonbinary">Non-binary</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+                <button type="button" id="participant-next">Continue</button>
+              </form>
+            </div>
+            <div class="stage-screen" data-stage="instructions">
+              <h3>Task instructions</h3>
+              <ul>
+                <li>Each blue window is a task that moves toward the finish line at its own rate.</li>
+                <li>Type the highlighted letter to lock into a task, then finish the word before the task reaches the finish line.</li>
+                <li>Press ESC to release the current task and refocus on another.</li>
+              </ul>
+              <button data-next-stage="practice">Proceed to practice</button>
+            </div>
+            <div class="stage-screen" data-stage="practice">
+              <h3>Practice trial</h3>
+              <p id="practice-status">Use this stage to get comfortable with the layout, unlocking tasks as each word shows up.</p>
+              <div class="stage-actions">
+                <button id="begin-practice">Begin practice</button>
+                <button id="finish-practice">Practice complete</button>
+              </div>
+            </div>
+            <div class="stage-screen" data-stage="feedback">
+              <h3>Inter-trial feedback</h3>
+              <p id="feedback-quote">Great job! When you are ready we will begin the main trials.</p>
+              <button id="start-main">Start main trials</button>
+            </div>
+            <div class="stage-screen" data-stage="main">
+              <h3>Main trials</h3>
+              <p id="main-status">Type the words for real. Rewards are already logged as you type.</p>
+              <div class="stage-actions">
+                <button id="begin-main">Begin main trials</button>
+                <button id="finish-main">End session</button>
+              </div>
+            </div>
+            <div class="stage-screen" data-stage="completion">
+              <h3>Completion</h3>
+              <p>Thank you for participating. The final score is captured automatically.</p>
+              <p id="final-summary">—</p>
+            </div>
+          </div>
+          <p class="esc-tip">Press ESC anytime to drop your current task and re-highlight available tasks.</p>
+        </section>
+        <section class="game-panel">
+          <div class="track-viewport">
+            <div class="finish-flag">FINISH</div>
+            <div id="task-list" class="task-list">
+              <!-- tasks are injected here -->
+            </div>
+          </div>
+          <div class="reward-signal" id="reward-signal" aria-live="polite"></div>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
