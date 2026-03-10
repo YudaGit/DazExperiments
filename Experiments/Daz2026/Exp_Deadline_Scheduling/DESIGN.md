@@ -25,9 +25,15 @@
  - Task lengths toggle between uniform or random.
  
  - The word bank is loaded from `word_bank.json` on startup to generate a full `trialMatrix`, containing practice/main queues, and mark `trialsReady` so the practice/main buttons only run once presets exist.
+    - word bank update to uncommon words
+
 - `buildTrialEntry()` assembles each trial’s per-task plan (deadline, word category/range, task length, sampled words) using a pre-shuffled selection to avoid patterns; Word sampling pulls uniformly from the allowed length buckets, wraps when the pool is smaller than the desired number of words, and uses placeholder strings if the bank is not yet available.
     - Discuss sampling methods
+
 - `startTrial()` pulls the next pre-generated trial, resets engagement/score/logs, and renders tasks with their assigned deadlines so every run follows the predetermined plan.
+
+- toggle between preemptive version and non-premptive version
+    - must finish current word, not for now
 
 ## Data logging
 - Logs stored in `state.dataLog` capture the trial ID, mode, deadlines, word-length categories, task lengths, completion order, keystroke responses (letter + timestamp), and task switches (from → to plus timestamp) every time `stopTrial()` ends a trial.
@@ -41,3 +47,12 @@
 ## Next documentation steps
 - Extend `DESIGN.md` with a simple data schema and export plan once storage requirements are finalized.
 - Capture the final trial matrix structure and any backend integration details in a future revision when persistence targets (local file, server) are chosen.
+
+To do:
+- key block and data saving
+- Yunni test and task update
+    - get Dan's word bank
+    - new word if disengage mid word
+    - update color coding
+    - no overlap initial letters
+- Help coding environment, CHDH server, REP/Prolific setup

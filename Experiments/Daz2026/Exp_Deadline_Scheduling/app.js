@@ -11,7 +11,7 @@ const EXPERIMENT_CONFIG = {
   uniformTaskLength: 4, // used when taskLengthMode is 'uniform'.
 };
 
-const DEADLINE_OPTIONS = [12, 18, 24, 30];
+const DEADLINE_OPTIONS = [12, 15, 18, 21];
 
 const WORD_LENGTH_RANGES = {
   SS: [2, 4],
