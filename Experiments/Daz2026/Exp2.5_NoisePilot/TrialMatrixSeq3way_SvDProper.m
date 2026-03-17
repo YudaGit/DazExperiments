@@ -20,6 +20,9 @@ function [pracTbl, mainTbl] = TrialMatrixSeq3way_SvDProper(design, sessionN, par
   % -------------------------------
   % 1) Build single trial block (no separate practice/main)
   % -------------------------------
+  % Enforce equal reps so the 10 condition cells (5 per noise level) are balanced
+  assert(design.SetSize1Reps == design.BaselineReps && design.BaselineReps == design.HomoReps, ...
+    'TrialMatrixSeq3way_SvDProper: SetSize1Reps, BaselineReps, HomoReps must be equal for balanced 10 conditions.');
   baseTbl = buildBase(design.ItemNList, design.NoiseLevels, ...
       design.SetSize1Reps, design.BaselineReps, design.HomoReps);
 

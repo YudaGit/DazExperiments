@@ -24,14 +24,14 @@ end
 % Design specification for SvD Proper: Set-size 1 + Stat vs Deter by session
 design.ItemNList    = [1 2 6];         % Set sizes: N=1, N=2, N=6
 design.NoiseLevels  = {'low', 'high'}; % Noise levels
-design.SetSize1Reps = 20;              % Trials per noise for N=1 (single condition; baseline = homo)
-design.BaselineReps = 20;              % Per N×Noise for N=2,6 (Baseline)
-design.HomoReps     = 20;              % Per N×Noise for N=2,6 (Homo_Space)
+design.SetSize1Reps = 25;              % Trials per noise for N=1 (single condition; baseline = homo)
+design.BaselineReps = 25;              % Per N×Noise for N=2,6 (Baseline)
+design.HomoReps     = 25;              % Per N×Noise for N=2,6 (Homo_Space)
 design.PracticeReps = 0;               % No practice trials
-design.presDur      = 0.30;
-design.retDur       = 1.0;
-design.SegmentDur   = 0.30;
-design.ISI          = 0.15;
+design.presDur      = 0.40;            % Stimulus on-screen duration (s); this is what the main loop uses
+design.retDur       = 1.0;             % Retention interval (s) before response
+design.SegmentDur   = 0.30;            % Unused for timing; kept for compatibility
+design.ISI          = 0.20;            % Inter-segment interval (s), if multiple segments
 
 % Debug mode: print and exit without PTB window
 DebugVerify = false;
@@ -46,7 +46,7 @@ if DebugVerify && DebugNoPTB
     V.color.rotation = randi([0, 359]);
     V.square.B = 10;
     V.color.map = buildColorMapNoPTB();
-    P.K_LowNoise  = 25;
+    P.K_LowNoise  = 20;
     P.K_HighNoise = 0.8;
     P.samplingMode = 'deterministic';
     if size(V.color.map,1) == 360
@@ -88,7 +88,7 @@ wheelTex      = DrawWheel();
 neutralTex    = DrawNeutralWheel();
 
 % Noise parameters (EXACTLY matching NoiseDemo_VMRand.m)
-P.K_LowNoise      = 25;       % concentration parameter (high = narrow distribution)
+P.K_LowNoise      = 20;       % concentration parameter (high = narrow distribution)
                                 % Higher kappa = tighter clustering around target
                                 % Typical range: 20-100 for low noise
 P.K_HighNoise     = 0.8;         % concentration parameter (lower = wider distribution)
@@ -109,7 +109,7 @@ P.DebugSkipInstructions = DebugSkipInstructions;    % skip instructions in debug
 P.PrecomputeStimuli = true;       % precompute tile patterns and target hue (false = on-the-fly)
 P.AssertUniqueRedundant = true;   % error if redundant items are identical (rounded)
 P.LogRedundantFingerprint = false;% if true, print mean/std/sum(round(h)) per item for debugging
-P.SaveStimulusSnap = true;       % if true, save each trial's stimulus display as PNG for inspection
+P.SaveStimulusSnap = true;       % save each trial's stimulus display as PNG for inspection
 % Prepare color map for noisy stimuli (360-row lookup)
 if size(V.color.map,1) == 360
     P.cMap360_255 = V.color.map;
@@ -180,7 +180,8 @@ try
             if ~isempty(snapDir)
                 saveTrialStimulusSnap(win, ii, seg, snapDir);
             end
-            WaitSecs(design.SegmentDur);
+            % Stimulus on-screen duration: use per-trial presDur (from design.presDur)
+            WaitSecs(tr.presDur);
         
             % Track locations shown in this segment
             for k = idxList
@@ -372,6 +373,7 @@ function [] = instructions(n)
 % Display of multiple instructions (n), Next = Mouse Click (L)
 % Can set position and text size
     global V
+    global P
     m = .25;
     if n == 1
         inst = ['Welcome to the colour-report task.\n\n\n' ...
@@ -387,8 +389,14 @@ function [] = instructions(n)
             'by informing the experimenter.\n\n' ...
             'Practice data will not contribute to main data']; 
     elseif n == 3
-        inst =['Main block:\n\n' ...
+        % Include sampling mode for this session (deterministic vs statistical)
+        modeStr = 'deterministic';
+        if isfield(P, 'samplingMode') && strcmpi(P.samplingMode, 'statistical')
+            modeStr = 'statistical';
+        end
+        inst = ['Main block:\n\n' ...
             'These are the main experimental trials. \n\n' ...
+            'Sampling mode this session: ' modeStr '.\n\n' ...
             'There will be a between-trial feedback plot. \n' ...
             'It visualises your performance and overall progress \n' ...
             'You can rest and refocus during these feedback displays.\n\n\n'];
@@ -1626,8 +1634,8 @@ function [rgb01, huesDeg] = makeNoisyPattern(V, hueDeg, noiseLevel, P)
     % Uncomment the next line to see K values being used
      fprintf('makeNoisyPattern: noiseLevel="%s", K=%.1f (should be 50 for low, 2 for high)\n', noiseLevel, K);
 
-    % Sample hues using quantile-based Von Mises (no truncation needed)
-    huesDeg = sampleVonMisesQuantiles(hueDeg, K, nTiles);
+    % Sample hues using quantile-based Von Mises; no shuffle so same base hue gives same pattern (deterministic)
+    huesDeg = sampleVonMisesQuantiles(hueDeg, K, nTiles, false);
 
     % Convert each hue to RGB from your wheel
     rgb01 = wheelRGB01_fromDegrees(huesDeg, P.cMap360_255);   % n×3, 0..1
@@ -1846,22 +1854,21 @@ function rgb01 = wheelRGB01_fromDegrees(deg, cMap360_255)
     rgb01 = double(cMap360_255(idx, :)) / 255;       % N×3 in [0,1]
 end
 
-function huesDeg = sampleVonMisesQuantiles(muDeg, kappa, n)
-% Sample from Von Mises distribution using quantile-based inverse transform sampling
-% This ensures consistent variance across trials and eliminates rejection sampling inefficiency
-% 
+function huesDeg = sampleVonMisesQuantiles(muDeg, kappa, n, doShuffle)
+% Sample from Von Mises distribution using quantile-based inverse transform sampling.
+% Deterministic mode: use doShuffle=false so same (muDeg, kappa, n) yields same pattern.
+%
 % METHOD: Quantile-Based Inverse Transform Sampling
-% 1. Generate n uniform quantiles: [0.5/n, 1.5/n, 2.5/n, ..., (n-0.5)/n]
+% 1. Generate n uniform quantiles: [0.5/n, 1.5/n, ..., (n-0.5)/n]
 % 2. Map each quantile to an angle using inverse Von Mises CDF
-% 3. Shuffle to avoid spatial clustering in the grid
+% 3. If doShuffle (default true): shuffle to avoid spatial clustering
 %
 % Inputs:
-%   muDeg: target hue in degrees (0-360)
-%   kappa: concentration parameter (high = narrow distribution)
-%   n: number of samples to generate
-%
-% Output:
-%   huesDeg: n×1 vector of hue values in degrees (0-360)
+%   muDeg, kappa, n: as below
+%   doShuffle (optional, default true): if false, same inputs give same tile order (for deterministic mode)
+    if nargin < 4
+        doShuffle = true;
+    end
 
     if kappa < 1e-8
         % Effectively uniform: sample uniformly around circle
@@ -1875,8 +1882,9 @@ function huesDeg = sampleVonMisesQuantiles(muDeg, kappa, n)
     % Map quantiles to angles using inverse Von Mises CDF
     huesDeg = vonMisesQuantile(muDeg, kappa, quantiles);
 
-    % Shuffle to avoid spatial clustering in grid
-    huesDeg = huesDeg(randperm(n));
+    if doShuffle
+        huesDeg = huesDeg(randperm(n));
+    end
 end
 
 function huesDeg = sampleVonMisesDegrees(muDeg, kappa, n)
