@@ -46,10 +46,13 @@
 - Capture the final trial matrix structure and any backend integration details in a future revision when persistence targets (local file, server) are chosen.
 
 To do:
-- key block and data saving
+- key block and data saving -- OK
+- get Dan's word bank -- OK
+- new word if disengage mid word -- OK
+- no overlap initial letters -- OK
+- Help coding environment -- OK
+
+23/03/2026
 - Yunni test and task update
-    - get Dan's word bank
-    - new word if disengage mid word
-    - update color coding
-    - no overlap initial letters
-- Help coding environment, CHDH server, REP/Prolific setup
+- CHDH server
+- REP/Prolific setup
