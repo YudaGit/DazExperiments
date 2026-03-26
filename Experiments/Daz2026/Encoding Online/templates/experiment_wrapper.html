@@ -65,7 +65,6 @@
             return blob;
         };
 
-
         function _display_loader(msg){
             $(".expt-pop-outer h3").text(msg);
             $(".expt-pop-outer").fadeIn("slow");
@@ -88,7 +87,7 @@
         {% else %}
             var _rep_on_consent;
         {% endif %}
-        var _survey_code = {{ survey_code or 'undefined' }};
+        var _survey_code = "{{ survey_code or 'undefined' }}";
         var _mturk = {{ mturk or 'undefined' }};
         var _prolific = {{ prolific or 'undefined' }};
         var _uid = "{{uid}}" ;
@@ -99,8 +98,8 @@
             _display_loader("Saving experiment data...");
             var _uend_time_local = new Date();
             var manual_results_filename = "results-" +  _uid +  ".json";
-            var _failed_ajax = "Sorry an error has occurred, and your results have not been uploaded. A file download of " + manual_results_filename + " will start next. You will need to send results.json to the researcher. Please click OK.";
-			
+			var _failed_ajax = "Sorry an error has occurred, and your results have not been uploaded. A file download of " + manual_results_filename + " will start next. You will need to send results.json to the researcher. Please click OK.";
+
 			if(typeof(expt_data) !== 'string'){
 				expt_data = JSON.stringify( expt_data );
 			}
@@ -130,6 +129,7 @@
             }else{
                 formData = _data;
             }
+
 
             $.ajax({
                 type: 'POST',
@@ -185,7 +185,8 @@
         }
 
 
-        var _mark_rep_as_done = function(){
+
+        function _mark_rep_as_done(){
             $.ajax({
                 type: 'GET',
                 url: '/mark-rep-as-done?survey_code=' + _survey_code + '&uid=' + _uid,
@@ -204,6 +205,19 @@
                 }
             });
         }
+
+        function _prohibit_reload_expt(){
+            $.ajax({
+                type: 'GET',
+                url: '/prohibit-reload-expt?uid=' + _uid,
+                success: function (data) {
+                        //alert("Prohibit reload set");
+                },
+                error: function (jqXHR, textStatus, errorThrown){
+                    alert("Error setting prohibit reload:\n"+jqXHR.responseText);
+                }
+            });
+        }        
       </script>
 
       {% block body %}

@@ -12,6 +12,9 @@
         #mturk_survey_code{
             font-size:2em;
         }
+        #prolific_completion_code{
+            font-size:2em;
+        }        
         .survey_code_container{
             background-color: #CCC;
             width: 50%;
@@ -36,11 +39,15 @@
                         <h4>Enter this Unique Code for the HIT on the mturk website:</h4>
                         <p id="mturk_survey_code">{{mturk_survey_code}}</p>
                     </div>
+                    {% elif prolific_completion_code %}
+                    <div class="survey_code_container">
+                        <h4>Enter this Completion Code on Prolific:</h4>
+                        <p id="prolific_completion_code">{{prolific_completion_code}}</p>
+                    </div>                    
                     {% endif %}
                     <div style="margin-top:60px;"></div>
 
-                    <!-- <p>If you would like to know more about this experiment, then <a href="/full-debrief" target="_blank">click here to read more</a>.</p> -->
-                    <p>Thank you for your time and participation in this study.</p>
+                    <p>If you would like to know more about this experiment, then <a href="/full-debrief" target="_blank">click here to read more</a>.</p>
                 </div>
                 <div style="margin-top:30px;"></div>
             </div>

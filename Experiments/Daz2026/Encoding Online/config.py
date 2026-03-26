@@ -1,13 +1,19 @@
 from __future__ import print_function
 from os import getenv
+import os 
 
-NAME="FougnieTask2023_2"
-EXPT_UID="06d9bffc703f14305bb7357074cf1eb6"
-RESULTS_DIR="2023/FougnieTask2023_2/results"
+jsPsychCurrent = True # Use the latest jsPsych, else use jsPsych 6
 
-PROLIFIC_COMPLETION_CODE = None
+NAME="Daz2026_EncodingOnline"
+EXPT_UID="b94485d7d0596c4c3a9c98c00ac56b58"
+RESULTS_DIR="2026/Daz2026_EncodingOnline/results"
 
-RESTRICTIONS = ["IE", "mobile", "tablet", "tv"]
+PROLIFIC_COMPLETION_CODE = "CSPK6WS6"
+
+CHECK_PROHIBIT_RELOAD = False
+
+# Restrict device on AWS
+RESTRICTIONS = [] # ["IE", "mobile", "tablet", "tv"]
 
 # AWS Settings
 AWS_DEFAULT_REGION = 'us-west-2'
@@ -18,12 +24,17 @@ SDB_EXPERIMENTS_PARTICIPANTS = "mall_experiments_participants"
 
 # variable for REP crediting
 REP_ON_CONSENT = False                                                       #both XXXX need to be replaced
-REP_URL = 'https://unimelb.sona-systems.com/services/SonaAPI.svc/WebstudyCredit?experiment_id=1428&credit_token=c57762c2e70842fb98d827d9bfb840b6&survey_code={}'
+REP_URL = 'https://unimelb.sona-systems.com/services/SonaAPI.svc/WebstudyCredit?experiment_id=XXXX&credit_token=XXXX&survey_code={}'
 
 
 DEBUG = True
 if getenv('ExptEnv') == 'Production':
     DEBUG = False
+
+if CHECK_PROHIBIT_RELOAD:
+    os.environ['CHECK_PROHIBIT_RELOAD'] = '1'
+
+os.environ["SIMPLEDB_S3_BUCKET"] = "chdhtest"
 
 if __name__ == "__main__":
     print(EXPT_UID)

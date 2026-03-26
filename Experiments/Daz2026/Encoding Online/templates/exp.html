@@ -1,6 +1,6 @@
 {% extends "experiment_wrapper.html" %}
 
-{% block title %} Experiment {% endblock %}
+{% block title %} Daz Encoding Online {% endblock %}
 
 {% block extra_head %}
     <script src="{{url_for('static', filename='jspsych7/jspsych.js')}}" type="text/javascript"></script>
@@ -17,6 +17,7 @@
     <script src="{{url_for('static', filename='colorpatches.js')}}" type="text/javascript"></script>
     <script src="{{url_for('static', filename='patchselector.js')}}" type="text/javascript"></script>
     <script src="{{url_for('static', filename='confidencewheel.js')}}" type="text/javascript"></script>
+    <script src="{{url_for('static', filename='calibration.js')}}" type="text/javascript"></script>
     <script src="{{url_for('static', filename='adv_plot.js')}}" type="text/javascript"></script>
     
     
@@ -61,16 +62,28 @@
     // ============================================================
     var expt_data = {{data|safe}};
     var subexperiment = expt_data.subexperiment;  // 1, 2, or 3
-    if (typeof setColorPaletteForSubexp === 'function') {
+    
+     if (typeof setColorPaletteForSubexp === 'function') {
       setColorPaletteForSubexp(subexperiment);
     }
-    
+
+        // Initialize calibration (if previously saved, sets window.pxPerMm)
+        if (typeof calibration !== 'undefined' && typeof calibration.init === 'function'){
+            calibration.init();
+        }
+
     // Log which sub-experiment was assigned (for debugging)
     console.log("========================================");
     console.log("Sub-Experiment Assignment:", subexperiment);
     console.log("Experiment Type:", expt_data.experiment_type);
     console.log("Full experiment data:", expt_data);
     console.log("========================================");
+
+    // ============================================================
+    // COLOR PALETTE: Always use OKLab for all sub-experiments
+    // ============================================================
+    console.log("Color palette uses: OKLab for Sub-Experiment", subexperiment);
+    console.log("pxPerMm:", window.pxPerMm || '(not calibrated)');
     
     var studyFinished = true
     // DEV helper: skip intro screens and jump to practice stage
@@ -104,6 +117,13 @@
                 input.setAttribute('type', 'hidden');
                 input.setAttribute('name', 'mturk');
                 input.setAttribute('value', _mturk);
+                form.appendChild(input);
+            }else if(_prolific){                                                                                                    
+                input = document.createElement('input');
+                input.setAttribute('type', 'hidden');                                                                                   
+                input.setAttribute('name', 'prolific');
+                input.setAttribute('value', _prolific);
+                form.appendChild(input);
             }
             
             document.body.appendChild(form);
@@ -195,8 +215,8 @@
     var sessionWheelRotation  = getRandomIntegers(0, 359)
     var random_id = Math.floor(Math.random() * 10000);
 
-    var browser_window_height = window.outerHeight;
-    var browser_window_width = window.outerWidth;
+    var browser_window_height = window.outerHeight || window.innerHeight || document.documentElement.clientHeight;
+    var browser_window_width = window.outerWidth || window.innerWidth || document.documentElement.clientWidth;
     const h = browser_window_height
     const w = browser_window_width
     const fixationHtml = '<div style="position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; font-size:25px;">+</div>';
@@ -247,6 +267,24 @@
         });
     }
 
+    // Standardize trial data keys across all subexperiments
+    const baseTrialData = {
+        trial_event: null,
+        trial_number: null,
+        trial_condition: null,
+        cue_type: null,
+        set_size: null,
+        target: null,
+        duration_ms: null,
+        is_practice: null,
+        redundancy: null,
+        target_orientation: null
+    };
+
+    function makeTrialData(overrides) {
+        return Object.assign({}, baseTrialData, overrides || {});
+    }
+
     var preload = { 
         type: jsPsychPreload,
         images: ["{{url_for('static', filename='images/stim/Exp_Feedback.png')}}",  
@@ -260,7 +298,17 @@
         type: jsPsychFullscreen,
         fullscreen_mode: true, 
         on_finish: function(data){
-            studyFinished = false
+            studyFinished = false;
+            // After entering fullscreen, pause timeline and show calibration (always, to allow re-calibration each session)
+            if (typeof calibration !== 'undefined' && typeof calibration.showModal === 'function'){
+                try{ jsPsych.pauseExperiment(); } catch(e){}
+                setTimeout(function(){
+                    calibration.showModal({force: true, onSave: function(pxPerMm){
+                        console.log('Calibration saved (pxPerMm):', pxPerMm);
+                        try{ jsPsych.resumeExperiment(); } catch(e){}
+                    }});
+                }, 50);
+            }
         }
     }
 
@@ -337,9 +385,9 @@
                 options: [
                     'Determine the motion of a set of dots.',
                     'Study and recall a list of words.',
-                    'Recall the orientation of one colored orientation bar.'
+                    'Recall the orientation of a colored orientation bar.'
                 ],
-                correct: 'Recall the orientation of one colored orientation bar.'
+                correct: 'Recall the orientation of a colored orientation bar.'
             },
             {
                 prompt: "How many color patches will be presented at a time?",
@@ -348,8 +396,8 @@
             },
             {
                 prompt: "How will you be required to respond?",
-                options: ['Using a keyboard.', 'Using mouse movement and click.', 'Using the force.'],
-                correct: 'Using mouse movement and click.'
+                options: ['Using a keyboard.', 'Using a mouse and an orientation-wheel.', 'Using the force.'],
+                correct: 'Using a mouse and an orientation-wheel.'
             }
         ]
     };
@@ -478,7 +526,7 @@
 
     const experimentBegin = {
       type: jsPsychHtmlKeyboardResponse,
-      stimulus: "Excellent! <p> You are now ready to begin the main experiment. <p> Proceed at your own pace. As a rough guideline, the experiment should take about 45min to complete. <p> When ready, press any key to start the main experiment."
+      stimulus: "Excellent! <p> You are now ready to begin the main experiment. <p> Proceed at your own pace. As a rough guideline, the experiment should take under 45mins to complete. <p> When ready, press any key to start the main experiment."
     }
 
 
@@ -487,69 +535,69 @@
             {
                 stimulus: "{{url_for('static', filename='images/Subexp1/Stim.png')}}",
                 stimulus_width: 100,
-                prompt: "<p>In each trial, you will always be shown 6 colored discs.</p> Some discs will share the same color, while others will have unique colors. </p> Press any key to contine."
+                prompt: "<p>In each trial, there are always 6 color patches.</p>Some will share the same color, while others will be in unique colors.</p>They will be shown at random durations, often delibrately fast.</p>Press any key to contine."
             },
             {
                 stimulus: "{{url_for('static', filename='images/Subexp1/Wheel.png')}}",
-                prompt: "<p>After viewing the discs, they will be covered and one disc will be cued by a white border.</p> <p>Recall the color of the highlighted disc by moving your mouse to the color's location on the color wheel.</p> Press any key to contine."
+                prompt: "<p>After viewing the patches, they will be covered and one patch will be cued by a white border.</p> Recall the color of the highlighted patch by moving your mouse to the color's location on the color wheel.</p>Press any key to contine."
             },
             {
                 stimulus: "{{url_for('static', filename='images/Subexp1/Response1.png')}}",
-                prompt: "<p> Your responses is shown with a white line on the color wheel. The true color is shown by a green line.</p><p>So you can easily see your response precision.</p>Press any key to contine."
+                prompt: "<p> Your responses is shown with a white line on the color wheel. The true color is shown by a green line.</p>So you can easily see your response precision.</p>Press any key to contine."
             },
             {
                 stimulus: "{{url_for('static', filename='images/Subexp1/Response2.png')}}",
-                prompt: "<p>You will receive a time penalty and explanation if your mouse leaves the center circle too slowly, </p> or does not start from the center of the screen.</p> Press any key to contine."
+                prompt: "<p>You will receive a time penalty if mouse cursor left the center circle too quickly; </p> responded too slowly; </p>or cursor did not start from the center of the screen.</p>Please decide where on the wheel you want to respond to, and then move mouse ballistically to respond. </p>Press any key to contine."
             },
             {
                 stimulus: "{{url_for('static', filename='images/Subexp1/Exp_Feedback.png')}}",
-                prompt: "<p>Lastly, between each trial you can track your per-trial performance as well as your average performance (white dotted line). </p> Press any key to contine."
+                prompt: "<p>Lastly, between each trial you can track your per-trial performance as well as your average performance (white dotted line). </p>Press any key to contine."
             }
         ],
         "2": [
             {
-                stimulus: "{{url_for('static', filename='images/subexp2/Stim.png')}}",
+                stimulus: "{{url_for('static', filename='images/Subexp2/Stim.png')}}",
                 stimulus_width: 100,
-                prompt: "<p>In each trial, you will be shown 4 or 6 colored discs.</p> Discs are either all in unique colors, or some can be same color copies.</p> Press any key to contine."
+                prompt: "<p>In each trial, there will be either 4 or 6 color patches.</p> Patches are either all in unique colors, or some can be same color copies.</p> They will be shown at random durations, often delibrately fast.</p>Press any key to contine."
             },
             {
                 stimulus: "{{url_for('static', filename='images/Subexp2/Wheel.png')}}",
-                prompt: "<p>After viewing the discs, they will be covered and one disc will be cued by a white border.</p> <p>Recall the color of the highlighted disc by moving your mouse to the color's location on the color wheel.</p> Press any key to contine."
+                prompt: "<p>After viewing the patches, they will be covered and one patch will be cued by a white border.</p>Recall the color of the highlighted patch by moving your mouse to the color's location on the color wheel.</p>Press any key to contine."
             },
             {
                 stimulus: "{{url_for('static', filename='images/Subexp2/Response1.png')}}",
-                prompt: "<p> Your responses is shown with a white line on the color wheel. The true color is shown by a green line.</p><p>So you can easily see your response precision.</p>Press any key to contine."
+                prompt: "<p> Your responses is shown with a white line on the color wheel. The true color is shown by a green line.</p>So you can easily see your response precision.</p>Press any key to contine."
             },
             {
                 stimulus: "{{url_for('static', filename='images/Subexp2/Response2.png')}}",
-                prompt: "<p>You will receive a time penalty and explanation if your mouse leaves the center circle too slowly, </p> or does not start from the center of the screen.</p> Press any key to contine."
+                prompt: "<p>You will receive a time penalty if mouse cursor left the center circle too quickly; </p>responded too slowly; </p>or cursor did not start from the center of the screen.</p>Please decide where on the wheel you want to respond to, and then move mouse ballistically to respond. </p>Press any key to contine."
             },
             {
                 stimulus: "{{url_for('static', filename='images/Subexp2/Exp_Feedback.png')}}",
-                prompt: "<p>Lastly, between each trial you can track your per-trial performance by set-size (4 or 6 items) as well as your average performance (white dotted line). </p> Press any key to contine."
+                prompt: "<p>Lastly, between each trial you can track your per-trial performance by set-size (4 or 6 items) as well as your average performance (white dotted line). </p>Press any key to contine."
             }
         ],
         "3": [
             {
-                stimulus: "{{url_for('static', filename='images/subexp3/Stim.png')}}",
+                stimulus: "{{url_for('static', filename='images/Subexp3/Stim.png')}}",
                 stimulus_width: 100,
-                prompt: "<p>In each trial, you will be shown 4 or 6 colored orientation bars.</p> Bars are either all in unique colors and orientations, or some can be exact same copies.</p> Press any key to contine."
+                prompt: "<p>In each trial, there will be either 4 or 6 colored orientation bars.</p>Bars are either all in unique colors and orientations, or some can be exact copies.</p>They will be shown at random durations, often delibrately fast.</p>Press any key to contine."
             },
             {
                 stimulus: "{{url_for('static', filename='images/Subexp3/ResponseBar.png')}}",
-                prompt: "<p>At the response stage, one of the bars will be shown at the center. </p> Move mouse up and down to rotate the response bar to its original orientation, and click mouse L button to confirm your response.</p> Press any key to contine."
+                prompt: "<p>At the response stage, one of the bars will be shown at the center. </p>Recall the central response bar's orientation by by moving your mouse to that angle on the orientation wheel</p>Press any key to contine."
             },
             {
                 stimulus: "{{url_for('static', filename='images/Subexp3/Response1.png')}}",
-                prompt: "<p> After confiming your response, you will see a green outline feedback bar that shows the original orientation.</p><p>So you can easily see your response precision.</p>Press any key to contine."
+                prompt: "<p> After your response, you will see a green outline feedback bar that shows the original orientation.</p> Your response location and the original orientation angle are also indicated on the wheel,<p>so you can easily see your response precision.</p>Press any key to contine."
             },
             {
                 stimulus: "{{url_for('static', filename='images/Subexp3/Response2.png')}}",
-                prompt: "<p>You will receive a time penalty and explanation if you responded too quickly without rotating the bar, </p> or took too long (over 3 seconds) to respond.</p> Press any key to contine."
+                prompt: "<p>You will receive a time penalty if mouse cursor left the center circle too quickly; </p>responded too slowly; </p>or cursor did not start from the center of the screen.</p>Please decide where on the wheel you want to respond to, and then move mouse ballistically to respond. </p>Press any key to contine."
             },
             {
                 stimulus: "{{url_for('static', filename='images/Subexp3/Exp_Feedback.png')}}",
-                prompt: "<p>Lastly, between each trial you can track your per-trial performance by set-size (4 or 6 items) as well as your average performance (white dotted line). </p> Press any key to contine."
+                prompt: "<p>Lastly, between each trial you can track your per-trial performance by set-size (4 or 6 items) as well as your average performance (white dotted line). </p>Press any key to contine."
             }
         ]
     };
@@ -644,18 +692,24 @@
                 // Determine redundancy (1 = redundant target, 0 = non-redundant)
                 var practiceRedundancy = practiceTrial.is_redundant_target ? 1 : 0;
                 
+                // Determine redundancy (1 = redundant target, 0 = non-redundant)
+                var practiceRedundancy = practiceTrial.is_redundant_target ? 1 : 0;
+
                 // Create practice trial timeline
                 var practice_trial_advance = {
                     type: jsPsychHtmlButtonResponse,
                     stimulus: 'Press to proceed to the next practice trial',
                     choices: ['Next'],
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'practice_trial_start_event',
                         trial_number: practiceTrial.trial_number,
+                        trial_condition: practiceTrial.trial_type,
+                        cue_type: practiceTrial.cue_type || practiceTrial.trial_type,
+                        set_size: practiceTrial.set_size,
+                        target: practiceTrial.target,
                         duration_ms: practiceTrial.duration_ms,
-                        cue_type: practiceTrial.cue_type,
                         is_practice: true
-                    },
+                    }),
                     prompt: 'Practice trial ' + (p + 1) + ' of ' + expt_data.practice_trials.length
                 };
                 
@@ -664,18 +718,29 @@
                     stimulus: fixationHtml,
                     choices: pauseEachStage ? ['n', 'N'] : 'NO_KEYS',
                     trial_duration: pauseEachStage ? null : 1000, // 1 second fixation
-                    data: {trial_event: 'practice_fixation'}
+                    data: makeTrialData({
+                        trial_event: 'practice_fixation',
+                        trial_number: practiceTrial.trial_number,
+                        trial_condition: practiceTrial.trial_type,
+                        cue_type: practiceTrial.cue_type || practiceTrial.trial_type,
+                        set_size: practiceTrial.set_size,
+                        target: practiceTrial.target,
+                        duration_ms: practiceTrial.duration_ms,
+                        is_practice: true
+                    })
                 };
                 
                 var practice_color_patches = {
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'practice_color_patch_display_event',
                         trial_number: practiceTrial.trial_number,
-                        duration_ms: practiceTrial.duration_ms,
-                        cue_type: practiceTrial.cue_type,
+                        trial_condition: practiceTrial.trial_type,
+                        cue_type: practiceTrial.cue_type || practiceTrial.trial_type,
+                        set_size: practiceTrial.set_size,
                         target: practiceTrial.target,
+                        duration_ms: practiceTrial.duration_ms,
                         is_practice: true
-                    },
+                    }),
                     type: jsConfidenceWheel,
                     trial_duration: practiceTrial.duration_ms, // Variable duration from Python
                     draw_wheel: false,
@@ -691,7 +756,16 @@
                 
                 var practice_retention_interval = {
                     type: jsConfidenceWheel,
-                    data: {trial_event: 'practice_retention_interval'},
+                    data: makeTrialData({
+                        trial_event: 'practice_retention_interval',
+                        trial_number: practiceTrial.trial_number,
+                        trial_condition: practiceTrial.trial_type,
+                        cue_type: practiceTrial.cue_type || practiceTrial.trial_type,
+                        set_size: practiceTrial.set_size,
+                        target: practiceTrial.target,
+                        duration_ms: practiceTrial.duration_ms,
+                        is_practice: true
+                    }),
                     trial_duration: retention_duration_ms,
                     draw_wheel: false,
                     show_noise_mask: true,
@@ -706,14 +780,17 @@
                 };
                 
                 var practice_wheel_response = {
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'practice_stimulus_wheel_display_event',
                         trial_number: practiceTrial.trial_number,
-                        duration_ms: practiceTrial.duration_ms,
-                        cue_type: practiceTrial.cue_type,
+                        trial_condition: practiceTrial.trial_type,
+                        cue_type: practiceTrial.cue_type || practiceTrial.trial_type,
+                        set_size: practiceTrial.set_size,
                         target: practiceTrial.target,
-                        is_practice: true
-                    },
+                        duration_ms: practiceTrial.duration_ms,
+                        is_practice: true,
+                        redundancy: practiceRedundancy
+                    }),
                     type: jsConfidenceWheel,
                     trial_duration: 10000, // 10 second max response time
                     redundancy: practiceRedundancy,
@@ -766,23 +843,29 @@
                     stimulus: fixationHtml,
                     choices: pauseEachStage ? ['n', 'N'] : 'NO_KEYS',
                     trial_duration: pauseEachStage ? null : 1000, // 1 second fixation
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'fixation',
                         trial_number: trial.trial_number,
+                        trial_condition: trial.trial_type,
+                        cue_type: trial.cue_type || trial.trial_type,
+                        set_size: trial.set_size,
+                        target: trial.target,
                         duration_ms: trial.duration_ms,
-                        cue_type: trial.cue_type
-                    }
+                        is_practice: false
+                    })
                 };
                 
                 var trial_color_patches = {
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'color_patch_display_event',
                         trial_number: trial.trial_number,
-                        duration_ms: trial.duration_ms,
-                        cue_type: trial.cue_type,
+                        trial_condition: trial.trial_type,
+                        cue_type: trial.cue_type || trial.trial_type,
+                        set_size: trial.set_size,
                         target: trial.target,
-                        set_size: trial.set_size
-                    },
+                        duration_ms: trial.duration_ms,
+                        is_practice: false
+                    }),
                     type: jsConfidenceWheel,
                     trial_duration: trial.duration_ms, // Variable duration from Python
                     draw_wheel: false,
@@ -798,10 +881,16 @@
                 
                 var trial_retention_interval = {
                     type: jsConfidenceWheel,
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'retention_interval',
-                        trial_number: trial.trial_number
-                    },
+                        trial_number: trial.trial_number,
+                        trial_condition: trial.trial_type,
+                        cue_type: trial.cue_type || trial.trial_type,
+                        set_size: trial.set_size,
+                        target: trial.target,
+                        duration_ms: trial.duration_ms,
+                        is_practice: false
+                    }),
                     trial_duration: retention_duration_ms,
                     draw_wheel: false,
                     show_noise_mask: true,
@@ -816,14 +905,17 @@
                 };
                 
                 var trial_wheel_response = {
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'stimulus_wheel_display_event',
                         trial_number: trial.trial_number,
-                        duration_ms: trial.duration_ms,
-                        cue_type: trial.cue_type,
+                        trial_condition: trial.trial_type,
+                        cue_type: trial.cue_type || trial.trial_type,
+                        set_size: trial.set_size,
                         target: trial.target,
-                        set_size: trial.set_size
-                    },
+                        duration_ms: trial.duration_ms,
+                        is_practice: false,
+                        redundancy: trialRedundancy
+                    }),
                     type: jsConfidenceWheel,
                     stimulus: "{{url_for('static', filename='images/stim/WhitePointLUV_ColorWheelDarkBg_L54_r9.bmp')}}",
                     trial_duration: 10000, // 10 second max response time
@@ -894,14 +986,16 @@
                     type: jsPsychHtmlButtonResponse,
                     stimulus: 'Press to proceed to the next practice trial',
                     choices: ['Next'],
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'practice_trial_start_event',
                         trial_number: practiceTrial.trial_number,
-                        duration_ms: practiceTrial.duration_ms,
                         trial_condition: practiceTrial.trial_type,
+                        cue_type: practiceTrial.trial_type,
                         set_size: practiceTrial.set_size,
+                        target: practiceTrial.target,
+                        duration_ms: practiceTrial.duration_ms,
                         is_practice: true
-                    },
+                    }),
                     prompt: 'Practice trial ' + (p + 1) + ' of ' + expt_data.practice_trials.length
                 };
                 
@@ -910,19 +1004,29 @@
                     stimulus: fixationHtml,
                     choices: pauseEachStage ? ['n', 'N'] : 'NO_KEYS',
                     trial_duration: pauseEachStage ? null : 1000, // 1 second fixation
-                    data: {trial_event: 'practice_fixation'}
+                    data: makeTrialData({
+                        trial_event: 'practice_fixation',
+                        trial_number: practiceTrial.trial_number,
+                        trial_condition: practiceTrial.trial_type,
+                        cue_type: practiceTrial.trial_type,
+                        set_size: practiceTrial.set_size,
+                        target: practiceTrial.target,
+                        duration_ms: practiceTrial.duration_ms,
+                        is_practice: true
+                    })
                 };
                 
                 var practice_color_patches = {
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'practice_color_patch_display_event',
                         trial_number: practiceTrial.trial_number,
-                        duration_ms: practiceTrial.duration_ms,
                         trial_condition: practiceTrial.trial_type,
+                        cue_type: practiceTrial.trial_type,
                         set_size: practiceTrial.set_size,
                         target: practiceTrial.target,
+                        duration_ms: practiceTrial.duration_ms,
                         is_practice: true
-                    },
+                    }),
                     type: jsConfidenceWheel,
                     trial_duration: practiceTrial.duration_ms, // Variable duration from Python
                     draw_wheel: false,
@@ -938,7 +1042,16 @@
                 
                 var practice_retention_interval = {
                     type: jsConfidenceWheel,
-                    data: {trial_event: 'practice_retention_interval'},
+                    data: makeTrialData({
+                        trial_event: 'practice_retention_interval',
+                        trial_number: practiceTrial.trial_number,
+                        trial_condition: practiceTrial.trial_type,
+                        cue_type: practiceTrial.trial_type,
+                        set_size: practiceTrial.set_size,
+                        target: practiceTrial.target,
+                        duration_ms: practiceTrial.duration_ms,
+                        is_practice: true
+                    }),
                     trial_duration: retention_duration_ms,
                     draw_wheel: false,
                     show_noise_mask: true,
@@ -953,15 +1066,17 @@
                 };
                 
                 var practice_wheel_response = {
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'practice_stimulus_wheel_display_event',
                         trial_number: practiceTrial.trial_number,
-                        duration_ms: practiceTrial.duration_ms,
                         trial_condition: practiceTrial.trial_type,
+                        cue_type: practiceTrial.trial_type,
                         set_size: practiceTrial.set_size,
                         target: practiceTrial.target,
-                        is_practice: true
-                    },
+                        duration_ms: practiceTrial.duration_ms,
+                        is_practice: true,
+                        redundancy: practiceRedundancy
+                    }),
                     type: jsConfidenceWheel,
                     trial_duration: 10000, // 10 second max response time
                     redundancy: practiceRedundancy,
@@ -1026,24 +1141,29 @@
                     stimulus: fixationHtml,
                     choices: pauseEachStage ? ['n', 'N'] : 'NO_KEYS',
                     trial_duration: pauseEachStage ? null : 1000, // 1 second fixation
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'fixation',
                         trial_number: trial.trial_number,
-                        duration_ms: trial.duration_ms,
                         trial_condition: trial.trial_type,
-                        set_size: trial.set_size
-                    }
+                        cue_type: trial.trial_type,
+                        set_size: trial.set_size,
+                        target: trial.target,
+                        duration_ms: trial.duration_ms,
+                        is_practice: false
+                    })
                 };
                 
                 var trial_color_patches = {
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'color_patch_display_event',
                         trial_number: trial.trial_number,
-                        duration_ms: trial.duration_ms,
                         trial_condition: trial.trial_type,
+                        cue_type: trial.trial_type,
                         set_size: trial.set_size,
-                        target: trial.target
-                    },
+                        target: trial.target,
+                        duration_ms: trial.duration_ms,
+                        is_practice: false
+                    }),
                     type: jsConfidenceWheel,
                     trial_duration: trial.duration_ms, // Variable duration from Python
                     draw_wheel: false,
@@ -1059,10 +1179,16 @@
                 
                 var trial_retention_interval = {
                     type: jsConfidenceWheel,
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'retention_interval',
-                        trial_number: trial.trial_number
-                    },
+                        trial_number: trial.trial_number,
+                        trial_condition: trial.trial_type,
+                        cue_type: trial.trial_type,
+                        set_size: trial.set_size,
+                        target: trial.target,
+                        duration_ms: trial.duration_ms,
+                        is_practice: false
+                    }),
                     trial_duration: retention_duration_ms,
                     draw_wheel: false,
                     show_noise_mask: true,
@@ -1077,14 +1203,17 @@
                 };
                 
                 var trial_wheel_response = {
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'stimulus_wheel_display_event',
                         trial_number: trial.trial_number,
-                        duration_ms: trial.duration_ms,
                         trial_condition: trial.trial_type,
+                        cue_type: trial.trial_type,
                         set_size: trial.set_size,
-                        target: trial.target
-                    },
+                        target: trial.target,
+                        duration_ms: trial.duration_ms,
+                        is_practice: false,
+                        redundancy: trialRedundancy
+                    }),
                     type: jsConfidenceWheel,
                     stimulus: "{{url_for('static', filename='images/stim/WhitePointLUV_ColorWheelDarkBg_L54_r9.bmp')}}",
                     trial_duration: 10000, // 10 second max response time
@@ -1146,21 +1275,25 @@
                 var practiceColorAngles = practiceTrial.colors; // Already in degrees
                 var practicePositions = convertPositions(practiceTrial.positions);
                 var practiceOrientations = practiceTrial.orientations; // Already in degrees (0-180)
+
+                // Determine redundancy (1 = redundant target, 0 = non-redundant)
+                var practiceRedundancy = practiceTrial.is_redundant_target ? 1 : 0;
                 
                 // Create practice trial timeline
                 var practice_trial_advance = {
                     type: jsPsychHtmlButtonResponse,
                     stimulus: 'Press to proceed to the next practice trial',
                     choices: ['Next'],
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'practice_trial_start_event',
                         trial_number: practiceTrial.trial_number,
-                        duration_ms: practiceTrial.duration_ms,
                         trial_condition: practiceTrial.trial_type,
+                        cue_type: practiceTrial.trial_type,
                         set_size: practiceTrial.set_size,
                         target: practiceTrial.target,
+                        duration_ms: practiceTrial.duration_ms,
                         is_practice: true
-                    },
+                    }),
                     prompt: 'Practice trial ' + (p + 1) + ' of ' + expt_data.practice_trials.length
                 };
                 
@@ -1169,25 +1302,35 @@
                     stimulus: fixationHtml,
                     choices: pauseEachStage ? ['n'] : 'NO_KEYS',
                     trial_duration: pauseEachStage ? null : 1000, // 1 second fixation
-                    data: {trial_event: 'practice_fixation'}
+                    data: makeTrialData({
+                        trial_event: 'practice_fixation',
+                        trial_number: practiceTrial.trial_number,
+                        trial_condition: practiceTrial.trial_type,
+                        cue_type: practiceTrial.trial_type,
+                        set_size: practiceTrial.set_size,
+                        target: practiceTrial.target,
+                        duration_ms: practiceTrial.duration_ms,
+                        is_practice: true
+                    })
                 };
                 
                 // Stimulus display: Colored orientation bars
                 var practice_orientation_bars = {
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'practice_orientation_bars_display_event',
                         trial_number: practiceTrial.trial_number,
-                        duration_ms: practiceTrial.duration_ms,
                         trial_condition: practiceTrial.trial_type,
+                        cue_type: practiceTrial.trial_type,
                         set_size: practiceTrial.set_size,
                         target: practiceTrial.target,
+                        duration_ms: practiceTrial.duration_ms,
                         is_practice: true
-                    },
+                    }),
                     type: jsConfidenceWheel,
                     trial_duration: practiceTrial.duration_ms, // Variable duration from Python
                     draw_wheel: false,
                     stimulus_type: 'orientation_bars', // Use orientation bars
-                    stimulus_scale: 1.5,
+                    stimulus_scale: 1,
                     choice_colors: practiceColors,
                     patch_positionalangle: practicePositions,
                     choice_colorangles: practiceColorAngles,
@@ -1205,13 +1348,19 @@
                     trial_duration: retention_duration_ms,
                     draw_wheel: false,
                     show_mask: true, // Enable visual mask
-                    stimulus_scale: 1.5,
+                    stimulus_scale: 1,
                     stimulus_height: browser_window_height * .95,
                     pause_each_stage: pauseEachStage,
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'practice_retention_interval',
-                        trial_number: practiceTrial.trial_number
-                    },
+                        trial_number: practiceTrial.trial_number,
+                        trial_condition: practiceTrial.trial_type,
+                        cue_type: practiceTrial.trial_type,
+                        set_size: practiceTrial.set_size,
+                        target: practiceTrial.target,
+                        duration_ms: practiceTrial.duration_ms,
+                        is_practice: true
+                    }),
                     on_finish: function(data) {
                         studyFinished = false; // Turn back on tab monitoring
                     }
@@ -1219,20 +1368,24 @@
                 
                 // Response phase: Orientation bar response
                 var practice_orientation_response = {
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'practice_orientation_response_event',
                         trial_number: practiceTrial.trial_number,
                         trial_condition: practiceTrial.trial_type,
+                        cue_type: practiceTrial.trial_type,
                         set_size: practiceTrial.set_size,
                         target: practiceTrial.target,
                         target_orientation: practiceOrientations[practiceTrial.target],
-                        is_practice: true
-                    },
+                        duration_ms: practiceTrial.duration_ms,
+                        is_practice: true,
+                        redundancy: practiceRedundancy
+                    }),
                     type: jsConfidenceWheel,
                     trial_duration: 10000, // 10 second max response time
+                    redundancy: practiceRedundancy,
                     draw_wheel: true,
                     response_type: 'orientation_bar', // Use orientation bar response
-                    stimulus_scale: 1.5,
+                    stimulus_scale: 1,
                     choice_colors: practiceColors,
                     patch_positionalangle: practicePositions,
                     choice_colorangles: practiceColorAngles,
@@ -1276,6 +1429,9 @@
                 var trialPositions = convertPositions(trial.positions);
                 var trialOrientations = trial.orientations; // Already in degrees (0-180)
                 
+                // Determine redundancy (1 = redundant target, 0 = non-redundant)
+                var trialRedundancy = trial.is_redundant_target ? 1 : 0;
+
                 // Create main trial timeline
                 var trial_advance = {
                     type: jsAdvPlot,
@@ -1289,30 +1445,35 @@
                     stimulus: fixationHtml,
                     choices: pauseEachStage ? ['n'] : 'NO_KEYS',
                     trial_duration: pauseEachStage ? null : 1000, // Match subexp 1 & 2 fixation timing
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'fixation',
                         trial_number: t + 1,
                         trial_condition: trial.trial_type,
-                        set_size: trial.set_size
-                    }
+                        cue_type: trial.trial_type,
+                        set_size: trial.set_size,
+                        target: trial.target,
+                        duration_ms: trial.duration_ms,
+                        is_practice: false
+                    })
                 };
                 
                 // Stimulus display: Colored orientation bars
                 var trial_orientation_bars = {
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'orientation_bars_display_event',
                         trial_number: t + 1,
-                        duration_ms: trial.duration_ms,
                         trial_condition: trial.trial_type,
+                        cue_type: trial.trial_type,
                         set_size: trial.set_size,
                         target: trial.target,
+                        duration_ms: trial.duration_ms,
                         is_practice: false
-                    },
+                    }),
                     type: jsConfidenceWheel,
                     trial_duration: trial.duration_ms, // Variable duration from Python
                     draw_wheel: false,
                     stimulus_type: 'orientation_bars', // Use orientation bars
-                    stimulus_scale: 1.5,
+                    stimulus_scale: 1,
                     choice_colors: trialColors,
                     patch_positionalangle: trialPositions,
                     choice_colorangles: trialColorAngles,
@@ -1330,15 +1491,19 @@
                     trial_duration: retention_duration_ms,
                     draw_wheel: false,
                     show_mask: true, // Enable visual mask
-                    stimulus_scale: 1.5,
+                    stimulus_scale: 1,
                     stimulus_height: browser_window_height * .95,
                     pause_each_stage: pauseEachStage,
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'retention_interval',
                         trial_number: t + 1,
                         trial_condition: trial.trial_type,
-                        set_size: trial.set_size
-                    },
+                        cue_type: trial.trial_type,
+                        set_size: trial.set_size,
+                        target: trial.target,
+                        duration_ms: trial.duration_ms,
+                        is_practice: false
+                    }),
                     on_finish: function(data) {
                         studyFinished = false; // Turn back on tab monitoring
                     }
@@ -1346,20 +1511,24 @@
                 
                 // Response phase: Orientation bar response
                 var trial_orientation_response = {
-                    data: {
+                    data: makeTrialData({
                         trial_event: 'orientation_response_event',
                         trial_number: t + 1,
-                        trial_type: trial.trial_type,
+                        trial_condition: trial.trial_type,
+                        cue_type: trial.trial_type,
                         set_size: trial.set_size,
                         target: trial.target,
                         target_orientation: trialOrientations[trial.target],
-                        is_practice: false
-                    },
+                        duration_ms: trial.duration_ms,
+                        is_practice: false,
+                        redundancy: trialRedundancy
+                    }),
                     type: jsConfidenceWheel,
                     trial_duration: 10000, // 10 second max response time
+                    redundancy: trialRedundancy,
                     draw_wheel: true,
                     response_type: 'orientation_bar', // Use orientation bar response
-                    stimulus_scale: 1.5,
+                    stimulus_scale: 1,
                     choice_colors: trialColors,
                     patch_positionalangle: trialPositions,
                     choice_colorangles: trialColorAngles,
@@ -1542,7 +1711,6 @@
         if (n_tries < 3){
             jsPsych.data.addProperties({
             experiment: experiment_name,
-            subexperiment: subexperiment,  // Add subexperiment to data
             experiment_type: expt_data.experiment_type,  // Add experiment type
             subject_id: random_id,
             unique_id: jsPsych.data.getURLVariable("id"), 
@@ -1555,7 +1723,7 @@
 
             // Show data at end...
             //jsPsych.data.displayData();
-
+            //jsPsych.data.get().localSave('csv', 'my_experiment_data.csv');
             // Save data... 
             var all_data = jsPsych.data.get().json();
             _send_task_data(all_data, compressed=true);
@@ -1578,7 +1746,7 @@
       }
     });
 	
-    jsPsych.run(experiment_timeline);
+        jsPsych.run(experiment_timeline);
   </script>
 
 {% endblock %}

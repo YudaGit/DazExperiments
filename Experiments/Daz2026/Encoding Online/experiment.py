@@ -31,6 +31,10 @@ s3_data_bucket = "chdhexpt"
 
 me_expt = me.Expt(domain=config.SDB_EXPERIMENTS_PARTICIPANTS)
 
+exp_html_template = 'exp.html'
+if not config.jsPsychCurrent:
+    # Use jsPsych v6
+    exp_html_template = 'exp-legacy.html'
 
 
 app = Flask("Experiment_Server", static_folder=static_folder)
@@ -74,8 +78,9 @@ def unique_start_exp():
         return render_template('error-page.html',error=data['_error'])
     
     return render_template(
-        'exp.html',
+        exp_html_template,
         uid=uid,
+        jsPsychCurrent=config.jsPsychCurrent,
         data=json.dumps( data )
         )
 
@@ -104,7 +109,7 @@ def prolific_start_exp():
         return render_template('error-page.html',error=data['_error'])
 
     return render_template(
-        'exp.html',
+        exp_html_template,
         uid=uid,
         prolific=1,
         data=json.dumps( data )
@@ -135,7 +140,7 @@ def mturk_start_exp():
         return render_template('error-page.html',error=data['_error'])
 
     return render_template(
-        'exp.html',
+        exp_html_template,
         uid=uid,
         mturk=1,
         data=json.dumps( data )
@@ -200,7 +205,7 @@ def enter_rep_expt():
         return render_template('error-page.html', error=data['_error'])
 
     return render_template(
-        'exp.html',
+        exp_html_template,
         uid=uid,
         rep=1,
         survey_code=survey_code,
@@ -224,7 +229,7 @@ def rep_start_expt():
 
     data = me_expt.check_set_participant_attrs(uid, get_data(request.args), DEBUG)
     return render_template(
-        'exp.html',
+        exp_html_template,
         uid=uid,
         rep=1,
         data=json.dumps(data)
@@ -256,33 +261,65 @@ def start_exp():
         return render_template('error-page.html',error=data['_error'])
 
     return render_template(
-        'exp.html',
+        exp_html_template,
         uid=uid,
         data=json.dumps( data )
         )
 
 
+@app.route('/prohibit-reload-expt', methods=['GET'])
+@nocache
+def prohibit_reload_expt():
+    print("Prohibit reload endpoint called")
+    uid = request.args.get('uid')
+    if not uid:
+        return "UID not provided", 400
+    # Implement logic to prohibit reload for the experiment with the given UID
+    # This could involve setting a flag in the database or in-memory store
+    # For now, just return success
+    me_expt.prohibit_reload_expt(uid)
+    print(f"Prohibit reload set for UID: {uid}")
+    return "Prohibit reload set", 200
+
+
+
 @app.route('/update-queue', methods=['GET'])
 @nocache
 def update_queue():
-    ret = me_expt.update_queue()
+    ret = expt_config.update_queue()
     return jsonify(ret)
 
+
+def update_queue_event(event=None, context=None):
+    ret = expt_config.update_queue()
 
 
 @app.route('/poll-queue', methods=['GET'])
 @nocache
 def poll_queue():
-    ret = me_expt.poll_queue()
+    ret = expt_config.poll_queue()
     return jsonify(ret)
 
 
+def prolific_returned_698bce637561c5bc0ad87343(event, context):
+    """Testing function"""
+    # TODO: Need to update the Prolific study id
+    print("prolific_returned_698bce637561c5bc0ad87343")
+    data = {}
+    if 'data' in event:
+        data = json.loads(event['data'])
+
+    print("data", data)
+    res = expt_config.prolific_returned(data)
+    ret = {'event': event, 'data': res}
+
+    return ret
 
      
 def run_webserver():
     ''' Run web server '''
     host = "0.0.0.0"
-    port = 5000
+    port = 5001
     print("Serving on ", "http://" +  host + ":" + str(port))
     app.run(debug=True, host=host, port=port)
 

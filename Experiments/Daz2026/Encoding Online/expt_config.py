@@ -10,6 +10,9 @@ import config
 import json
 import requests
 import os
+from expt_queue import poll_queue, update_queue, update_return_queue
+from MallExperiment import Expt, Record, QuerySelect, DATESTRING_FORMAT
+from datetime import datetime
 # If you are developing your experiment
 # then set the DEBUG flag to True
 DEBUG = config.DEBUG
@@ -38,6 +41,7 @@ study_list_length = 5
 test_list_length = 10
 
 stimulus_file = "word-list.json.gz"
+
 
 # Subexperiment allocation quotas (set to 1 for testing)
 ALLOCATION_QUOTAS = {1: 1, 2: 1, 3: 1}
@@ -112,8 +116,6 @@ def _allocate_subexperiment():
     return random.choice(available)
 
 
-
-
 # Using Expt to fetch stimulus data from S3
 me_expt = Expt()
 
@@ -185,21 +187,32 @@ def get_data(opts):
     
     # Check if sub-experiment is manually specified via URL parameter
     # e.g., http://localhost:5000/unique-expt?subexp=1
-    if 'subexp' in opts:
-        # Manual assignment via URL parameter (does not consume quota)
-        try:
-            subexperiment = int(opts['subexp'])
-            # Validate: must be 1, 2, or 3
-            if subexperiment not in [1, 2, 3]:
-                print(f"Warning: Invalid subexp={subexperiment}, using quota-based assignment")
-                subexperiment = _allocate_subexperiment()
-        except (ValueError, TypeError):
-            # If conversion fails, use quota-based assignment
-            print(f"Warning: Could not parse subexp={opts.get('subexp')}, using quota-based assignment")
+    # if 'subexp' in opts:
+    #     # Manual assignment via URL parameter (does not consume quota)
+    #     try:
+    #         subexperiment = int(opts['subexp'])
+    #         # Validate: must be 1, 2, or 3
+    #         if subexperiment not in [1, 2, 3]:
+    #             print(f"Warning: Invalid subexp={subexperiment}, using quota-based assignment")
+    #             subexperiment = _allocate_subexperiment()
+    #     except (ValueError, TypeError):
+    #         # If conversion fails, use quota-based assignment
+    #         print(f"Warning: Could not parse subexp={opts.get('subexp')}, using quota-based assignment")
+    #         subexperiment = _allocate_subexperiment()
+    # else:
+    #     # Quota-based random assignment across available sub-experiments
+    #     subexperiment = _allocate_subexperiment()
+
+    subexperiment = None
+    if 'subexp' not in opts.keys():
+        if config.DEBUG: # Running locally in debug mode
             subexperiment = _allocate_subexperiment()
+        else: # Running on AWS
+            subexperiment = int( poll_queue() )
     else:
-        # Quota-based random assignment across available sub-experiments
-        subexperiment = _allocate_subexperiment()
+        subexperiment = int(opts['subexp'])
+
+    
 
     # When all quotas are filled, still allow random assignment
     
@@ -233,6 +246,9 @@ def get_data(opts):
     
     # Always include subexperiment number so JavaScript knows which to run
     return {
+         '_participant_attrs':{   # Set these attributes in the DB
+             'subexperiment': str(subexperiment),
+         },        
         'subexperiment': subexperiment,
         **experiment_data  # Unpack all experiment-specific data
     }
@@ -247,8 +263,8 @@ def prepare_subexperiment_1():
     - Durations: 50, 100, 150, 200, 250, 300, 350ms (7 levels)
     - Trial types: R-cue, NR-cue (2 types)
     - Conditions: 7 × 2 = 14 conditions
-    - Trials per condition: 10
-    - Total: 140 trials + 5 practice
+    - Trials per condition: 20
+    - Total: 280 trials + 5 practice
     
     Returns:
         Dictionary with experiment parameters and trial structure
@@ -258,7 +274,7 @@ def prepare_subexperiment_1():
     redundant_n = 3  # Always 3 redundant items
     durations_ms = [50, 100, 150, 200, 250, 300, 350]  # 7 durations
     cue_types = ['R-cue', 'NR-cue']  # 2 trial types
-    n_trials_per_condition = 1
+    n_trials_per_condition = 25
     n_practice_trials = 5
     
     # Generate all trial combinations
@@ -299,8 +315,8 @@ def prepare_subexperiment_2():
     - Trial types: Baseline (no redundancy), R-cue, NR-cue
     - Durations: 50ms, 100ms, 200ms (3 levels)
     - Conditions: 2 set-sizes × 3 trial types × 3 durations = 18 conditions
-    - Trials per condition: 10
-    - Total trials: 180
+    - Trials per condition: 20
+    - Total trials: 360
     - Practice trials: 5
     
     Returns:
@@ -308,9 +324,9 @@ def prepare_subexperiment_2():
     """
     # Design parameters
     set_sizes = [4, 6]
-    durations_ms = [50, 100, 200]  # 3 durations
+    durations_ms = [50, 150, 250]  # 3 durations
     trial_types = ['Baseline', 'R-cue', 'NR-cue']
-    n_trials_per_condition = 1
+    n_trials_per_condition = 20
     
     # Redundancy levels: set-size 4 has 2 redundant, set-size 6 has 3 redundant
     redundancy_by_set_size = {4: 2, 6: 3}
@@ -322,7 +338,7 @@ def prepare_subexperiment_2():
         
         for duration_ms in durations_ms:
             for trial_type in trial_types:
-                # Generate 10 trials for this condition
+                # Generate 20 trials for this condition
                 for rep in range(n_trials_per_condition):
                     trial = generate_single_trial_subexp2(
                         set_size=set_size,
@@ -361,8 +377,8 @@ def prepare_subexperiment_3():
     - Trial types: Baseline (no redundancy), R-cue, NR-cue
     - Durations: 50ms, 100ms, 200ms (3 levels)
     - Conditions: 2 set-sizes × 3 trial types × 3 durations = 18 conditions
-    - Trials per condition: 10
-    - Total trials: 180
+    - Trials per condition: 20
+    - Total trials: 360
     - Practice trials: 5
     - Stimuli: Colored orientation bars (color + orientation)
     - Task: Cue color, report orientation
@@ -372,9 +388,9 @@ def prepare_subexperiment_3():
     """
     # Design parameters
     set_sizes = [4, 6]
-    durations_ms = [50, 100, 200]  # 3 durations
+    durations_ms = [50, 150, 250]  # 3 durations
     trial_types = ['Baseline', 'R-cue', 'NR-cue']
-    n_trials_per_condition = 1
+    n_trials_per_condition = 20
     
     # Redundancy levels: set-size 4 has 2 redundant, set-size 6 has 3 redundant
     redundancy_by_set_size = {4: 2, 6: 3}
@@ -386,7 +402,7 @@ def prepare_subexperiment_3():
         
         for duration_ms in durations_ms:
             for trial_type in trial_types:
-                # Generate 10 trials for this condition
+                # Generate 20 trials for this condition
                 for rep in range(n_trials_per_condition):
                     trial = generate_single_trial_subexp3(
                         set_size=set_size,
@@ -421,42 +437,6 @@ def prepare_subexperiment_3():
 # Legacy functions (from original example - keeping for reference)
 # ============================================================
 
-def fetch_word_list():
-    #word_list = me_expt.get_S3(s3_data_bucket, s3_data_key)
-    word_list = me_expt.get_file(stimulus_file)
-    return word_list
-
-
-def get_word_list(word_list, list_length, study_list=None):
-    skip_words = {}
-    mylist = []
-    # If we have a study list
-    # then create a test list that
-    # contains the study list words
-    # and then add distractor words in
-    # the while loop below
-    if study_list:
-        for x in study_list:
-            skip_words[x['token']] = 1
-        mylist = copy.deepcopy(study_list)
-
-
-    # Shuffle words and
-    # Get an balanced number of high and low frequency words
-    words = copy.deepcopy(word_list)
-    shuffle(words)
-    last_freq = ""
-    while len( mylist ) < list_length and words:
-        w = words.pop()
-        if w['token'] not in skip_words and last_freq != w['frequency']:
-            mylist.append(w)
-            last_freq = w['frequency']
-
-    # Shuffle the test list
-    if study_list:
-        shuffle(mylist)
-
-    return mylist
 
 def fetch_word_list():
     #word_list = me_expt.get_S3(s3_data_bucket, s3_data_key)
@@ -545,213 +525,10 @@ def generate_trials_subexp1(set_size, redundant_n, durations_ms, cue_types, n_tr
     return trials
 
 
-# ============================================================
-# Sub-Experiment 3: Trial Generation Functions
-# ============================================================
-
-def generate_single_trial_subexp3(set_size, redundant_n, duration_ms, trial_type):
-    """
-    Generate a single trial for Sub-Experiment 3.
-    
-    Args:
-        set_size: Number of items (4 or 6)
-        redundant_n: Number of redundant items (2 for set-size 4, 3 for set-size 6)
-        duration_ms: Presentation duration
-        trial_type: 'Baseline', 'R-cue', or 'NR-cue'
-    
-    Returns:
-        Trial dictionary with colors, orientations, positions, and target
-    """
-    if trial_type == 'Baseline':
-        # Baseline: All unique colors AND orientations, no redundancy
-        colors = generate_unique_colors(set_size, min_spacing=30)
-        orientations = generate_unique_orientations(set_size, min_spacing=20)
-        positions = generate_positions_evenly_spaced(set_size)
-        
-        # Target can be any item (all are unique)
-        target = random.randint(0, set_size - 1)
-        is_redundant_target = False
-        redundant_indices = []
-        
-    else:  # R-cue or NR-cue
-        # Generate colors with redundancy
-        colors = generate_colors_with_redundancy(set_size, redundant_n, min_spacing=30)
-        positions = generate_positions_evenly_spaced(set_size)
-        
-        # Generate orientations with redundancy (same as colors)
-        # Redundant items must have SAME color AND orientation
-        orientations = generate_orientations_with_redundancy(
-            set_size, redundant_n, colors, min_spacing=20
-        )
-        
-        # Select target based on cue type
-        redundant_indices = get_redundant_indices(colors, redundant_n)
-        if trial_type == 'R-cue':
-            # Target is one of the redundant items
-            target_pool = redundant_indices
-        else:  # NR-cue
-            # Target is one of the non-redundant items
-            target_pool = [i for i in range(set_size) if i not in redundant_indices]
-        
-        target = random.choice(target_pool)
-        is_redundant_target = target in redundant_indices
-    
-    return {
-        'duration_ms': duration_ms,
-        'trial_type': trial_type,
-        'set_size': set_size,
-        'redundant_n': redundant_n if trial_type != 'Baseline' else 0,
-        'colors': colors,
-        'orientations': orientations,  # NEW: orientations in degrees (0-180)
-        'positions': positions,
-        'target': target,
-        'is_redundant_target': is_redundant_target,
-        'redundant_indices': redundant_indices
-    }
-
-
-def generate_unique_orientations(set_size, min_spacing=20):
-    """
-    Generate all unique orientations with minimum spacing constraint.
-    Orientations are in degrees, range 0-180.
-    Used for Baseline trials where there's no redundancy.
-    """
-    max_attempts = 100
-    
-    for attempt in range(max_attempts):
-        orientations = []
-        
-        while len(orientations) < set_size:
-            candidate = random.randint(0, 180)
-            
-            # Check spacing from all existing orientations
-            if orientations:
-                distances = [min_linear_distance(candidate, o) for o in orientations]
-                if min(distances) < min_spacing:
-                    continue
-            
-            orientations.append(candidate)
-        
-        return orientations
-    
-    # Fallback: evenly spaced orientations
-    print('Warning: Could not generate unique orientations with spacing constraints, using fallback')
-    spacing = 180 / set_size
-    orientations = [int(i * spacing) for i in range(set_size)]
-    return orientations
-
-
-def min_linear_distance(value1, value2):
-    """
-    Calculate minimum linear distance between two values.
-    For orientations (0-180), this is just absolute difference.
-    """
-    return abs(value1 - value2)
-
-
-def generate_orientations_with_redundancy(set_size, redundant_n, colors, min_spacing=20):
-    """
-    Generate orientations with redundancy matching colors.
-    Redundant items (same color) must also have the same orientation.
-    
-    Args:
-        set_size: Number of items
-        redundant_n: Number of redundant items
-        colors: List of colors (redundant items have same color)
-        min_spacing: Minimum spacing between unique orientations (degrees)
-    
-    Returns:
-        List of orientations matching the color redundancy pattern
-    """
-    max_attempts = 100
-    
-    for attempt in range(max_attempts):
-        # Find redundant color and indices
-        redundant_indices = get_redundant_indices(colors, redundant_n)
-        
-        # Generate unique orientations needed
-        # For set-size 4 with 2 redundant: need 3 unique orientations (2+1+1)
-        # For set-size 6 with 3 redundant: need 4 unique orientations (3+1+1+1)
-        unique_orientations_needed = set_size - redundant_n + 1
-        
-        unique_orientations = []
-        while len(unique_orientations) < unique_orientations_needed:
-            candidate = random.randint(0, 180)
-            
-            # Check spacing from existing unique orientations
-            if unique_orientations:
-                distances = [min_linear_distance(candidate, uo) for uo in unique_orientations]
-                if min(distances) < min_spacing:
-                    continue
-            
-            unique_orientations.append(candidate)
-        
-        # Assign orientations to items
-        orientations = [0] * set_size
-        
-        # Assign redundant orientation to redundant items
-        redundant_orientation = unique_orientations[0]
-        for idx in redundant_indices:
-            orientations[idx] = redundant_orientation
-        
-        # Assign unique orientations to non-redundant items
-        unique_indices = [i for i in range(set_size) if i not in redundant_indices]
-        for i, idx in enumerate(unique_indices):
-            orientations[idx] = unique_orientations[i + 1]  # Skip first (redundant)
-        
-        return orientations
-    
-    # Fallback: evenly spaced orientations
-    print('Warning: Could not generate orientations with redundancy, using fallback')
-    spacing = 180 / set_size
-    orientations = [int(i * spacing) for i in range(set_size)]
-    return orientations
-
-
-def generate_practice_trials_subexp3():
-    """
-    Generate practice trials for Sub-Experiment 3.
-    Ensures balanced distribution across set-sizes and trial types.
-    """
-    set_sizes = [4, 6]
-    practice_durations = [100, 200]  # 2 durations for practice
-    trial_types = ['Baseline', 'R-cue', 'NR-cue']
-    n_practice_trials = 5
-    
-    redundancy_by_set_size = {4: 2, 6: 3}
-    
-    # Create balanced distribution
-    # For 5 trials: mix of set-sizes and trial types
-    practice_set_sizes = [4, 4, 6, 6, 6]
-    random.shuffle(practice_set_sizes)
-    # Mix trial types: at least one of each type
-    practice_trial_types = ['Baseline', 'R-cue', 'NR-cue', 'R-cue', 'NR-cue']
-    random.shuffle(practice_trial_types)
-    
-    trials = []
-    for i in range(n_practice_trials):
-        set_size = practice_set_sizes[i]
-        trial_type = practice_trial_types[i]
-        duration = random.choice(practice_durations)
-        redundant_n = redundancy_by_set_size[set_size]
-        
-        trial = generate_single_trial_subexp3(
-            set_size=set_size,
-            redundant_n=redundant_n,
-            duration_ms=duration,
-            trial_type=trial_type
-        )
-        trial['trial_number'] = i + 1
-        trial['is_practice'] = True
-        trials.append(trial)
-    
-    return trials
 
 # ============================================================
 # Sub-Experiment 2: Trial Generation Functions
 # ============================================================
-
-def generate_single_trial_subexp2(set_size, redundant_n, duration_ms, trial_type):
     """
     Generate a single trial for Sub-Experiment 2.
     
@@ -804,277 +581,6 @@ def generate_single_trial_subexp2(set_size, redundant_n, duration_ms, trial_type
     }
 
 
-def generate_unique_colors(set_size, min_spacing=30):
-    """
-    Generate all unique colors with minimum spacing constraint.
-    Used for Baseline trials where there's no redundancy.
-    """
-    max_attempts = 100
-    
-    for attempt in range(max_attempts):
-        colors = []
-        
-        while len(colors) < set_size:
-            candidate = random.randint(0, 359)
-            
-            # Check spacing from all existing colors
-            if colors:
-                distances = [min_circular_distance(candidate, c) for c in colors]
-                if min(distances) < min_spacing:
-                    continue
-            
-            colors.append(candidate)
-        
-        return colors
-    
-    # Fallback: evenly spaced colors
-    print('Warning: Could not generate unique colors with spacing constraints, using fallback')
-    spacing = 360 / set_size
-    colors = [int(i * spacing) for i in range(set_size)]
-    return colors
-
-
-def generate_practice_trials_subexp2():
-    """
-    Generate practice trials for Sub-Experiment 2.
-    Ensures balanced distribution across set-sizes and trial types.
-    """
-    set_sizes = [4, 6]
-    practice_durations = [100, 200]  # 2 durations for practice
-    trial_types = ['Baseline', 'R-cue', 'NR-cue']
-    n_practice_trials = 5
-    
-    redundancy_by_set_size = {4: 2, 6: 3}
-    
-    # Create balanced distribution
-    # For 5 trials: mix of set-sizes and trial types
-    # Let's do: 2 trials with set-size 4, 3 trials with set-size 6
-    practice_set_sizes = [4, 4, 6, 6, 6]
-    # Mix trial types: at least one of each type
-    practice_trial_types = ['Baseline', 'R-cue', 'NR-cue', 'R-cue', 'NR-cue']
-    random.shuffle(practice_trial_types)
-    
-    trials = []
-    for i in range(n_practice_trials):
-        set_size = practice_set_sizes[i]
-        trial_type = practice_trial_types[i]
-        duration = random.choice(practice_durations)
-        redundant_n = redundancy_by_set_size[set_size]
-        
-        trial = generate_single_trial_subexp2(
-            set_size=set_size,
-            redundant_n=redundant_n,
-            duration_ms=duration,
-            trial_type=trial_type
-        )
-        trial['trial_number'] = i + 1
-        trial['is_practice'] = True
-        trials.append(trial)
-    
-    return trials
-
-
-# ============================================================
-# Sub-Experiment 3: Trial Generation Functions
-# ============================================================
-
-def generate_single_trial_subexp3(set_size, redundant_n, duration_ms, trial_type):
-    """
-    Generate a single trial for Sub-Experiment 3.
-    
-    Args:
-        set_size: Number of items (4 or 6)
-        redundant_n: Number of redundant items (2 for set-size 4, 3 for set-size 6)
-        duration_ms: Presentation duration
-        trial_type: 'Baseline', 'R-cue', or 'NR-cue'
-    
-    Returns:
-        Trial dictionary with colors, orientations, positions, and target
-    """
-    if trial_type == 'Baseline':
-        # Baseline: All unique colors AND orientations, no redundancy
-        colors = generate_unique_colors(set_size, min_spacing=30)
-        orientations = generate_unique_orientations(set_size, min_spacing=20)
-        positions = generate_positions_evenly_spaced(set_size)
-        
-        # Target can be any item (all are unique)
-        target = random.randint(0, set_size - 1)
-        is_redundant_target = False
-        redundant_indices = []
-        
-    else:  # R-cue or NR-cue
-        # Generate colors with redundancy
-        colors = generate_colors_with_redundancy(set_size, redundant_n, min_spacing=30)
-        positions = generate_positions_evenly_spaced(set_size)
-        
-        # Generate orientations with redundancy (same as colors)
-        # Redundant items must have SAME color AND orientation
-        orientations = generate_orientations_with_redundancy(
-            set_size, redundant_n, colors, min_spacing=20
-        )
-        
-        # Select target based on cue type
-        redundant_indices = get_redundant_indices(colors, redundant_n)
-        if trial_type == 'R-cue':
-            # Target is one of the redundant items
-            target_pool = redundant_indices
-        else:  # NR-cue
-            # Target is one of the non-redundant items
-            target_pool = [i for i in range(set_size) if i not in redundant_indices]
-        
-        target = random.choice(target_pool)
-        is_redundant_target = target in redundant_indices
-    
-    return {
-        'duration_ms': duration_ms,
-        'trial_type': trial_type,
-        'set_size': set_size,
-        'redundant_n': redundant_n if trial_type != 'Baseline' else 0,
-        'colors': colors,
-        'orientations': orientations,  # NEW: orientations in degrees (0-180)
-        'positions': positions,
-        'target': target,
-        'is_redundant_target': is_redundant_target,
-        'redundant_indices': redundant_indices
-    }
-
-
-def generate_unique_orientations(set_size, min_spacing=20):
-    """
-    Generate all unique orientations with minimum spacing constraint.
-    Orientations are in degrees, range 0-180.
-    Used for Baseline trials where there's no redundancy.
-    """
-    max_attempts = 100
-    
-    for attempt in range(max_attempts):
-        orientations = []
-        
-        while len(orientations) < set_size:
-            candidate = random.randint(0, 180)
-            
-            # Check spacing from all existing orientations
-            if orientations:
-                distances = [min_linear_distance(candidate, o) for o in orientations]
-                if min(distances) < min_spacing:
-                    continue
-            
-            orientations.append(candidate)
-        
-        return orientations
-    
-    # Fallback: evenly spaced orientations
-    print('Warning: Could not generate unique orientations with spacing constraints, using fallback')
-    spacing = 180 / set_size
-    orientations = [int(i * spacing) for i in range(set_size)]
-    return orientations
-
-
-def min_linear_distance(value1, value2):
-    """
-    Calculate minimum linear distance between two values.
-    For orientations (0-180), this is just absolute difference.
-    """
-    return abs(value1 - value2)
-
-
-def generate_orientations_with_redundancy(set_size, redundant_n, colors, min_spacing=20):
-    """
-    Generate orientations with redundancy matching colors.
-    Redundant items (same color) must also have the same orientation.
-    
-    Args:
-        set_size: Number of items
-        redundant_n: Number of redundant items
-        colors: List of colors (redundant items have same color)
-        min_spacing: Minimum spacing between unique orientations (degrees)
-    
-    Returns:
-        List of orientations matching the color redundancy pattern
-    """
-    max_attempts = 100
-    
-    for attempt in range(max_attempts):
-        # Find redundant color and indices
-        redundant_indices = get_redundant_indices(colors, redundant_n)
-        
-        # Generate unique orientations needed
-        # For set-size 4 with 2 redundant: need 3 unique orientations (2+1+1)
-        # For set-size 6 with 3 redundant: need 4 unique orientations (3+1+1+1)
-        unique_orientations_needed = set_size - redundant_n + 1
-        
-        unique_orientations = []
-        while len(unique_orientations) < unique_orientations_needed:
-            candidate = random.randint(0, 180)
-            
-            # Check spacing from existing unique orientations
-            if unique_orientations:
-                distances = [min_linear_distance(candidate, uo) for uo in unique_orientations]
-                if min(distances) < min_spacing:
-                    continue
-            
-            unique_orientations.append(candidate)
-        
-        # Assign orientations to items
-        orientations = [0] * set_size
-        
-        # Assign redundant orientation to redundant items
-        redundant_orientation = unique_orientations[0]
-        for idx in redundant_indices:
-            orientations[idx] = redundant_orientation
-        
-        # Assign unique orientations to non-redundant items
-        unique_indices = [i for i in range(set_size) if i not in redundant_indices]
-        for i, idx in enumerate(unique_indices):
-            orientations[idx] = unique_orientations[i + 1]  # Skip first (redundant)
-        
-        return orientations
-    
-    # Fallback: evenly spaced orientations
-    print('Warning: Could not generate orientations with redundancy, using fallback')
-    spacing = 180 / set_size
-    orientations = [int(i * spacing) for i in range(set_size)]
-    return orientations
-
-
-def generate_practice_trials_subexp3():
-    """
-    Generate practice trials for Sub-Experiment 3.
-    Ensures balanced distribution across set-sizes and trial types.
-    """
-    set_sizes = [4, 6]
-    practice_durations = [100, 200]  # 2 durations for practice
-    trial_types = ['Baseline', 'R-cue', 'NR-cue']
-    n_practice_trials = 5
-    
-    redundancy_by_set_size = {4: 2, 6: 3}
-    
-    # Create balanced distribution
-    # For 5 trials: mix of set-sizes and trial types
-    practice_set_sizes = [4, 4, 6, 6, 6]
-    # Mix trial types: at least one of each type
-    practice_trial_types = ['Baseline', 'R-cue', 'NR-cue', 'R-cue', 'NR-cue']
-    random.shuffle(practice_trial_types)
-    
-    trials = []
-    for i in range(n_practice_trials):
-        set_size = practice_set_sizes[i]
-        trial_type = practice_trial_types[i]
-        duration = random.choice(practice_durations)
-        redundant_n = redundancy_by_set_size[set_size]
-        
-        trial = generate_single_trial_subexp3(
-            set_size=set_size,
-            redundant_n=redundant_n,
-            duration_ms=duration,
-            trial_type=trial_type
-        )
-        trial['trial_number'] = i + 1
-        trial['is_practice'] = True
-        trials.append(trial)
-    
-    return trials
-
 def generate_single_trial_subexp1(set_size, redundant_n, duration_ms, cue_type):
     """
     Generate a single trial with random colors, positions, and target.
@@ -1115,6 +621,7 @@ def generate_colors_with_redundancy(set_size, redundant_n, min_spacing=30):
     Generate colors for a trial with redundancy.
     """
     max_attempts = 100
+    max_inner_attempts = 2000
     
     for attempt in range(max_attempts):
         # Choose one color for redundant items
@@ -1124,7 +631,11 @@ def generate_colors_with_redundancy(set_size, redundant_n, min_spacing=30):
         unique_colors = []
         unique_needed = set_size - redundant_n
         
+        inner_attempts = 0
         while len(unique_colors) < unique_needed:
+            inner_attempts += 1
+            if inner_attempts > max_inner_attempts:
+                break
             candidate = random.randint(0, 359)
             
             # Check spacing from redundant color
@@ -1138,6 +649,9 @@ def generate_colors_with_redundancy(set_size, redundant_n, min_spacing=30):
                     continue
             
             unique_colors.append(candidate)
+
+        if len(unique_colors) < unique_needed:
+            continue
         
         # Assign colors to positions
         colors = [0] * set_size
@@ -1243,206 +757,6 @@ def generate_practice_trials_subexp1(set_size, redundant_n, n_practice_trials):
     return trials
 
 
-# ============================================================
-# Sub-Experiment 3: Trial Generation Functions
-# ============================================================
-
-def generate_single_trial_subexp3(set_size, redundant_n, duration_ms, trial_type):
-    """
-    Generate a single trial for Sub-Experiment 3.
-    
-    Args:
-        set_size: Number of items (4 or 6)
-        redundant_n: Number of redundant items (2 for set-size 4, 3 for set-size 6)
-        duration_ms: Presentation duration
-        trial_type: 'Baseline', 'R-cue', or 'NR-cue'
-    
-    Returns:
-        Trial dictionary with colors, orientations, positions, and target
-    """
-    if trial_type == 'Baseline':
-        # Baseline: All unique colors AND orientations, no redundancy
-        colors = generate_unique_colors(set_size, min_spacing=30)
-        orientations = generate_unique_orientations(set_size, min_spacing=20)
-        positions = generate_positions_evenly_spaced(set_size)
-        
-        # Target can be any item (all are unique)
-        target = random.randint(0, set_size - 1)
-        is_redundant_target = False
-        redundant_indices = []
-        
-    else:  # R-cue or NR-cue
-        # Generate colors with redundancy
-        colors = generate_colors_with_redundancy(set_size, redundant_n, min_spacing=30)
-        positions = generate_positions_evenly_spaced(set_size)
-        
-        # Generate orientations with redundancy (same as colors)
-        # Redundant items must have SAME color AND orientation
-        orientations = generate_orientations_with_redundancy(
-            set_size, redundant_n, colors, min_spacing=20
-        )
-        
-        # Select target based on cue type
-        redundant_indices = get_redundant_indices(colors, redundant_n)
-        if trial_type == 'R-cue':
-            # Target is one of the redundant items
-            target_pool = redundant_indices
-        else:  # NR-cue
-            # Target is one of the non-redundant items
-            target_pool = [i for i in range(set_size) if i not in redundant_indices]
-        
-        target = random.choice(target_pool)
-        is_redundant_target = target in redundant_indices
-    
-    return {
-        'duration_ms': duration_ms,
-        'trial_type': trial_type,
-        'set_size': set_size,
-        'redundant_n': redundant_n if trial_type != 'Baseline' else 0,
-        'colors': colors,
-        'orientations': orientations,  # NEW: orientations in degrees (0-180)
-        'positions': positions,
-        'target': target,
-        'is_redundant_target': is_redundant_target,
-        'redundant_indices': redundant_indices
-    }
-
-
-def generate_unique_orientations(set_size, min_spacing=20):
-    """
-    Generate all unique orientations with minimum spacing constraint.
-    Orientations are in degrees, range 0-180.
-    Used for Baseline trials where there's no redundancy.
-    """
-    max_attempts = 100
-    
-    for attempt in range(max_attempts):
-        orientations = []
-        
-        while len(orientations) < set_size:
-            candidate = random.randint(0, 180)
-            
-            # Check spacing from all existing orientations
-            if orientations:
-                distances = [min_linear_distance(candidate, o) for o in orientations]
-                if min(distances) < min_spacing:
-                    continue
-            
-            orientations.append(candidate)
-        
-        return orientations
-    
-    # Fallback: evenly spaced orientations
-    print('Warning: Could not generate unique orientations with spacing constraints, using fallback')
-    spacing = 180 / set_size
-    orientations = [int(i * spacing) for i in range(set_size)]
-    return orientations
-
-
-def min_linear_distance(value1, value2):
-    """
-    Calculate minimum linear distance between two values.
-    For orientations (0-180), this is just absolute difference.
-    """
-    return abs(value1 - value2)
-
-
-def generate_orientations_with_redundancy(set_size, redundant_n, colors, min_spacing=20):
-    """
-    Generate orientations with redundancy matching colors.
-    Redundant items (same color) must also have the same orientation.
-    
-    Args:
-        set_size: Number of items
-        redundant_n: Number of redundant items
-        colors: List of colors (redundant items have same color)
-        min_spacing: Minimum spacing between unique orientations (degrees)
-    
-    Returns:
-        List of orientations matching the color redundancy pattern
-    """
-    max_attempts = 100
-    
-    for attempt in range(max_attempts):
-        # Find redundant color and indices
-        redundant_indices = get_redundant_indices(colors, redundant_n)
-        
-        # Generate unique orientations needed
-        # For set-size 4 with 2 redundant: need 3 unique orientations (2+1+1)
-        # For set-size 6 with 3 redundant: need 4 unique orientations (3+1+1+1)
-        unique_orientations_needed = set_size - redundant_n + 1
-        
-        unique_orientations = []
-        while len(unique_orientations) < unique_orientations_needed:
-            candidate = random.randint(0, 180)
-            
-            # Check spacing from existing unique orientations
-            if unique_orientations:
-                distances = [min_linear_distance(candidate, uo) for uo in unique_orientations]
-                if min(distances) < min_spacing:
-                    continue
-            
-            unique_orientations.append(candidate)
-        
-        # Assign orientations to items
-        orientations = [0] * set_size
-        
-        # Assign redundant orientation to redundant items
-        redundant_orientation = unique_orientations[0]
-        for idx in redundant_indices:
-            orientations[idx] = redundant_orientation
-        
-        # Assign unique orientations to non-redundant items
-        unique_indices = [i for i in range(set_size) if i not in redundant_indices]
-        for i, idx in enumerate(unique_indices):
-            orientations[idx] = unique_orientations[i + 1]  # Skip first (redundant)
-        
-        return orientations
-    
-    # Fallback: evenly spaced orientations
-    print('Warning: Could not generate orientations with redundancy, using fallback')
-    spacing = 180 / set_size
-    orientations = [int(i * spacing) for i in range(set_size)]
-    return orientations
-
-
-def generate_practice_trials_subexp3():
-    """
-    Generate practice trials for Sub-Experiment 3.
-    Ensures balanced distribution across set-sizes and trial types.
-    """
-    set_sizes = [4, 6]
-    practice_durations = [100, 200]  # 2 durations for practice
-    trial_types = ['Baseline', 'R-cue', 'NR-cue']
-    n_practice_trials = 5
-    
-    redundancy_by_set_size = {4: 2, 6: 3}
-    
-    # Create balanced distribution
-    # For 5 trials: mix of set-sizes and trial types
-    practice_set_sizes = [4, 4, 6, 6, 6]
-    # Mix trial types: at least one of each type
-    practice_trial_types = ['Baseline', 'R-cue', 'NR-cue', 'R-cue', 'NR-cue']
-    random.shuffle(practice_trial_types)
-    
-    trials = []
-    for i in range(n_practice_trials):
-        set_size = practice_set_sizes[i]
-        trial_type = practice_trial_types[i]
-        duration = random.choice(practice_durations)
-        redundant_n = redundancy_by_set_size[set_size]
-        
-        trial = generate_single_trial_subexp3(
-            set_size=set_size,
-            redundant_n=redundant_n,
-            duration_ms=duration,
-            trial_type=trial_type
-        )
-        trial['trial_number'] = i + 1
-        trial['is_practice'] = True
-        trials.append(trial)
-    
-    return trials
 
 # ============================================================
 # Sub-Experiment 2: Trial Generation Functions
@@ -1507,11 +821,16 @@ def generate_unique_colors(set_size, min_spacing=30):
     Used for Baseline trials where there's no redundancy.
     """
     max_attempts = 100
+    max_inner_attempts = 2000
     
     for attempt in range(max_attempts):
         colors = []
         
+        inner_attempts = 0
         while len(colors) < set_size:
+            inner_attempts += 1
+            if inner_attempts > max_inner_attempts:
+                break
             candidate = random.randint(0, 359)
             
             # Check spacing from all existing colors
@@ -1521,6 +840,9 @@ def generate_unique_colors(set_size, min_spacing=30):
                     continue
             
             colors.append(candidate)
+
+        if len(colors) < set_size:
+            continue
         
         return colors
     
@@ -1591,7 +913,7 @@ def generate_single_trial_subexp3(set_size, redundant_n, duration_ms, trial_type
     if trial_type == 'Baseline':
         # Baseline: All unique colors AND orientations, no redundancy
         colors = generate_unique_colors(set_size, min_spacing=30)
-        orientations = generate_unique_orientations(set_size, min_spacing=20)
+        orientations = generate_unique_orientations(set_size, min_spacing=30)
         positions = generate_positions_evenly_spaced(set_size)
         
         # Target can be any item (all are unique)
@@ -1636,18 +958,23 @@ def generate_single_trial_subexp3(set_size, redundant_n, duration_ms, trial_type
     }
 
 
-def generate_unique_orientations(set_size, min_spacing=20):
+def generate_unique_orientations(set_size, min_spacing=30):
     """
     Generate all unique orientations with minimum spacing constraint.
     Orientations are in degrees, range 0-180.
     Used for Baseline trials where there's no redundancy.
     """
-    max_attempts = 100
+    max_attempts = 200
+    max_inner_attempts = 2000
     
     for attempt in range(max_attempts):
         orientations = []
         
+        inner_attempts = 0
         while len(orientations) < set_size:
+            inner_attempts += 1
+            if inner_attempts > max_inner_attempts:
+                break
             candidate = random.randint(0, 180)
             
             # Check spacing from all existing orientations
@@ -1657,6 +984,9 @@ def generate_unique_orientations(set_size, min_spacing=20):
                     continue
             
             orientations.append(candidate)
+
+        if len(orientations) < set_size:
+            continue
         
         return orientations
     
@@ -1675,7 +1005,7 @@ def min_linear_distance(value1, value2):
     return abs(value1 - value2)
 
 
-def generate_orientations_with_redundancy(set_size, redundant_n, colors, min_spacing=20):
+def generate_orientations_with_redundancy(set_size, redundant_n, colors, min_spacing=30):
     """
     Generate orientations with redundancy matching colors.
     Redundant items (same color) must also have the same orientation.
@@ -1689,7 +1019,8 @@ def generate_orientations_with_redundancy(set_size, redundant_n, colors, min_spa
     Returns:
         List of orientations matching the color redundancy pattern
     """
-    max_attempts = 100
+    max_attempts = 200
+    max_inner_attempts = 2000
     
     for attempt in range(max_attempts):
         # Find redundant color and indices
@@ -1701,7 +1032,11 @@ def generate_orientations_with_redundancy(set_size, redundant_n, colors, min_spa
         unique_orientations_needed = set_size - redundant_n + 1
         
         unique_orientations = []
+        inner_attempts = 0
         while len(unique_orientations) < unique_orientations_needed:
+            inner_attempts += 1
+            if inner_attempts > max_inner_attempts:
+                break
             candidate = random.randint(0, 180)
             
             # Check spacing from existing unique orientations
@@ -1711,6 +1046,9 @@ def generate_orientations_with_redundancy(set_size, redundant_n, colors, min_spa
                     continue
             
             unique_orientations.append(candidate)
+
+        if len(unique_orientations) < unique_orientations_needed:
+            continue
         
         # Assign orientations to items
         orientations = [0] * set_size
@@ -1772,3 +1110,34 @@ def generate_practice_trials_subexp3():
     
     return trials
 
+
+def prolific_returned(data):
+    print("prolific_returned")
+    prolific_id = data.get('prolific_id')
+    if not prolific_id:
+        return {'error': 'No prolific_id provided'}
+    study_id = data.get('study_id')
+    if not study_id:
+        return {'error': 'No Study_id provided'}
+    submission_id = data.get('submission_id')
+    if not submission_id:
+        return {'error': 'No Submission_id provided'}
+
+    qs = QuerySelect()
+    query = f"SELECT prolific_id, study_id, session_id, uid, subexperiment FROM mall_experiments_participants WHERE prolific_id = '{prolific_id}' AND study_id = '{study_id}' AND prolific_returned IS NULL "
+    res = list(qs.sql(query))
+
+    print(res)
+
+    if res and res[0].get('subexperiment'):
+        # Put condition back on the queue
+        update_return_queue(res[0]['subexperiment'])
+
+        # Update the Participant DB
+        participant = Record(domain=config.SDB_EXPERIMENTS_PARTICIPANTS, key=res[0]['uid'])
+
+        attrs = {
+            'prolific_returned': datetime.utcnow().strftime(DATESTRING_FORMAT),
+        }
+        participant.set_attributes(attrs, True)
+        participant.update()

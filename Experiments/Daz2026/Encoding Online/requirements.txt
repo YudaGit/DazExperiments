@@ -6,3 +6,4 @@ flask_s3
 flask-compress
 xmltodict
 pyjwt
+pytz
