@@ -1286,7 +1286,7 @@ function fiveDegVA_in_pixels = calibrateMonitor()
                         currentLine = 'left';
                     end
                     WaitSecs(0.1);
-                elseif keyCode(KbName('Return'))
+                elseif any( [keyCode(KbName('Return')), keyCode(KbName('Return')+1)])
                     done = true;
                 end
                 blank(0);
