@@ -1485,8 +1485,8 @@ function [] = adjustSquareStim(VA5deg)
 %
 % LAYOUT (degrees at that distance)
 %   Stimulus square side length ≈ STIM_SIDE_DEG (default 1°).
-%   Stimulus centers lie on a circle of radius STIM_RING_RADIUS_DEG (default 4.75°,
-%   within 4.5–5°). The response wheel annulus is placed outside the stimulus ring.
+%   Stimulus centers lie on a circle of radius STIM_RING_RADIUS_DEG.
+%   Response wheel annulus matches Exp1_Encoding_1.m adjustStim: 4.25°–4.75° (inner–outer radius).
 
     global V
 
@@ -1495,7 +1495,11 @@ function [] = adjustSquareStim(VA5deg)
 
     % ---- Stimulus layout (degrees) — edit these if you change the design ----
     STIM_SIDE_DEG          = 1.0;    % side length of each square (~1° VA)
-    STIM_RING_RADIUS_DEG   = 1.88;   % radius from fixation to stimulus centers (4.5–5°)
+    STIM_RING_RADIUS_DEG   = 1.88;   % radius from fixation to stimulus centers
+
+    % ---- Response wheel (match Encoding Exp1_Encoding_1.m adjustStim) ----
+    WHEEL_ANNULUS_INNER_DEG = 4.25;
+    WHEEL_ANNULUS_OUTER_DEG = 4.75;
 
     % ---- Validate inputs ----
     if ~isfield(V,'window') || isempty(V.window) || ~Screen('WindowKind', V.window)
@@ -1509,9 +1513,6 @@ function [] = adjustSquareStim(VA5deg)
 
     % Radial extent: ring radius + half diagonal of square (corner farthest from fixation)
     half_diag_deg = STIM_SIDE_DEG * sqrt(2) / 2;
-    % Response wheel outside stimulus array (avoid overlap with squares)
-    WHEEL_ANNULUS_INNER_DEG = STIM_RING_RADIUS_DEG + half_diag_deg + 0.25;
-    WHEEL_ANNULUS_OUTER_DEG = WHEEL_ANNULUS_INNER_DEG + 0.55;
 
     V.layout.calibViewingDistanceMm   = CALIB_VIEWING_DISTANCE_MM;
     V.layout.stimSquareSideDeg        = STIM_SIDE_DEG;
@@ -1525,8 +1526,9 @@ function [] = adjustSquareStim(VA5deg)
     V.feedback.linewidth   = max(1, round(degpx * .08));
     V.feedback.ticklength  = round(degpx * .50);
 
-    V.annulus.radiusInner  = round(degpx * WHEEL_ANNULUS_INNER_DEG);
+    % Same assignment order and radii as Exp1_Encoding_1.m
     V.annulus.radiusOuter  = round(degpx * WHEEL_ANNULUS_OUTER_DEG);
+    V.annulus.radiusInner  = round(degpx * WHEEL_ANNULUS_INNER_DEG);
 
     V.stim.positionradius  = round(degpx * STIM_RING_RADIUS_DEG);
 
