@@ -2,6 +2,10 @@
 % NoisyPilot_SvDProper.m   (Set-size 1 + Statistical vs Deterministic)
 % Pilot: Set sizes 1, 2, 6; set-size 1 = single condition per noise;
 %        N=2,6 have Baseline + Homo redundancy; sampling mode alternates by session.
+% Stimulus ring: ArrayRotationDeg = random per trial; StimulusLocations are stored as
+%   already-rotated on-screen azimuths in the trial table. WheelRotation = session wheel.
+% Data: saves under ./Data/ next to this file (see getExperimentDataDir); copy the whole
+%   experiment folder to another machine — no path edits needed.
 %======================================================================
 
 clear; close all; clc;
@@ -27,17 +31,19 @@ design.NoiseLevels  = {'low', 'high'}; % Noise levels
 design.SetSize1Reps = 25;              % Trials per noise for N=1 (single condition; baseline = homo)
 design.BaselineReps = 25;              % Per N×Noise for N=2,6 (Baseline)
 design.HomoReps     = 25;              % Per N×Noise for N=2,6 (Homo_Space)
-design.PracticeReps = 0;               % No practice trials
-design.presDur      = 0.40;            % Stimulus on-screen duration (s); this is what the main loop uses
-design.retDur       = 1.0;             % Retention interval (s) before response
+design.PracticeReps = 5;               % Practice trials per session (before main block)
+% Timing: values here are copied into V.Durations after initiate() (see below).
+% Trial loop uses only V.Durations — not per-trial table columns.
+design.presDur      = 0.40;            % → V.Durations.PresentationDuration (stimulus on-screen, s)
+design.retDur       = 1.0;             % → V.Durations.RetentionDuration (masked retention before response, s)
 design.SegmentDur   = 0.30;            % Unused for timing; kept for compatibility
-design.ISI          = 0.20;            % Inter-segment interval (s), if multiple segments
+design.ISI          = 0.20;            % → V.Durations.InterSegmentInterval (between segments, s)
 
-% Debug mode: print and exit without PTB window
+% Debug mode: print and exit without PTB window (set DebugNoPTB false for real pilot)
 DebugVerify = false;
-DebugNoPTB = true;
+DebugNoPTB = false;
 DebugVerifyTrials = 3;
-DebugSkipInstructions = true;
+DebugSkipInstructions = false;
 
 if DebugVerify && DebugNoPTB
     global V
@@ -46,8 +52,8 @@ if DebugVerify && DebugNoPTB
     V.color.rotation = randi([0, 359]);
     V.square.B = 10;
     V.color.map = buildColorMapNoPTB();
-    P.K_LowNoise  = 20;
-    P.K_HighNoise = 0.8;
+    P.K_LowNoise  = 10;
+    P.K_HighNoise = 0.78;
     P.samplingMode = 'deterministic';
     if size(V.color.map,1) == 360
         P.cMap360_255 = V.color.map;
@@ -56,6 +62,7 @@ if DebugVerify && DebugNoPTB
         P.cMap360_255 = V.color.map(idx, :);
     end
     P.PrecomputeStimuli = false;
+    P.DebugDrawNoiseLevel = false;
     P.DebugVerify = DebugVerify;
     P.DebugVerifyTrials = DebugVerifyTrials;
     P.DebugSkipInstructions = DebugSkipInstructions;
@@ -74,6 +81,10 @@ V = initiate();             % your existing helper: opens window & sets V
 win = V.window;
 V.PrintScreens = false;     % don't save screenshots by default
 
+% Central timing for this experiment (lab convention: V.Durations.*)
+V.Durations.PresentationDuration   = design.presDur;
+V.Durations.RetentionDuration      = design.retDur;
+V.Durations.InterSegmentInterval   = design.ISI;
 
 % Generate practice & main tables
 [pracTrials, expTrials] = TrialMatrixSeq3way_SvDProper(design, sessionN, participantID, age, timestamp);
@@ -85,13 +96,13 @@ printTrialBalance(expTrials);
 VA5deg        = calibrateMonitor();
 adjustSquareStim(VA5deg);  % Use square stimulus adjustment for noisy squares
 wheelTex      = DrawWheel();
-neutralTex    = DrawNeutralWheel();
+neutralTex    = DrawNeutralWheel(); %#ok<NASGU> % reserved if orientation-cue trials added
 
 % Noise parameters (EXACTLY matching NoiseDemo_VMRand.m)
-P.K_LowNoise      = 20;       % concentration parameter (high = narrow distribution)
+P.K_LowNoise      = 10;       % concentration parameter (high = narrow distribution)
                                 % Higher kappa = tighter clustering around target
                                 % Typical range: 20-100 for low noise
-P.K_HighNoise     = 0.8;         % concentration parameter (lower = wider distribution)
+P.K_HighNoise     = 0.78;         % concentration parameter (lower = wider distribution)
                                 % Lower kappa = wider spread around target
                                 % Typical range: 1-10 for high noise
 % Note: For better discriminability, aim for kappa ratio > 10:1
@@ -109,7 +120,9 @@ P.DebugSkipInstructions = DebugSkipInstructions;    % skip instructions in debug
 P.PrecomputeStimuli = true;       % precompute tile patterns and target hue (false = on-the-fly)
 P.AssertUniqueRedundant = true;   % error if redundant items are identical (rounded)
 P.LogRedundantFingerprint = false;% if true, print mean/std/sum(round(h)) per item for debugging
-P.SaveStimulusSnap = true;       % save each trial's stimulus display as PNG for inspection
+P.SaveStimulusSnap = false;       % save each trial's stimulus display as PNG for inspection
+P.DebugDrawNoiseLevel = false;   % true: fprintf noise level every segment (very verbose)
+P.nPracticeTrials = design.PracticeReps;  % for instructions text
 % Prepare color map for noisy stimuli (360-row lookup)
 if size(V.color.map,1) == 360
     P.cMap360_255 = V.color.map;
@@ -121,159 +134,207 @@ end
 % Precompute stimuli patterns + offsets if enabled
 if isfield(P, 'PrecomputeStimuli') && P.PrecomputeStimuli
     expTrials = precomputeStimuli(expTrials, P);
+    if height(pracTrials) > 0
+        pracTrials = precomputeStimuli(pracTrials, P);
+    end
 end
 
-% Per-trial stimulus snap: directory for saving stimulus screenshots (when P.SaveStimulusSnap is true)
-snapDir = [];
+% Per-trial stimulus snap folders (when P.SaveStimulusSnap is true)
+snapDirMain = [];
+snapDirPrac = [];
 if isfield(P, 'SaveStimulusSnap') && P.SaveStimulusSnap
-    saveDirBase = 'Noise Pilot SvDProper Data';
-    snapDir = fullfile(saveDirBase, 'StimulusSnaps', sprintf('%s_sess%d_%s', participantID, sessionN, timestamp));
-    if ~isfolder(snapDir)
-        mkdir(snapDir);
+    saveDirBase = getExperimentDataDir();
+    baseSnap = fullfile(saveDirBase, 'StimulusSnaps', sprintf('%s_sess%d_%s', participantID, sessionN, timestamp));
+    snapDirMain = fullfile(baseSnap, 'Main');
+    if ~isfolder(snapDirMain)
+        mkdir(snapDirMain);
     end
-    fprintf('Stimulus snap folder: %s\n', snapDir);
+    fprintf('Main stimulus snaps: %s\n', snapDirMain);
+    if height(pracTrials) > 0
+        snapDirPrac = fullfile(baseSnap, 'Practice');
+        if ~isfolder(snapDirPrac)
+            mkdir(snapDirPrac);
+        end
+        fprintf('Practice stimulus snaps: %s\n', snapDirPrac);
+    end
 end
 
 try
-    % Main instructions (skip practice for pilot)
-    if ~(isfield(P, 'DebugVerify') && P.DebugVerify && P.DebugSkipInstructions)
+    skipInst = isfield(P, 'DebugVerify') && P.DebugVerify && P.DebugSkipInstructions;
+    runPractice = height(pracTrials) > 0 && ~skipInst;
+
+    if runPractice
+        instructions(2);
+        pracTrials = runSvDProperTrialBlock(pracTrials, win, wheelTex, snapDirPrac, false);
+    end
+
+    if ~skipInst
         instructions(3);
     end
 
-    % — Main Loop —
-    stopEarly = false;
-    for ii = 1:height(expTrials)
-        tr = expTrials(ii,:);
-    
-        % Start of trial: only fixation (no location indicators)
-        Screen('FillRect', win, V.patch.bg);
-        fixation(0);
-        Screen('Flip', win);
-        WaitSecs(V.Durations.FixationDuration); 
-        
-        % Track which locations have been shown (and will be masked)
-        shownLocations = [];
-        
-        % Initialize per-trial stimulus stats for mean-offset target hue
-        StimStats.meanOffsets = nan(1, tr.ItemN);
-        StimStats.baseHues = nan(1, tr.ItemN);
-        StimStats.condition = tr.Condition{1};
-        StimStats.tileHues = cell(1, tr.ItemN);
-        StimStats.trialIndex = ii;
-        
-        % 1) Presentation sequence (simultaneous: single segment with all items, sequential: multiple segments)
-        allSegs = tr.SegmentOrder{1};                 % cell array: {1:N} for simultaneous, {1},{2},... for sequential
-        locs = tr.StimulusLocations{1};
-        
-        for seg = 1:numel(allSegs)
-            idxList = allSegs{seg};                   % numeric vector (1×1 for singletons)
-        
-            % Show stimulus with existing masks
-            Screen('FillRect', win, V.patch.bg);
-            fixation(0);
-            % Draw masks for previously shown locations
-            if ~isempty(shownLocations)
-                DrawMasksAtLocations(shownLocations);
-            end
-            DrawStimulusSegment(tr, idxList);         % now handles vector or scalar
-            Screen('Flip', win);
-            if ~isempty(snapDir)
-                saveTrialStimulusSnap(win, ii, seg, snapDir);
-            end
-            % Stimulus on-screen duration: use per-trial presDur (from design.presDur)
-            WaitSecs(tr.presDur);
-        
-            % Track locations shown in this segment
-            for k = idxList
-                angleDeg = locs(k);
-                if ~ismember(angleDeg, shownLocations)
-                    shownLocations = [shownLocations, angleDeg];
-                end
-            end
-            
-            % Immediately replace stimulus with mask
-            Screen('FillRect', win, V.patch.bg);
-            fixation(0);
-            DrawMasksAtLocations(shownLocations);  % Draw all masks for shown locations
-            Screen('Flip', win);
-            
-            if seg < numel(allSegs)
-                WaitSecs(design.ISI);
-            end
-        end
-        
-        % Compute target hue based on actual sampled mean offsets
-        targetHue = computeTargetHue(tr, StimStats);
-        expTrials.TargetHue(ii) = targetHue;
-        expTrials.MeanOffsets{ii} = StimStats.meanOffsets;
-        expTrials.BaseHues{ii} = StimStats.baseHues;
-        
-        % 2) Final retention (fixation + all masks)
-        Screen('FillRect', win, V.patch.bg);
-        fixation(0);
-        DrawMasksAtLocations(shownLocations);  % Masks serve as location indicators
-        Screen('Flip', win);
-        WaitSecs(tr.retDur);  
-
-        % 5) Response
-        [ expTrials.MouseX{ii}, expTrials.MouseY{ii}, ...
-          expTrials.MouseAngles{ii}, expTrials.MouseDistances{ii}, ...
-          expTrials.MouseTime{ii}, expTrials.ResponseTime(ii), ...
-          expTrials.ResponseAngle(ii), expTrials.DerotatedResponseAngle(ii), ...
-          expTrials.Precision(ii) ] = ...
-            GetResponse(tr, wheelTex);
-
-        % 6) Speed check & feedback
-        [ expTrials.MouseInitTooSlow(ii), expTrials.MouseInitTooFast(ii), ...
-          expTrials.TrialTooSlow(ii) ] = speedCheck(expTrials(ii,:));
-        DrawWheelFeedback(expTrials(ii,:), wheelTex);
-        penalty  = expTrials.TrialTooSlow(ii)*V.Durations.FeedbackPenaltyDuration;
-        standard = ~expTrials.TrialTooSlow(ii)*V.Durations.FeedbackDuration;
-        WaitSecs(penalty+standard);
-
-        % 7) Inter‐trial feedback
-        DrawIntertrialFeedbackFast( expTrials(1:ii,:), win, V.windowRect, height(expTrials) );
-
-        if isfield(P, 'DebugVerify') && P.DebugVerify && ii >= P.DebugVerifyTrials
-            stopEarly = true;
-            break;
-        end
-    end
-
-    if stopEarly
+    doDbg = isfield(P, 'DebugVerify') && P.DebugVerify;
+    [expTrials, mainStoppedEarly] = runSvDProperTrialBlock(expTrials, win, wheelTex, snapDirMain, doDbg);
+    if mainStoppedEarly
         printStimulusChecks(expTrials, P.DebugVerifyTrials);
         ExperimentEnd(true);
         return;
     end
 
-    % ----------------------------
-    % Save and finish
-    % ----------------------------
-    SaveData(expTrials, sessionN, participantID, timestamp);
+    SaveData(expTrials, sessionN, participantID, timestamp, P, design);
     ExperimentEnd(true);
 
 catch ME
     disp('An error occurred:'); disp(ME.message);
+    try
+        disp(getReport(ME, 'extended'));
+    catch %#ok<CTCH>
+    end
     ExperimentEnd(false);
 end
 
 
 % Display Functions
 %========================================================
+function [T, stoppedEarly] = runSvDProperTrialBlock(T, win, wheelTex, snapDir, doDebugEarlyExit)
+% Run one block (practice or main). stoppedEarly true if debug early-exit after DebugVerifyTrials.
+% Stimulus/retention/ISI timing: V.Durations.PresentationDuration, RetentionDuration, InterSegmentInterval.
+    global V
+    global P
+    global StimStats
+    stoppedEarly = false;
+    nTot = height(T);
+    for ii = 1:nTot
+        tr = T(ii,:);
+        Screen('FillRect', win, V.patch.bg);
+        fixation(0);
+        Screen('Flip', win);
+        WaitSecs(V.Durations.FixationDuration);
+        shownLocations = [];
+        StimStats.meanOffsets = nan(1, tr.ItemN);
+        StimStats.baseHues = nan(1, tr.ItemN);
+        StimStats.condition = tr.Condition{1};
+        StimStats.tileHues = cell(1, tr.ItemN);
+        StimStats.trialIndex = ii;
+        allSegs = tr.SegmentOrder{1};
+        locs = effectiveStimulusAzimuthsDeg(tr);
+        for seg = 1:numel(allSegs)
+            idxList = allSegs{seg};
+            Screen('FillRect', win, V.patch.bg);
+            fixation(0);
+            if ~isempty(shownLocations)
+                DrawMasksAtLocations(shownLocations);
+            end
+            DrawStimulusSegment(tr, idxList);
+            Screen('Flip', win);
+            % Full presentation duration with stimulus on-screen; snap AFTER wait so GetImage/imwrite
+            % does not inflate presentation time.
+            WaitSecs(V.Durations.PresentationDuration);
+            if ~isempty(snapDir)
+                saveTrialStimulusSnap(win, ii, seg, snapDir);
+            end
+            for k = idxList
+                angleDeg = locs(k);
+                if ~ismember(angleDeg, shownLocations)
+                    shownLocations = [shownLocations, angleDeg];
+                end
+            end
+            Screen('FillRect', win, V.patch.bg);
+            fixation(0);
+            DrawMasksAtLocations(shownLocations);
+            Screen('Flip', win);
+            if seg < numel(allSegs)
+                WaitSecs(V.Durations.InterSegmentInterval);
+            end
+        end
+        targetHue = computeTargetHue(tr, StimStats);
+        T.TargetHue(ii) = targetHue;
+        T.MeanOffsets{ii} = StimStats.meanOffsets;
+        T.BaseHues{ii} = StimStats.baseHues;
+        Screen('FillRect', win, V.patch.bg);
+        fixation(0);
+        DrawMasksAtLocations(shownLocations);
+        Screen('Flip', win);
+        WaitSecs(V.Durations.RetentionDuration);
+        [ T.MouseX{ii}, T.MouseY{ii}, T.MouseAngles{ii}, T.MouseDistances{ii}, ...
+          T.MouseTime{ii}, T.ResponseTime(ii), T.ResponseAngle(ii), ...
+          T.DerotatedResponseAngle(ii), T.Precision(ii) ] = ...
+            GetResponse(T(ii,:), wheelTex);
+        [ T.MouseInitTooSlow(ii), T.MouseInitTooFast(ii), T.TrialTooSlow(ii) ] = speedCheck(T(ii,:));
+        DrawWheelFeedback(T(ii,:), wheelTex);
+        penalty  = T.TrialTooSlow(ii)*V.Durations.FeedbackPenaltyDuration;
+        standard = ~T.TrialTooSlow(ii)*V.Durations.FeedbackDuration;
+        WaitSecs(penalty+standard);
+        DrawIntertrialFeedbackFast(T(1:ii,:), win, V.windowRect, nTot);
+        if doDebugEarlyExit && isfield(P, 'DebugVerifyTrials') && P.DebugVerifyTrials > 0 && ii >= P.DebugVerifyTrials
+            stoppedEarly = true;
+            break;
+        end
+    end
+end
+
+function dataDir = getExperimentDataDir()
+% Local data folder: <folder containing NoisyPilot_SvDProper.m>/Data
+% Works when the experiment folder is copied to another machine (no absolute paths).
+    persistent cachedDir
+    if isempty(cachedDir)
+        thisFile = mfilename('fullpath');
+        if isempty(thisFile)
+            expDir = pwd;
+        else
+            expDir = fileparts(thisFile);
+        end
+        dataDir = fullfile(expDir, 'Data');
+        if ~isfolder(dataDir)
+            mkdir(dataDir);
+        end
+        cachedDir = dataDir;
+    else
+        dataDir = cachedDir;
+    end
+end
+
+function rot = getArrayRotationDeg(trial)
+% Per-trial rotation of the stimulus ring (deg), independent of V.color.rotation (wheel).
+    rot = 0;
+    if istable(trial) && ismember('ArrayRotationDeg', trial.Properties.VariableNames)
+        r = trial.ArrayRotationDeg(1);
+        if isfinite(r) && ~isnan(r)
+            rot = double(r);
+        end
+    elseif isstruct(trial) && isfield(trial, 'ArrayRotationDeg') && ~isempty(trial.ArrayRotationDeg)
+        r = trial.ArrayRotationDeg;
+        if isfinite(r) && ~isnan(r)
+            rot = double(r);
+        end
+    end
+    rot = mod(rot, 360);
+end
+
+function locs = effectiveStimulusAzimuthsDeg(trial)
+% Screen azimuths (deg) used for drawing on this trial.
+% Trial matrix now stores StimulusLocations as already-rotated per-trial azimuths.
+    canon = trial.StimulusLocations{1};
+    if iscell(canon)
+        canon = canon{1};
+    end
+    locs = mod(double(canon(:))', 360);
+end
+
 function drawRings(tr)
     % Draw 6 fixed square location indicators (always 6, regardless of set size)
     % Squares are 1.1x larger than the stimulus squares
     global V
     numLocations = 6;  % Always show 6 location indicators
-    baseAngle = 90;    % Start at 12 o'clock (90 degrees), no rotation
+    baseAngle = 90;    % Template at 12 o'clock; add per-trial array rotation
+    rot = getArrayRotationDeg(tr);
     
     % Calculate square indicator size (1.1x larger than stimulus)
     indicatorSize = V.square.side_px_full * 1.1;
     halfSize = indicatorSize / 2;
     
-    % Fixed positions: evenly spaced around circle, starting at 12 o'clock
+    % Evenly spaced around circle (same rotation as stimulus array)
     for j = 1:numLocations
-        angleDeg = baseAngle + (j-1) * (360/numLocations);
+        angleDeg = mod(baseAngle + (j-1) * (360/numLocations) + rot, 360);
         theta = deg2rad(angleDeg);
         x = V.centerX + V.stim.positionradius * cos(theta);
         y = V.centerY - V.stim.positionradius * sin(theta);
@@ -293,7 +354,7 @@ function DrawStimulusSegment(trial, idx)
     if iscell(idx), idx = idx{1}; end
     idx = idx(:)';                      % row
 
-    locs = trial.StimulusLocations{1};
+    locs = effectiveStimulusAzimuthsDeg(trial);
     cols = trial.Colors{1};
     
     % Get noise level from trial (if available), default to 'low'
@@ -319,9 +380,9 @@ function DrawStimulusSegment(trial, idx)
         noiseLevel = 'low';  % Default to low noise
     end
     
-    % Debug: Print noise level (TEMPORARY - remove after verification)
-    % Uncomment the next line to see noise levels being used
-    fprintf('DrawStimulusSegment: NoiseLevel = "%s"\n', noiseLevel);
+    if isfield(P, 'DebugDrawNoiseLevel') && P.DebugDrawNoiseLevel
+        fprintf('DrawStimulusSegment: NoiseLevel = "%s"\n', noiseLevel);
+    end
 
     % All stimuli in this segment use the same noise level (trial-level property)
     for k = idx
@@ -330,22 +391,35 @@ function DrawStimulusSegment(trial, idx)
         
         % Generate noisy pattern (mode-dependent)
         usedPrecompute = false;
-        if isfield(P, 'PrecomputeStimuli') && P.PrecomputeStimuli && ...
-           istable(trial) && ismember('TileRGB', trial.Properties.VariableNames) && ...
-           ~isempty(trial.TileRGB{1})
-            rgb01 = trial.TileRGB{1}{k};
-            huesDeg = trial.TileHues{1}{k};
+        % Do NOT use ~isempty(TileRGB{1}): enrich stores scalar nan there, which is
+        % non-empty — then trial.TileRGB{1}{k} errors. Require real precomputed cell.
+        nIt = trial.ItemN;
+        if iscell(nIt), nIt = nIt(1); end
+        tc = []; th = [];
+        if istable(trial) && ismember('TileRGB', trial.Properties.VariableNames)
+            tc = trial.TileRGB{1};
+        end
+        if istable(trial) && ismember('TileHues', trial.Properties.VariableNames)
+            th = trial.TileHues{1};
+        end
+        preOk = isfield(P, 'PrecomputeStimuli') && P.PrecomputeStimuli && ...
+                istable(trial) && ismember('TileRGB', trial.Properties.VariableNames) && ...
+                iscell(tc) && iscell(th) && numel(tc) >= nIt && numel(th) >= nIt && ...
+                isnumeric(tc{1}) && ~isempty(tc{1}) && isnumeric(th{1}) && ~isempty(th{1});
+        if preOk
+            rgb01 = tc{k};
+            huesDeg = th{k};
             StimStats.meanOffsets(k) = trial.MeanOffsets{1}(k);
             StimStats.baseHues(k) = trial.BaseHues{1}(k);
             usedPrecompute = true;
         else
-            [rgb01, huesDeg] = getPatternByMode(V, targetHueDeg, noiseLevel, P);
+            [rgb01, huesDeg] = getPatternByMode(V, targetHueDeg, noiseLevel, P, k);
             if strcmpi(StimStats.condition, 'Homo_Space') && ...
                isfield(P, 'samplingMode') && strcmpi(P.samplingMode, 'statistical')
                 maxResample = 10;
                 resampleCount = 0;
                 while any(cellfun(@(h) isequal(round(h), round(huesDeg)), StimStats.tileHues(1:k-1)))
-                    [rgb01, huesDeg] = getPatternByMode(V, targetHueDeg, noiseLevel, P);
+                    [rgb01, huesDeg] = getPatternByMode(V, targetHueDeg, noiseLevel, P, k);
                     resampleCount = resampleCount + 1;
                     if resampleCount >= maxResample
                         break;
@@ -382,12 +456,14 @@ function [] = instructions(n)
                     'Report the color of the cued target \n' ...
                     'using the mouse and the response color wheel'];
     elseif n == 2
-        inst = ['Practice block:\n\n\n' ...
-            'You can experience random stimulus display durations\n' ...
-            'with these practice trials.\n\n' ...
-            'You can choose to go without practice trials in later sessions\n' ...
-            'by informing the experimenter.\n\n' ...
-            'Practice data will not contribute to main data']; 
+        np = 5;
+        if isfield(P, 'nPracticeTrials') && ~isempty(P.nPracticeTrials)
+            np = P.nPracticeTrials;
+        end
+        inst = sprintf(['Practice block (%d trials)\n\n\n' ...
+            'These trials match the main task (set sizes, noise, redundancy).\n' ...
+            'Practice responses are saved separately and are not part of the main dataset.\n\n' ...
+            'When you are ready, begin the practice block.'], np); 
     elseif n == 3
         % Include sampling mode for this session (deterministic vs statistical)
         modeStr = 'deterministic';
@@ -504,7 +580,14 @@ function [] = DrawWheelFeedback(trial, wheelTexture, orientationTexture)
     if trial.CuedFeature_i == 0 %color
         Screen('DrawTexture', V.window, wheelTexture, [], [], V.color.rotation);
         rspAngle = deg2rad(mod(trial.ResponseAngle + V.color.rotation, 360));
-        targetAngle = deg2rad(mod(trial.Colors{1}(trial.Target) + V.color.rotation, 360));
+        % Feedback target should match scoring target (trial.TargetHue), not raw base hue.
+        if isfield(trial, 'TargetHue') && ~isnan(trial.TargetHue)
+            trueTargetHue = trial.TargetHue;
+        else
+            % Fallback for compatibility if TargetHue is missing.
+            trueTargetHue = trial.Colors{1}(trial.Target);
+        end
+        targetAngle = deg2rad(mod(trueTargetHue + V.color.rotation, 360));
 
         rspX =  V.centerX + V.annulus.radiusOuter * 1.1 * cos(rspAngle);
         rspY =  V.centerY + V.annulus.radiusOuter * 1.1 * sin(rspAngle);
@@ -578,7 +661,11 @@ function v = StimulusDurations(v)
 % single-value legacy fields (kept for old helpers that expect them)
 v.Durations.FixationDuration       = 1.000;
 %V.Durations.PreCueDuration         = 0.30;
-v.Durations.StimulusDuration       = [0.10 0.15 0.20 0.25 0.30 0.35];
+% SvD Proper main loop (runSvDProperTrialBlock): overwritten from design.* after initiate()
+v.Durations.PresentationDuration   = 0.40;  % stimulus on-screen per segment (s)
+v.Durations.RetentionDuration      = 1.00;   % masked retention before response (s)
+v.Durations.InterSegmentInterval   = 0.20;  % ISI between segments with masks on (s)
+v.Durations.StimulusDuration       = [0.10 0.15 0.20 0.25 0.30 0.35]; % legacy: condition-wise list (other scripts)
 v.Durations.MaskDuration           = 0.750;
 v.Durations.FeedbackDuration       = 0.750;
 v.Durations.FeedbackPenaltyDuration= 2.00;
@@ -597,7 +684,8 @@ function TargetCue(trial, refresh)
     DrawAllMasks(trial);
     
     % Then draw white outline around the cued target mask
-    targetAngle = trial.StimulusLocations{1}(trial.Target);
+    locsEff = effectiveStimulusAzimuthsDeg(trial);
+    targetAngle = locsEff(trial.Target);
     theta = deg2rad(targetAngle);
     centerX = round(V.centerX + V.stim.positionradius * cos(theta));
     centerY = round(V.centerY - V.stim.positionradius * sin(theta));  % Note: -sin for y-axis (screen coordinates)
@@ -735,16 +823,17 @@ end
 function DrawAllMasks(trial)
     % Draw masks at all stimulus locations (used during retention and response)
     global V
-    locs = trial.StimulusLocations{1};
+    locs = effectiveStimulusAzimuthsDeg(trial);
     DrawMasksAtLocations(locs);
 end
 
 function Mask(trial)
     % Legacy function - kept for compatibility
     global V
+    locsEff = effectiveStimulusAzimuthsDeg(trial);
     for ii = 1:trial.ItemN
         noiseMaskTex = GaussianTexture;
-        theta = deg2rad(trial.StimulusLocations{1}(ii));
+        theta = deg2rad(locsEff(ii));
         centerX = V.centerX + V.stim.positionradius * cos(theta);
         centerY = V.centerY - V.stim.positionradius * sin(theta);
         basePedestal = [0, 0, V.stim.pedestalradius * 2, V.stim.pedestalradius * 2];
@@ -1011,7 +1100,7 @@ function [x, y, angles, distances, mousetime, rt, responseangle, derotatedAngle,
                 derotatedAngle = angles(end);
                 precision = trial.Orientations{1}(trial.Target) - responseangle;
                 if precision < -180; precision = precision + 360; end
-                if precision > 180; precision = precisiopositionradiusn - 360; end
+                if precision > 180; precision = precision - 360; end
 
             else
                 responseangle = mod(angles(end) - V.color.rotation, 360);
@@ -1091,10 +1180,16 @@ function x = randColors(n)
     end
 end
 
-function [] = SaveData(expTrials, sessionN, participantID, timestamp)
-% Saving data for Pilot: SvD Proper (Set-size 1 + Stat vs Deter by session)
+function [] = SaveData(expTrials, sessionN, participantID, timestamp, P, design)
+% Main session save: expTrials table + V + P (sampling params) + design (reps) + ids.
     global V
-    saveDir = 'Noise Pilot SvDProper Data';
+    if nargin < 6 || isempty(design)
+        design = struct();
+    end
+    if nargin < 5 || isempty(P)
+        P = struct();
+    end
+    saveDir = getExperimentDataDir();
     if ~isfolder(saveDir)
         mkdir(saveDir);
         disp(['Save Data Directory Created: ', saveDir]);
@@ -1103,13 +1198,13 @@ function [] = SaveData(expTrials, sessionN, participantID, timestamp)
                     participantID, sessionN, timestamp);
     fullpath = fullfile(saveDir, fname);
     try
-        save(fullpath, 'expTrials', 'V');
-        fprintf('✔ Data saved to:\n  %s\n', fullpath);
+        save(fullpath, 'expTrials', 'V', 'P', 'design', 'sessionN', 'participantID', 'timestamp', '-v7.3');
+        fprintf('Data saved to:\n  %s\n', fullpath);
     catch ME
         warning('Failed to save data: %s\nError message:\n%s', ...
                 fullpath, ME.message);
     end
-     disp(['Data File: ', fname ' saved in directory ', saveDir]);
+    disp(['Data file: ', fname, ' in ', saveDir]);
 end
 
 
@@ -1268,6 +1363,8 @@ end
 
 function fiveDegVA_in_pixels = calibrateMonitor()
     global V
+    % Physical width of 5° at this distance (must match participant setup during the task).
+    CALIB_VIEWING_DISTANCE_MM = 600;
 
     % check calibration exists
     currentConfig.pcName = getenv('COMPUTERNAME');
@@ -1289,9 +1386,11 @@ function fiveDegVA_in_pixels = calibrateMonitor()
     if runCalibration
 
         DrawFormattedText(V.window, ...
-            ['Align these two lines with the edges of your credit card.\n\nUse LEFT/RIGHT ' ...
-            'arrow keys to move each line.\nUse UP/DOWN arrow keys to choose which line' ...
-            ' moves.\nPress ENTER when done.'], ...
+            ['Align these two lines with the edges of your credit card.\n\n' ...
+            'Sit at the same viewing distance as during the experiment (~60 cm).\n\n' ...
+            'Use LEFT/RIGHT arrow keys to move each line.\n' ...
+            'Use UP/DOWN arrow keys to choose which line moves.\n' ...
+            'Press ENTER when done.'], ...
             'center', 'center', [255 255 255]);
         Screen('Flip', V.window);
         WaitSecs(1);
@@ -1329,7 +1428,7 @@ function fiveDegVA_in_pixels = calibrateMonitor()
                         currentLine = 'left';
                     end
                     WaitSecs(0.1);
-                elseif keyCode(KbName('Return'))
+                elseif any( [keyCode(KbName('Return')), keyCode(KbName('return')+1)] )
                     done = true;
                 end
                 blank(0);
@@ -1358,8 +1457,9 @@ function fiveDegVA_in_pixels = calibrateMonitor()
         measured = rightLineX - leftLineX;
         CreditCardWith = 85.60;
         pixelsPerMm = measured / CreditCardWith;
-        viewingdistance = 600; % 60cm
-        desiredAngleDeg = 5; % 5 degree visual angle
+        % Must match participant viewing distance during the experiment (see adjustSquareStim header).
+        viewingdistance = CALIB_VIEWING_DISTANCE_MM;
+        desiredAngleDeg = 5; % reference span used to compute px/deg (width of 5° in pixels)
         stim_in_mm = 2 * viewingdistance * tan((desiredAngleDeg / 2) * (pi/180));
         fiveDegVA_in_pixels = round( stim_in_mm * pixelsPerMm );
 
@@ -1371,11 +1471,31 @@ function fiveDegVA_in_pixels = calibrateMonitor()
 end
 
 function [] = adjustSquareStim(VA5deg)
-% ADJUSTSQUARESTIM  VA-based geometry for upright square stimuli.
-% - Squares are axis-aligned (no rotation).
-% - Stimulus CENTERS lie on the 5° circle (radius = VA5deg/2).
+% ADJUSTSQUARESTIM  Visual-angle geometry for upright noisy square stimuli.
+%
+% INPUT
+%   VA5deg — Pixel width on screen that subtends 5° at the calibrated viewing
+%            distance (from calibrateMonitor: credit-card width + 600 mm distance).
+%            pxPerDeg = VA5deg / 5.
+%
+% VIEWING DISTANCE
+%   Must match calibrateMonitor (600 mm = 60 cm). If the participant sits
+%   closer/farther, px/deg from calibration will be wrong — re-run calibration
+%   or change CALIB_VIEWING_DISTANCE_MM in both calibrateMonitor and here.
+%
+% LAYOUT (degrees at that distance)
+%   Stimulus square side length ≈ STIM_SIDE_DEG (default 1°).
+%   Stimulus centers lie on a circle of radius STIM_RING_RADIUS_DEG (default 4.75°,
+%   within 4.5–5°). The response wheel annulus is placed outside the stimulus ring.
 
     global V
+
+    % Must match calibrateMonitor CALIB_VIEWING_DISTANCE_MM.
+    CALIB_VIEWING_DISTANCE_MM = 600;
+
+    % ---- Stimulus layout (degrees) — edit these if you change the design ----
+    STIM_SIDE_DEG          = 1.0;    % side length of each square (~1° VA)
+    STIM_RING_RADIUS_DEG   = 1.88;   % radius from fixation to stimulus centers (4.5–5°)
 
     % ---- Validate inputs ----
     if ~isfield(V,'window') || isempty(V.window) || ~Screen('WindowKind', V.window)
@@ -1385,35 +1505,45 @@ function [] = adjustSquareStim(VA5deg)
         error('adjustSquareStim:InvalidVA5','VA5deg must be a positive finite scalar (pixels).');
     end
 
-    % ---- px/deg & the center-path radius (5° circle) ----
-    V.pxPerDeg               = VA5deg / 5;                  % px per 1°
-    V.layout.centerRadiusPx  = max(1, round(VA5deg/2));     % = 2.5° in px
+    V.pxPerDeg = VA5deg / 5;
 
-    % ---- Derive other geometry (scaled from your originals) ----
+    % Radial extent: ring radius + half diagonal of square (corner farthest from fixation)
+    half_diag_deg = STIM_SIDE_DEG * sqrt(2) / 2;
+    % Response wheel outside stimulus array (avoid overlap with squares)
+    WHEEL_ANNULUS_INNER_DEG = STIM_RING_RADIUS_DEG + half_diag_deg + 0.25;
+    WHEEL_ANNULUS_OUTER_DEG = WHEEL_ANNULUS_INNER_DEG + 0.55;
+
+    V.layout.calibViewingDistanceMm   = CALIB_VIEWING_DISTANCE_MM;
+    V.layout.stimSquareSideDeg        = STIM_SIDE_DEG;
+    V.layout.stimulusRingRadiusDeg    = STIM_RING_RADIUS_DEG;
+    V.layout.maxStimulusExtentDeg     = STIM_RING_RADIUS_DEG + half_diag_deg;
+    V.layout.wheelAnnulusInnerDeg     = WHEEL_ANNULUS_INNER_DEG;
+    V.layout.wheelAnnulusOuterDeg     = WHEEL_ANNULUS_OUTER_DEG;
+    V.layout.stimRingRadiusPx         = max(1, round(V.pxPerDeg * STIM_RING_RADIUS_DEG));
+
     degpx = V.pxPerDeg;
     V.feedback.linewidth   = max(1, round(degpx * .08));
     V.feedback.ticklength  = round(degpx * .50);
 
-    V.annulus.radiusOuter  = round(degpx * 4.75);
-    V.annulus.radiusInner  = round(degpx * 4.25);
+    V.annulus.radiusInner  = round(degpx * WHEEL_ANNULUS_INNER_DEG);
+    V.annulus.radiusOuter  = round(degpx * WHEEL_ANNULUS_OUTER_DEG);
 
-    V.stim.positionradius  = round(degpx * 1.82);   % position radius for stimulus locations
+    V.stim.positionradius  = round(degpx * STIM_RING_RADIUS_DEG);
 
-    % ---- Square stimulus spec (upright) ----
-    V.square.R_deg         = 0.80;      % inscribing circle radius in deg (≈ your 0.8° size)
-    V.square.coverage_c    = 1.00;      % 1.00 => corners touch the inscribing circle
-    V.square.B             = 10;       % B×B tiles (10×10 grid)
+    % Square: corners on inscribed circle; side length = sqrt(2)*R_deg = STIM_SIDE_DEG
+    V.square.coverage_c    = 1.00;
+    V.square.R_deg         = STIM_SIDE_DEG / sqrt(2);
+    V.square.B             = 10;
 
     side_deg_full          = V.square.coverage_c * sqrt(2) * V.square.R_deg;
     side_px_full           = max(V.square.B, round(side_deg_full * V.pxPerDeg));
-    side_px_full           = side_px_full - mod(side_px_full, V.square.B);  % divisible by B
+    side_px_full           = side_px_full - mod(side_px_full, V.square.B);
     V.square.side_px_full  = max(V.square.B, side_px_full);
     V.square.tile_px       = V.square.side_px_full / V.square.B;
-    
-    % Keep pedestal settings for compatibility
-    V.stim.pedestalradius = round(degpx * .56 * 1.3);  % approximate pedestal size
+
+    V.stim.pedestalradius = round(degpx * .56 * 1.3);
     V.stim.pedestalcolor = [0, 0, 0];
-    V.stim.radius = round(degpx * .56);  % keep for compatibility
+    V.stim.radius = round(degpx * .56);
 
     V.mouseinit.radius = round(degpx * .4);
     V.mouseinit.radiusWidth = round(degpx * .03);
@@ -1428,6 +1558,11 @@ function [] = adjustSquareStim(VA5deg)
     V.cue.gentleFreq = 8;
     V.cue.spikyFreq  = 36;
     V.cue.Ravg = (V.stim.pedestalradius + V.cue.radius)/2;
+
+    fprintf(['Geometry: %.2f° square side, %.2f° stimulus-ring radius (centers), ' ...
+        'max radial extent ~%.2f°; response wheel %.2f–%.2f° (viewing distance %d mm).\n'], ...
+        STIM_SIDE_DEG, STIM_RING_RADIUS_DEG, V.layout.maxStimulusExtentDeg, ...
+        WHEEL_ANNULUS_INNER_DEG, WHEEL_ANNULUS_OUTER_DEG, CALIB_VIEWING_DISTANCE_MM);
 end
 
 function [] = blank(duration)
@@ -1547,7 +1682,7 @@ end
 function [] = printScreen(filename, window)
     global V
     if V.PrintScreens
-        saveDir = 'PrintScreen';
+        saveDir = fullfile(getExperimentDataDir(), 'PrintScreen');
         if ~isfolder(saveDir)
             mkdir(saveDir);
         end
@@ -1582,7 +1717,7 @@ function drawNoisySquareAt(V, hueDeg, noiseLevel, angleDeg, P, prePattern)
 % If prePattern is provided, reuse it (for replicas).
 
     if nargin < 6 || isempty(prePattern)
-        [rgb01, ~] = makeNoisyPattern(V, hueDeg, noiseLevel, P);
+        [rgb01, ~] = makeNoisyPattern(V, hueDeg, noiseLevel, P, 1);
     else
         rgb01 = prePattern;  % reuse exact tiles/colors
     end
@@ -1592,10 +1727,10 @@ function drawNoisySquareAt(V, hueDeg, noiseLevel, angleDeg, P, prePattern)
     cx = V.centerX + V.stim.positionradius * cos(th);
     cy = V.centerY - V.stim.positionradius * sin(th);  % Note: -sin for y-axis (screen coordinates)
 
-    side   = V.square.side_px_full;
+    side   = round(V.square.side_px_full);
     B      = V.square.B;
-    tilePx = V.square.tile_px;
-    rect   = CenterRectOnPointd([0 0 side side], cx, cy);
+    tilePx = round(V.square.tile_px);
+    rect   = CenterRectOnPoint([0 0 side side], round(cx), round(cy));
     tileRects = buildTileRects(rect, B, tilePx);
 
     % Convert to appropriate color format
@@ -1607,10 +1742,12 @@ function drawNoisySquareAt(V, hueDeg, noiseLevel, angleDeg, P, prePattern)
     Screen('FillRect', V.window, rgb01', tileRects);
 end
 
-function [rgb01, huesDeg] = makeNoisyPattern(V, hueDeg, noiseLevel, P)
+function [rgb01, huesDeg] = makeNoisyPattern(V, hueDeg, noiseLevel, P, instanceId)
 % Returns nTiles×3 double in [0,1] and nTiles×1 hue degrees
-% noiseLevel: 'low' or 'high' (determines Von Mises kappa parameter)
-% Uses quantile-based sampling for consistent variance
+% instanceId: per-item index (1..N) so redundant same-hue items get different tile layouts.
+    if nargin < 5 || isempty(instanceId)
+        instanceId = 1;
+    end
     B      = V.square.B;
     nTiles = B * B;
 
@@ -1630,21 +1767,21 @@ function [rgb01, huesDeg] = makeNoisyPattern(V, hueDeg, noiseLevel, P)
         K = P.K_LowNoise;
     end
     
-    % Debug: Print K value (TEMPORARY - uncomment to verify)
-    % Uncomment the next line to see K values being used
-     fprintf('makeNoisyPattern: noiseLevel="%s", K=%.1f (should be 50 for low, 2 for high)\n', noiseLevel, K);
-
-    % Sample hues using quantile-based Von Mises; no shuffle so same base hue gives same pattern (deterministic)
+    % Quantile-based Von Mises (deterministic multiset for mean-offset stats).
     huesDeg = sampleVonMisesQuantiles(hueDeg, K, nTiles, false);
+    % Without spatial shuffle, quantiles are monotone → adjacent tiles have nearly
+    % identical hues in row-major order → looks like a smooth gradient, not a 10×10 mosaic.
+    huesDeg = shuffleHueTilesDeterministically(huesDeg, hueDeg, K, instanceId);
 
     % Convert each hue to RGB from your wheel
     rgb01 = wheelRGB01_fromDegrees(huesDeg, P.cMap360_255);   % n×3, 0..1
 end
 
-function [rgb01, huesDeg] = makeNoisyPatternRandom(V, hueDeg, noiseLevel, P)
-% Returns nTiles×3 double in [0,1] and nTiles×1 hue degrees
-% noiseLevel: 'low' or 'high' (determines Von Mises kappa parameter)
-% Uses random sampling from Von Mises PDF (no quantiles)
+function [rgb01, huesDeg] = makeNoisyPatternRandom(V, hueDeg, noiseLevel, P, instanceId)
+% Uses random sampling from Von Mises PDF; per-instance spatial scramble so layouts differ.
+    if nargin < 5 || isempty(instanceId)
+        instanceId = 1;
+    end
     B      = V.square.B;
     nTiles = B * B;
 
@@ -1658,17 +1795,19 @@ function [rgb01, huesDeg] = makeNoisyPatternRandom(V, hueDeg, noiseLevel, P)
     end
 
     huesDeg = sampleVonMisesDegrees(hueDeg, K, nTiles);
+    huesDeg = shuffleHueTilesDeterministically(huesDeg, hueDeg, K, instanceId);
     rgb01 = wheelRGB01_fromDegrees(huesDeg, P.cMap360_255);   % n×3, 0..1
 end
 
-function [rgb01, huesDeg] = getPatternByMode(V, hueDeg, noiseLevel, P)
-% Returns pattern based on sampling mode
-% - 'statistical': random sampling from Von Mises PDF
-% - 'deterministic': quantile-based sampling
+function [rgb01, huesDeg] = getPatternByMode(V, hueDeg, noiseLevel, P, instanceId)
+% Returns pattern based on sampling mode. instanceId = item index within trial (1..N).
+    if nargin < 5 || isempty(instanceId)
+        instanceId = 1;
+    end
     if isfield(P, 'samplingMode') && strcmpi(P.samplingMode, 'statistical')
-        [rgb01, huesDeg] = makeNoisyPatternRandom(V, hueDeg, noiseLevel, P);
+        [rgb01, huesDeg] = makeNoisyPatternRandom(V, hueDeg, noiseLevel, P, instanceId);
     else
-        [rgb01, huesDeg] = makeNoisyPattern(V, hueDeg, noiseLevel, P);
+        [rgb01, huesDeg] = makeNoisyPattern(V, hueDeg, noiseLevel, P, instanceId);
     end
 end
 
@@ -1717,6 +1856,9 @@ function checkRedundantUniqueness(tileHues, P, trialIndex, usedPrecompute)
         for b = (a+1):numel(tileHues)
             ha = round(tileHues{a});
             hb = round(tileHues{b});
+            if isempty(ha) || isempty(hb)
+                continue;
+            end
             if isequal(ha, hb)
                 dupPairs = [dupPairs; a, b]; %#ok<AGROW>
             end
@@ -1754,13 +1896,13 @@ function T = precomputeStimuli(T, P)
         meanOffsets = nan(1, nItems);
         baseHues = cols;
         for k = 1:nItems
-            [rgb01, huesDeg] = getPatternByMode(V, cols(k), T.NoiseLevel{i}, P);
+            [rgb01, huesDeg] = getPatternByMode(V, cols(k), T.NoiseLevel{i}, P, k);
             if strcmp(cond, 'Homo_Space') && isfield(P, 'samplingMode') && ...
                strcmpi(P.samplingMode, 'statistical')
                 maxResample = 10;
                 resampleCount = 0;
                 while any(cellfun(@(h) isequal(round(h), round(huesDeg)), tileHues(1:k-1)))
-                    [rgb01, huesDeg] = getPatternByMode(V, cols(k), T.NoiseLevel{i}, P);
+                    [rgb01, huesDeg] = getPatternByMode(V, cols(k), T.NoiseLevel{i}, P, k);
                     resampleCount = resampleCount + 1;
                     if resampleCount >= maxResample
                         break;
@@ -1783,7 +1925,7 @@ function T = precomputeStimuli(T, P)
 end
 
 function printTrialBalance(expTrials)
-% Print counts by Condition × ItemN × NoiseLevel
+% Print counts by Condition × ItemN × NoiseLevel, and CueType (R vs NR)
     fprintf('\n=== Trial Balance Summary ===\n');
     conditions = unique(expTrials.Condition, 'stable');
     itemNs = unique(expTrials.ItemN);
@@ -1798,7 +1940,24 @@ function printTrialBalance(expTrials)
             end
         end
     end
-    fprintf('Total trials: %d\n\n', height(expTrials));
+    fprintf('Total trials: %d\n', height(expTrials));
+    if ismember('NoiseLevel', expTrials.Properties.VariableNames)
+        nl = string(expTrials.NoiseLevel);
+        fprintf('By noise level: ');
+        for n = 1:numel(noiseLevels)
+            fprintf('%s=%d ', noiseLevels{n}, sum(nl == string(noiseLevels{n})));
+        end
+        fprintf('\n');
+    end
+    if ismember('CueType', expTrials.Properties.VariableNames)
+        fprintf('\n--- CueType counts ---\n');
+        ctStr = string(expTrials.CueType);
+        cuesU = unique(ctStr, 'stable');
+        for k = 1:numel(cuesU)
+            fprintf('  %s: %d\n', cuesU(k), sum(ctStr == cuesU(k)));
+        end
+    end
+    fprintf('\n');
 end
 
 function printStimulusChecks(expTrials, nShow)
@@ -1829,12 +1988,17 @@ end
 
 function tileRects = buildTileRects(outerRect, B, tilePx)
 % Returns 4×(B*B) rects for Screen('FillRect', window, colors, rects)
-    x0 = outerRect(1); y0 = outerRect(2); x1 = outerRect(3); y1 = outerRect(4);
-    side = min(x1 - x0, y1 - y0);
+    x0 = round(outerRect(1)); y0 = round(outerRect(2));
+    x1 = round(outerRect(3)); y1 = round(outerRect(4));
+    sidePx = min(x1 - x0, y1 - y0);
 
-    tilePx = floor(min(tilePx, side / B));
-    pad    = (side - B*tilePx) / 2;
-    x0     = x0 + pad;  y0 = y0 + pad;
+    % Keep integer geometry stable across positions. A floating-point underflow
+    % here can make tilePx drop by 1 (e.g., 5->4), shrinking one whole square.
+    tilePx = max(1, round(tilePx));
+    maxTilePx = max(1, floor(sidePx / B));
+    tilePx = min(tilePx, maxTilePx);
+    padPx  = floor((sidePx - B*tilePx) / 2);
+    x0     = x0 + padPx;  y0 = y0 + padPx;
 
     tileRects = zeros(4, B*B);
     k = 1;
@@ -1885,6 +2049,22 @@ function huesDeg = sampleVonMisesQuantiles(muDeg, kappa, n, doShuffle)
     if doShuffle
         huesDeg = huesDeg(randperm(n));
     end
+end
+
+function huesDeg = shuffleHueTilesDeterministically(huesDeg, muDeg, kappa, instanceId)
+% Permute tile hues spatially; multiset unchanged (same mean offset). instanceId
+% (item index 1..N) makes redundant same-hue stimuli use different pixel layouts.
+    if nargin < 4 || isempty(instanceId)
+        instanceId = 1;
+    end
+    n = numel(huesDeg);
+    seed = mod(round(mod(muDeg, 360)) * 7919 + round(kappa * 1e6) + n * 97 + instanceId * 104729, 2^31 - 2);
+    if seed < 1
+        seed = 1;
+    end
+    rs = RandStream('mt19937ar', 'Seed', seed);
+    p = randperm(rs, n);
+    huesDeg = huesDeg(p);
 end
 
 function huesDeg = sampleVonMisesDegrees(muDeg, kappa, n)

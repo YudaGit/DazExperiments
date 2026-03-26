@@ -873,7 +873,7 @@ function [x, y, angles, distances, mousetime, rt, responseangle, derotatedAngle,
                 derotatedAngle = angles(end);
                 precision = trial.Orientations{1}(trial.Target) - responseangle;
                 if precision < -180; precision = precision + 360; end
-                if precision > 180; precision = precisiopositionradiusn - 360; end
+                if precision > 180; precision = precision - 360; end
 
             else
                 responseangle = mod(angles(end) - V.color.rotation, 360);
