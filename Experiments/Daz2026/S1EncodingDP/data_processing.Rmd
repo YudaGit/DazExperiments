@@ -9,10 +9,11 @@ output: html_document
 library(dplyr)
 library(tidyr)
 library(ggplot2)
+library(here)
 ```
 
 ```{r load-data}
-data_path <- "/Users/prefabteam_ysl/Documents/GitHub/JSON Extraction/dataProcessingR/prolific_data_2026-03-10.csv"
+data_path <- here("prolific_data_2026-03-10.csv")
 df <- read.csv(data_path, stringsAsFactors = FALSE)
 ```
 
@@ -28,67 +29,51 @@ cat("\n--- trial_event breakdown ---\n")
 print(table(df$trial_event))
 ```
 
-```{r participant-breakdown}
-cat("\n========== PARTICIPANT TRIAL BREAKDOWN ==========\n\n")
-
-participant_trials <- df %>%
-  group_by(prolific_id) %>%
-  summarise(
-    n_trials = n(),
-    n_stimulus_wheel = sum(trial_event == "stimulus_wheel_display_event"),
-    n_orientation_response = sum(trial_event == "orientation_response_event")
-  ) %>%
-  arrange(desc(n_trials))
-
-cat("Unique participants:", nrow(participant_trials), "\n\n")
-cat("Participant ID | n_trials | stimulus_wheel | orientation_response\n")
-cat(strrep("-", 75), "\n")
-
-for (i in seq_len(nrow(participant_trials))) {
-  row <- participant_trials[i, ]
-  cat(sprintf("%-14s | %8d | %14d | %21d\n",
-              row$prolific_id, row$n_trials, row$n_stimulus_wheel, row$n_orientation_response))
-}
-```
-
-#```{r save-breakdown}
-#output_path <- "CSVresults/participant_trial_breakdown.csv"
-#write.csv(participant_trials, output_path, row.names = FALSE)
-#cat("\nBreakdown saved to:", output_path, "\n")
+# ```{r participant-breakdown}
+# cat("\n========== PARTICIPANT TRIAL BREAKDOWN ==========\n\n")
+# 
+# participant_trials <- df %>%
+#   group_by(prolific_id) %>%
+#   summarise(
+#     n_trials = n(),
+#     n_stimulus_wheel = sum(trial_event == "stimulus_wheel_display_event"),
+#     n_orientation_response = sum(trial_event == "orientation_response_event")
+#   ) %>%
+#   arrange(desc(n_trials))
+# 
+# cat("Unique participants:", nrow(participant_trials), "\n\n")
+# cat("Participant ID | n_trials | stimulus_wheel | orientation_response\n")
+# cat(strrep("-", 75), "\n")
+# 
+# for (i in seq_len(nrow(participant_trials))) {
+#   row <- participant_trials[i, ]
+#   cat(sprintf("%-14s | %8d | %14d | %21d\n",
+#               row$prolific_id, row$n_trials, row$n_stimulus_wheel, row$n_orientation_response))
+# }
 #```
 
-```{r summary-stats}
-cat("\n========== TRIAL COUNT SUMMARY ==========\n")
-cat("Mean trials per participant:", round(mean(participant_trials$n_trials), 1), "\n")
-cat("Min trials:", min(participant_trials$n_trials), "\n")
-cat("Max trials:", max(participant_trials$n_trials), "\n")
-```
+
+#```{r summary-stats}
+#cat("\n========== TRIAL COUNT SUMMARY ==========\n")
+#cat("Mean trials per participant:", round(mean(participant_trials$n_trials), 1), "\n")
+#cat("Min trials:", min(participant_trials$n_trials), "\n")
+#cat("Max trials:", max(participant_trials$n_trials), "\n")
+#```
 
 ## Processing chunks (one thing at a time)
 
-```{r chunk1-extract-subsets}
-# sub1 = subexperiment 1 (practice_effect)
-# sub2 = subexperiment 2 (Context Effect Hypothesis)
-# sub3 = subexperiment 3 (Multiple Features Effect Hypothesis)
+```{r subset-setup, include=FALSE}
+key_cols <- c(
+  "subexperiment", "participant_id", "redundancy", "tab_away_count",
+  "target_orientation", "started_outof_center", "too_fast_trigger", "num_items",
+  "response_RT_from_start", "response_error_deg", "duration_ms",
+  "response_orientation_360", "response_RT", "leave_center_RT", "cue_type",
+  "too_slow_trigger", "trial_event"
+)
 
-sub1 <- df %>% filter(subexperiment == 1, experiment_type == "practice_effect")
-sub2 <- df %>% filter(subexperiment == 2, experiment_type == "Context Effect Hypothesis")
-sub3 <- df %>% filter(subexperiment == 3, experiment_type == "Multiple Features Effect Hypothesis")
+subset_output_dir <- here("CSVresults", "subexperiment_keycols")
+dir.create(subset_output_dir, showWarnings = FALSE, recursive = TRUE)
 
-cat("\n========== CHUNK 1: SUBSETS BY SUBEXPERIMENT ==========\n")
-cat("sub1 (practice_effect):            ", nrow(sub1), " rows, ", dplyr::n_distinct(sub1$prolific_id), " participants\n", sep = "")
-cat("sub2 (Context Effect Hypothesis): ", nrow(sub2), " rows, ", dplyr::n_distinct(sub2$prolific_id), " participants\n", sep = "")
-cat("sub3 (Multiple Features Effect):  ", nrow(sub3), " rows, ", dplyr::n_distinct(sub3$prolific_id), " participants\n", sep = "")
-```
-
-```{r chunk2-prep-clean-exclusions, message=FALSE}
-# Common parsing helper for numeric columns saved as strings (e.g., "[123.4]")
-parse_resp_num <- function(x) {
-  if (is.numeric(x)) return(x)
-  suppressWarnings(as.numeric(gsub("\\[|\\]", "", as.character(x))))
-}
-
-# Build a stable participant ID from available ID columns
 make_participant_id <- function(data) {
   data %>%
     mutate(
@@ -99,15 +84,50 @@ make_participant_id <- function(data) {
       )
     )
 }
+```
 
-# Keep only requested key columns (+ trial_event for event-specific extraction)
-key_cols <- c(
-  "subexperiment", "participant_id", "redundancy", "tab_away_count",
-  "target_orientation", "started_outof_center", "too_fast_trigger", "num_items",
-  "response_RT_from_start", "response_error_deg", "duration_ms",
-  "response_orientation_360", "response_RT", "leave_center_RT", "cue_type",
-  "too_slow_trigger", "trial_event"
+```{r chunk1-extract-subsets}
+# sub1 = subexperiment 1 (practice_effect)
+# sub2 = subexperiment 2 (Context Effect Hypothesis)
+# sub3 = subexperiment 3 (Multiple Features Effect Hypothesis)
+
+sub1 <- df %>%
+  filter(subexperiment == 1, experiment_type == "practice_effect") %>%
+  make_participant_id() %>%
+  select(any_of(key_cols))
+sub2 <- df %>%
+  filter(subexperiment == 2, experiment_type == "Context Effect Hypothesis") %>%
+  make_participant_id() %>%
+  select(any_of(key_cols))
+sub3 <- df %>%
+  filter(subexperiment == 3, experiment_type == "Multiple Features Effect Hypothesis") %>%
+  make_participant_id() %>%
+  select(any_of(key_cols))
+
+subset_paths <- list(
+  sub1 = file.path(subset_output_dir, "sub1_key_cols.csv"),
+  sub2 = file.path(subset_output_dir, "sub2_key_cols.csv"),
+  sub3 = file.path(subset_output_dir, "sub3_key_cols.csv")
 )
+
+cat("\n========== CHUNK 1: SUBSETS BY SUBEXPERIMENT ==========\n")
+cat("sub1 (practice_effect):            ", nrow(sub1), " rows, ", dplyr::n_distinct(sub1$participant_id), " participants\n", sep = "")
+cat("sub2 (Context Effect Hypothesis): ", nrow(sub2), " rows, ", dplyr::n_distinct(sub2$participant_id), " participants\n", sep = "")
+cat("sub3 (Multiple Features Effect):  ", nrow(sub3), " rows, ", dplyr::n_distinct(sub3$participant_id), " participants\n", sep = "")
+write.csv(sub1, subset_paths$sub1, row.names = FALSE)
+cat("Saved sub1 key columns subset to", subset_paths$sub1, "\n")
+write.csv(sub2, subset_paths$sub2, row.names = FALSE)
+cat("Saved sub2 key columns subset to", subset_paths$sub2, "\n")
+write.csv(sub3, subset_paths$sub3, row.names = FALSE)
+cat("Saved sub3 key columns subset to", subset_paths$sub3, "\n")
+```
+
+```{r chunk2-prep-clean-exclusions, message=FALSE}
+# Common parsing helper for numeric columns saved as strings (e.g., "[123.4]")
+parse_resp_num <- function(x) {
+  if (is.numeric(x)) return(x)
+  suppressWarnings(as.numeric(gsub("\\[|\\]", "", as.character(x))))
+}
 
 # Trial-level exclusion thresholds (same for all 3 online subexperiments)
 too_fast_ms <- 150

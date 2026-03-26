@@ -1,0 +1,240 @@
+---
+title: "Analysis from key-column subsets"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(ggplot2)
+library(here)
+library(purrr)
+library(circular)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r load-subsets}
+subset_dir <- here("CSVresults", "subexperiment_keycols")
+sub1_path <- file.path(subset_dir, "sub1_key_cols.csv")
+sub2_path <- file.path(subset_dir, "sub2_key_cols.csv")
+sub3_path <- file.path(subset_dir, "sub3_key_cols.csv")
+
+sub1 <- read.csv(sub1_path, stringsAsFactors = FALSE)
+sub2 <- read.csv(sub2_path, stringsAsFactors = FALSE)
+sub3 <- read.csv(sub3_path, stringsAsFactors = FALSE)
+
+cat("Loaded", nrow(sub1), "rows for sub1,", nrow(sub2), "for sub2,", nrow(sub3), "for sub3.\n")
+```
+
+```{r prepare-plot-data}
+parse_resp_num <- function(x) {
+  if (is.numeric(x)) return(x)
+  suppressWarnings(as.numeric(gsub("\\[|\\]", "", as.character(x))))
+}
+
+flag_to_bool <- function(x) {
+  if (is.logical(x)) return(x)
+  if (is.numeric(x)) return(x != 0)
+  str <- tolower(trimws(as.character(x)))
+  str %in% c("1", "true", "yes", "y")
+}
+
+prepare_subset_for_plots <- function(data) {
+  mutated <- data %>%
+    mutate(
+      rt_ms = parse_resp_num(response_RT_from_start),
+      precision_deg = parse_resp_num(response_error_deg),
+      abs_precision_deg = abs(precision_deg),
+      too_fast_flag = flag_to_bool(too_fast_trigger),
+      too_slow_flag = flag_to_bool(too_slow_trigger)
+    )
+
+  filtered <- mutated %>%
+    filter(
+      !is.na(participant_id),
+      !too_fast_flag,
+      !too_slow_flag,
+      !is.na(rt_ms),
+      rt_ms >= 300,
+      rt_ms <= 3000
+    )
+
+  stats <- list(
+    total = nrow(mutated),
+    missing_pid = sum(is.na(mutated$participant_id)),
+    too_fast = sum(mutated$too_fast_flag, na.rm = TRUE),
+    too_slow = sum(mutated$too_slow_flag, na.rm = TRUE),
+    missing_rt = sum(is.na(mutated$rt_ms)),
+    rt_below = sum(mutated$rt_ms < 300, na.rm = TRUE),
+    rt_above = sum(mutated$rt_ms > 3000, na.rm = TRUE),
+    retained = nrow(filtered)
+  )
+
+  list(data = filtered, stats = stats)
+}
+
+print_filter_stats <- function(label, stats) {
+  cat(sprintf("%s: retained %d/%d trials after RT bounds and flag filtering.\n", label, stats$retained, stats$total))
+  cat(sprintf("  - missing participant_id: %d\n", stats$missing_pid))
+  cat(sprintf("  - too fast flag: %d\n", stats$too_fast))
+  cat(sprintf("  - too slow flag: %d\n", stats$too_slow))
+  cat(sprintf("  - missing RT: %d\n", stats$missing_rt))
+  cat(sprintf("  - RT < 300ms: %d\n", stats$rt_below))
+  cat(sprintf("  - RT > 3000ms: %d\n", stats$rt_above))
+}
+
+sub1_prep <- prepare_subset_for_plots(sub1)
+sub2_prep <- prepare_subset_for_plots(sub2)
+sub3_prep <- prepare_subset_for_plots(sub3)
+
+sub1 <- sub1_prep$data
+sub2 <- sub2_prep$data
+sub3 <- sub3_prep$data
+
+print_filter_stats("Sub1", sub1_prep$stats)
+print_filter_stats("Sub2", sub2_prep$stats)
+print_filter_stats("Sub3", sub3_prep$stats)
+```
+
+```{r filter-preview}
+# Example filtering steps for downstream analyses; edit and add new filters as needed.
+sub1_total <- nrow(sub1)
+sub1_no_cue <- sum(is.na(sub1$cue_type) | trimws(sub1$cue_type) == "")
+sub1_filtered <- sub1 %>%
+  filter(!is.na(cue_type) & trimws(cue_type) != "")
+
+sub2_total <- nrow(sub2)
+allowed_sets <- c(2, 4, 6)
+sub2_invalid_set <- sum(is.na(sub2$num_items) | !(sub2$num_items %in% allowed_sets))
+sub2_filtered <- sub2 %>%
+  filter(!is.na(num_items), num_items %in% allowed_sets)
+
+sub3_total <- nrow(sub3)
+sub3_missing_rt <- sum(is.na(sub3$response_RT_from_start))
+sub3_filtered <- sub3 %>%
+  filter(!is.na(response_RT_from_start))
+
+cat(sprintf("sub1: removed %d/%d rows with empty cue_type (retained %d).\n",
+            sub1_no_cue, sub1_total, nrow(sub1_filtered)))
+cat(sprintf("sub2: removed %d/%d rows outside set sizes %s (retained %d).\n",
+            sub2_invalid_set, sub2_total, paste(allowed_sets, collapse = ", "), nrow(sub2_filtered)))
+cat(sprintf("sub3: removed %d/%d rows with missing RT (retained %d).\n",
+            sub3_missing_rt, sub3_total, nrow(sub3_filtered)))
+```
+
+```{r preview}
+list(
+  sub1 = tibble::as_tibble(head(sub1_filtered)),
+  sub2 = tibble::as_tibble(head(sub2_filtered)),
+  sub3 = tibble::as_tibble(head(sub3_filtered))
+)
+```
+
+```{r map-participants}
+reindex_participants <- function(data) {
+  unique_ids <- sort(unique(data$participant_id))
+  lookup <- tibble::tibble(
+    original_id = unique_ids,
+    participant_id_new = sprintf("%02d", seq_along(unique_ids))
+  )
+
+  result_data <- data %>%
+    left_join(lookup, by = c("participant_id" = "original_id")) %>%
+    mutate(participant_id = coalesce(participant_id_new, participant_id)) %>%
+    select(-participant_id_new)
+
+  list(data = result_data, lookup = lookup %>% rename(participant_id = participant_id_new))
+}
+
+sub1_reindexed <- reindex_participants(sub1)
+sub2_reindexed <- reindex_participants(sub2)
+sub3_reindexed <- reindex_participants(sub3)
+
+sub1 <- sub1_reindexed$data
+sub2 <- sub2_reindexed$data
+sub3 <- sub3_reindexed$data
+
+participant_id_record <- bind_rows(
+  mutate(sub1_reindexed$lookup, subset = "Sub1"),
+  mutate(sub2_reindexed$lookup, subset = "Sub2"),
+  mutate(sub3_reindexed$lookup, subset = "Sub3")
+)
+
+cat("Participant ID mapping (original -> new):\n")
+print(participant_id_record)
+```
+
+```{r plotting-utils, include=FALSE}
+build_precision_plot <- function(data, sub_label, pid) {
+  participant_data <- data %>% filter(participant_id == pid)
+  if (nrow(participant_data) == 0) return(NULL)
+
+  circ_sd <- tryCatch({
+    circular::sd.circular(
+      circular::circular(participant_data$precision_deg %% 360, units = "degrees"),
+      na.rm = TRUE
+    )
+  }, error = function(e) NA_real_)
+
+  ggplot(participant_data, aes(x = abs_precision_deg)) +
+    geom_histogram(bins = 30, fill = "steelblue3", color = "white", alpha = 0.8) +
+    labs(
+      title = paste(sub_label, "-", pid),
+      subtitle = sprintf("circSD = %.2f°", ifelse(is.na(circ_sd), NA_real_, circ_sd)),
+      x = "Absolute precision (deg)",
+       y = "Trial count"
+    ) +
+    theme_minimal()
+}
+
+build_rt_plot <- function(data, sub_label, pid) {
+  participant_data <- data %>% filter(participant_id == pid)
+  if (nrow(participant_data) == 0) return(NULL)
+
+  mean_rt <- mean(participant_data$rt_ms, na.rm = TRUE)
+
+  ggplot(participant_data, aes(x = rt_ms)) +
+    geom_histogram(bins = 25, fill = "tomato2", color = "white", alpha = 0.8) +
+    geom_vline(xintercept = mean_rt, linetype = "dashed", color = "navy") +
+    labs(
+      title = paste(sub_label, "-", pid),
+      subtitle = sprintf("RT distribution (mean %.0f ms)", ifelse(is.na(mean_rt), NA_real_, mean_rt)),
+      x = "Response time (ms)",
+      y = "Trial count"
+    ) +
+    theme_minimal()
+}
+
+render_participant_logits <- function(plot_fn, data, sub_label) {
+  participants <- sort(unique(data$participant_id))
+  purrr::walk(participants, function(pid) {
+    plot_obj <- plot_fn(data, sub_label, pid)
+    if (!is.null(plot_obj)) print(plot_obj)
+  })
+}
+```
+
+```{r sub1-precision-plots, fig.height=3, fig.width=5, fig.align='center'}
+render_participant_logits(build_precision_plot, sub1, "Sub1 Precision")
+```
+
+```{r sub1-rt-plots, fig.height=3, fig.width=5, fig.align='center'}
+render_participant_logits(build_rt_plot, sub1, "Sub1 RT")
+```
+
+```{r sub2-precision-plots, fig.height=3, fig.width=5, fig.align='center'}
+render_participant_logits(build_precision_plot, sub2, "Sub2 Precision")
+```
+
+```{r sub2-rt-plots, fig.height=3, fig.width=5, fig.align='center'}
+render_participant_logits(build_rt_plot, sub2, "Sub2 RT")
+```
+
+```{r sub3-precision-plots, fig.height=3, fig.width=5, fig.align='center'}
+render_participant_logits(build_precision_plot, sub3, "Sub3 Precision")
+```
+
+```{r sub3-rt-plots, fig.height=3, fig.width=5, fig.align='center'}
+render_participant_logits(build_rt_plot, sub3, "Sub3 RT")
+```
+
+<!-- If you need to adjust extraction, go back to data_processing.Rmd to regenerate the CSVs. -->
