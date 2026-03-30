@@ -1,6 +1,6 @@
 import os, json, csv, datetime, gzip
 from collections import OrderedDict
-os.chdir('/Users/prefabteam_ysl/Documents/GitHub/JSON Extraction/')
+os.chdir('/Users/prefabteam_ysl/Documents/GitHub/DazExperiments/JSON Extraction/')
 
 def Save(uid, start_date_local, tasktype, Dict):
     start_date_local = start_date_local.replace(':', '-')

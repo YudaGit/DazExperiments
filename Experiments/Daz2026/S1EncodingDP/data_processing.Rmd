@@ -68,7 +68,7 @@ key_cols <- c(
   "target_orientation", "started_outof_center", "too_fast_trigger", "num_items",
   "response_RT_from_start", "response_error_deg", "duration_ms",
   "response_orientation_360", "response_RT", "leave_center_RT", "cue_type",
-  "too_slow_trigger", "trial_event"
+  "too_slow_trigger", "trial_event", "trial_number"
 )
 
 subset_output_dir <- here("CSVresults", "subexperiment_keycols")
