@@ -68,7 +68,7 @@ key_cols <- c(
   "target_orientation", "started_outof_center", "too_fast_trigger", "num_items",
   "response_RT_from_start", "response_error_deg", "duration_ms",
   "response_orientation_360", "response_RT", "leave_center_RT", "cue_type",
-  "too_slow_trigger", "trial_event"
+  "too_slow_trigger", "trial_event", "trial_number"
 )
 
 subset_output_dir <- here("CSVresults", "subexperiment_keycols")
@@ -83,6 +83,24 @@ make_participant_id <- function(data) {
         na_if(as.character(uid), "")
       )
     )
+}
+
+reindex_participants <- function(data) {
+  unique_ids <- sort(unique(data$participant_id))
+  lookup <- tibble::tibble(
+    original_id = unique_ids,
+    participant_id_new = sprintf("%02d", seq_along(unique_ids))
+  )
+
+  data_reindexed <- data %>%
+    left_join(lookup, by = c("participant_id" = "original_id")) %>%
+    mutate(participant_id = dplyr::coalesce(participant_id_new, participant_id)) %>%
+    select(-participant_id_new)
+
+  list(
+    data = data_reindexed,
+    lookup = lookup %>% rename(participant_id = participant_id_new)
+  )
 }
 ```
 
@@ -104,11 +122,26 @@ sub3 <- df %>%
   make_participant_id() %>%
   select(any_of(key_cols))
 
+sub1_reindexed <- reindex_participants(sub1)
+sub2_reindexed <- reindex_participants(sub2)
+sub3_reindexed <- reindex_participants(sub3)
+
+sub1 <- sub1_reindexed$data
+sub2 <- sub2_reindexed$data
+sub3 <- sub3_reindexed$data
+
 subset_paths <- list(
   sub1 = file.path(subset_output_dir, "sub1_key_cols.csv"),
   sub2 = file.path(subset_output_dir, "sub2_key_cols.csv"),
   sub3 = file.path(subset_output_dir, "sub3_key_cols.csv")
 )
+
+participant_id_record <- bind_rows(
+  mutate(sub1_reindexed$lookup, subset = "sub1"),
+  mutate(sub2_reindexed$lookup, subset = "sub2"),
+  mutate(sub3_reindexed$lookup, subset = "sub3")
+)
+participant_lookup_path <- file.path(subset_output_dir, "participant_id_lookup.csv")
 
 cat("\n========== CHUNK 1: SUBSETS BY SUBEXPERIMENT ==========\n")
 cat("sub1 (practice_effect):            ", nrow(sub1), " rows, ", dplyr::n_distinct(sub1$participant_id), " participants\n", sep = "")
@@ -120,228 +153,11 @@ write.csv(sub2, subset_paths$sub2, row.names = FALSE)
 cat("Saved sub2 key columns subset to", subset_paths$sub2, "\n")
 write.csv(sub3, subset_paths$sub3, row.names = FALSE)
 cat("Saved sub3 key columns subset to", subset_paths$sub3, "\n")
+write.csv(participant_id_record, participant_lookup_path, row.names = FALSE)
+cat("Saved participant ID mapping to", participant_lookup_path, "\n")
 ```
 
-```{r chunk2-prep-clean-exclusions, message=FALSE}
-# Common parsing helper for numeric columns saved as strings (e.g., "[123.4]")
-parse_resp_num <- function(x) {
-  if (is.numeric(x)) return(x)
-  suppressWarnings(as.numeric(gsub("\\[|\\]", "", as.character(x))))
-}
-
-# Trial-level exclusion thresholds (same for all 3 online subexperiments)
-too_fast_ms <- 150
-too_slow_ms <- 3500
-
-prepare_response_data <- function(data, event_name, force_num_items = NULL) {
-  out <- data %>%
-    make_participant_id() %>%
-    select(any_of(key_cols)) %>%
-    filter(trial_event == event_name) %>%
-    mutate(
-      num_items = parse_resp_num(num_items),
-      target_orientation_deg = parse_resp_num(target_orientation),
-      response_orientation_360_deg = parse_resp_num(response_orientation_360),
-      signed_orientation_error_deg = ((response_orientation_360_deg - target_orientation_deg + 90) %% 180) - 90,
-      duration_ms = as.factor(duration_ms),
-      rt_ms = parse_resp_num(response_RT_from_start),
-      precision_deg = if_else(
-        trial_event == "orientation_response_event" & !is.na(signed_orientation_error_deg),
-        signed_orientation_error_deg,
-        parse_resp_num(response_error_deg)
-      ),
-      abs_precision_deg = abs(precision_deg)
-    )
-
-  if (!is.null(force_num_items)) {
-    out <- out %>% filter(num_items == force_num_items)
-  }
-
-  out
-}
-
-build_exclusion_table <- function(resp_df, subexp_label, too_fast, too_slow) {
-  resp_df %>%
-    group_by(participant_id) %>%
-    summarise(
-      Subexperiment = subexp_label,
-      RawTrialCounts = n(),
-      MissingTrials = sum(is.na(precision_deg)),
-      TooFast = sum(!is.na(rt_ms) & rt_ms < too_fast),
-      TooSlow = sum(!is.na(rt_ms) & rt_ms >= too_slow),
-      CleanTrials = sum(!is.na(precision_deg) & !is.na(rt_ms) & rt_ms >= too_fast & rt_ms < too_slow),
-      SessionRemoval = 0L,
-      MixtureRemoval = 0L,
-      Retained = 1L,
-      .groups = "drop"
-    )
-}
-
-fit_mixture_model <- function(data_participant, period_deg = 360) {
-  set_sizes <- sort(unique(data_participant$num_items))
-  n_set <- length(set_sizes)
-
-  if (n_set == 0) {
-    return(tibble(kappa = NA_real_))
-  }
-
-  rad_scale <- (2 * pi) / period_deg
-  lower <- c(rep(0, n_set), 1e-6)
-  upper <- c(rep(1, n_set), 200)
-  vm_cache <- lapply(set_sizes, function(ss) {
-    x <- data_participant$precision_deg[data_participant$num_items == ss] * rad_scale
-    x[is.finite(x)]
-  })
-
-  nll <- function(par) {
-    alphas <- par[seq_len(n_set)]
-    kappa <- par[n_set + 1]
-    vm_const <- 2 * pi * besselI(kappa, 0)
-    uniform_density <- 1 / (2 * pi)
-    total <- 0
-
-    for (i in seq_len(n_set)) {
-      x <- vm_cache[[i]]
-      if (length(x) == 0) next
-      vm_density <- exp(kappa * cos(x)) / vm_const
-      mix_density <- (1 - alphas[i]) * vm_density + alphas[i] * uniform_density
-      total <- total - sum(log(pmax(mix_density, 1e-12)))
-    }
-    total
-  }
-
-  start_grid <- list(
-    list(alpha = 0.05, kappa = 2),
-    list(alpha = 0.20, kappa = 5),
-    list(alpha = 0.40, kappa = 10),
-    list(alpha = 0.60, kappa = 1)
-  )
-
-  fits <- lapply(start_grid, function(st) {
-    par_init <- c(rep(st$alpha, n_set), st$kappa)
-    tryCatch(
-      optim(par_init, nll, method = "L-BFGS-B", lower = lower, upper = upper),
-      error = function(e) NULL
-    )
-  })
-  fits <- Filter(function(f) !is.null(f) && is.finite(f$value), fits)
-  fit <- if (length(fits) == 0) NULL else fits[[which.min(vapply(fits, `[[`, numeric(1), "value"))]]
-
-  if (is.null(fit)) {
-    guess <- rep(NA_real_, n_set)
-    kappa <- NA_real_
-  } else {
-    guess <- fit$par[seq_len(n_set)] * 100
-    kappa <- fit$par[n_set + 1]
-  }
-
-  names(guess) <- paste0("pUniform_", set_sizes)
-  as_tibble(as.list(c(guess, kappa = kappa)))
-}
-
-apply_mixture_exclusion <- function(clean_df, exclusions_df, cutoff = 40, period_deg = 360) {
-  mix_tbl <- clean_df %>%
-    group_by(participant_id) %>%
-    group_modify(~ fit_mixture_model(.x, period_deg = period_deg)) %>%
-    ungroup()
-
-  p_cols <- grep("^pUniform_", names(mix_tbl), value = TRUE)
-  ref_col <- NA_character_
-  if (length(p_cols) == 0) {
-    removed_ids <- character(0)
-  } else {
-    # Use the smallest set-size column available in this subexperiment.
-    set_sizes <- as.numeric(sub("^pUniform_", "", p_cols))
-    ref_col <- p_cols[which.min(set_sizes)]
-    removed_ids <- mix_tbl %>%
-      filter(!is.na(.data[[ref_col]]), .data[[ref_col]] >= cutoff) %>%
-      pull(participant_id)
-  }
-
-  exclusions_updated <- exclusions_df %>%
-    mutate(
-      MixtureRemoval = if_else(participant_id %in% removed_ids, 1L, 0L),
-      Retained = if_else(MixtureRemoval == 1L, 0L, 1L)
-    )
-
-  clean_updated <- clean_df %>% filter(!participant_id %in% removed_ids)
-
-  list(
-    clean_data = clean_updated,
-    exclusion_table = exclusions_updated,
-    mixture_table = mix_tbl,
-    removed_ids = removed_ids,
-    reference_col = ref_col,
-    cutoff = cutoff
-  )
-}
-
-# Event-specific extraction (kept from your preliminary script)
-sub1_resp_raw <- prepare_response_data(sub1, "stimulus_wheel_display_event", force_num_items = 6)
-sub2_resp_raw <- prepare_response_data(sub2, "stimulus_wheel_display_event")
-sub3_resp_raw <- prepare_response_data(sub3, "orientation_response_event")
-
-# Build participant exclusion tables before trial filtering
-exclusions_sub1 <- build_exclusion_table(sub1_resp_raw, "sub1", too_fast_ms, too_slow_ms)
-exclusions_sub2 <- build_exclusion_table(sub2_resp_raw, "sub2", too_fast_ms, too_slow_ms)
-exclusions_sub3 <- build_exclusion_table(sub3_resp_raw, "sub3", too_fast_ms, too_slow_ms)
-
-# Trial-level clean data (same criteria across all three subexperiments)
-trial_clean <- function(data) {
-  data %>%
-    filter(!is.na(participant_id), !is.na(precision_deg), !is.na(rt_ms)) %>%
-    filter(rt_ms >= too_fast_ms, rt_ms < too_slow_ms)
-}
-
-sub1_clean_trials <- trial_clean(sub1_resp_raw)
-sub2_clean_trials <- trial_clean(sub2_resp_raw)
-sub3_clean_trials <- trial_clean(sub3_resp_raw)
-
-# Mixture-based participant exclusion (shared cutoff on smallest set-size condition)
-mixture_cutoff <- 40
-mix_sub1 <- apply_mixture_exclusion(sub1_clean_trials, exclusions_sub1, cutoff = mixture_cutoff, period_deg = 360)
-mix_sub2 <- apply_mixture_exclusion(sub2_clean_trials, exclusions_sub2, cutoff = mixture_cutoff, period_deg = 360)
-mix_sub3 <- apply_mixture_exclusion(sub3_clean_trials, exclusions_sub3, cutoff = mixture_cutoff, period_deg = 180)
-
-# Final cleaned datasets used downstream
-sub1_resp <- mix_sub1$clean_data
-sub2_resp <- mix_sub2$clean_data
-sub3_resp <- mix_sub3$clean_data
-
-# Final exclusion tables
-exclusions_sub1 <- mix_sub1$exclusion_table
-exclusions_sub2 <- mix_sub2$exclusion_table
-exclusions_sub3 <- mix_sub3$exclusion_table
-
-cat("\n========== CLEANING SUMMARY ==========\n")
-cat("Sub1 retained participants:", sum(exclusions_sub1$Retained), "/", nrow(exclusions_sub1), "\n")
-cat("Sub2 retained participants:", sum(exclusions_sub2$Retained), "/", nrow(exclusions_sub2), "\n")
-cat("Sub3 retained participants:", sum(exclusions_sub3$Retained), "/", nrow(exclusions_sub3), "\n")
-cat("Mixture reference columns: sub1 =", mix_sub1$reference_col,
-    ", sub2 =", mix_sub2$reference_col,
-    ", sub3 =", mix_sub3$reference_col, "\n")
-cat("Mixture cutoff (%):", mixture_cutoff, "\n")
-```
-
-```{r chunk2b-exclusion-tables}
-cat("\n========== EXCLUSION TABLES (HEAD) ==========\n")
-cat("\nSub1 exclusions:\n")
-print(head(exclusions_sub1))
-cat("\nSub2 exclusions:\n")
-print(head(exclusions_sub2))
-cat("\nSub3 exclusions:\n")
-print(head(exclusions_sub3))
-```
-
-```{r chunk2c-mixture-estimates}
-cat("\n========== MIXTURE ESTIMATES (HEAD) ==========\n")
-cat("\nSub1 mixture table:\n")
-print(head(mix_sub1$mixture_table))
-cat("\nSub2 mixture table:\n")
-print(head(mix_sub2$mixture_table))
-cat("\nSub3 mixture table:\n")
-print(head(mix_sub3$mixture_table))
-```
+#Legacy plotting code for reference
 
 ```{r chunk3-plot-rt-precision}
 # Shared position: R-cue slightly left, NR-cue (and Baseline) right at each duration

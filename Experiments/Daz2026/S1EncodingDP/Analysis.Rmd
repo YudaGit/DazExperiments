@@ -18,48 +18,16 @@ sub1_path <- file.path(subset_dir, "sub1_key_cols.csv")
 sub2_path <- file.path(subset_dir, "sub2_key_cols.csv")
 sub3_path <- file.path(subset_dir, "sub3_key_cols.csv")
 
-sub1 <- read.csv(sub1_path, stringsAsFactors = FALSE)
-sub2 <- read.csv(sub2_path, stringsAsFactors = FALSE)
-sub3 <- read.csv(sub3_path, stringsAsFactors = FALSE)
+sub1raw <- read.csv(sub1_path, stringsAsFactors = FALSE)
+sub2raw <- read.csv(sub2_path, stringsAsFactors = FALSE)
+sub3raw <- read.csv(sub3_path, stringsAsFactors = FALSE)
 
-cat("Loaded", nrow(sub1), "rows for sub1,", nrow(sub2), "for sub2,", nrow(sub3), "for sub3.\n")
-```
-
-```{r map-participants}
-reindex_participants <- function(data) {
-  unique_ids <- sort(unique(data$participant_id))
-  lookup <- tibble::tibble(
-    original_id = unique_ids,
-    participant_id_new = sprintf("%02d", seq_along(unique_ids))
-  )
-
-  data_reindexed <- data %>%
-    left_join(lookup, by = c("participant_id" = "original_id")) %>%
-    mutate(participant_id = coalesce(participant_id_new, participant_id)) %>%
-    select(-participant_id_new)
-
-  list(data = data_reindexed, lookup = lookup %>% rename(participant_id = participant_id_new))
-}
-
-sub1_reindexed <- reindex_participants(sub1)
-sub2_reindexed <- reindex_participants(sub2)
-sub3_reindexed <- reindex_participants(sub3)
-
-sub1 <- sub1_reindexed$data
-sub2 <- sub2_reindexed$data
-sub3 <- sub3_reindexed$data
-
-participant_id_record <- bind_rows(
-  mutate(sub1_reindexed$lookup, subset = "Sub1"),
-  mutate(sub2_reindexed$lookup, subset = "Sub2"),
-  mutate(sub3_reindexed$lookup, subset = "Sub3")
-)
-
-cat("Participant ID mapping (original -> new):\n")
-print(participant_id_record)
+cat("Loaded", nrow(sub1raw), "rows for sub1,", nrow(sub2raw), "for sub2,", nrow(sub3raw), "for sub3.\n")
 ```
 
 ```{r prepare-plot-data}
+rt_bounds <- c(300, 3000)
+
 parse_resp_num <- function(x) {
   if (is.numeric(x)) return(x)
   suppressWarnings(as.numeric(gsub("\\[|\\]", "", as.character(x))))
@@ -67,154 +35,223 @@ parse_resp_num <- function(x) {
 
 flag_to_bool <- function(x) {
   if (is.logical(x)) return(x)
-  if (is.numeric(x)) return(x != 0)
-  str <- tolower(trimws(as.character(x)))
-  str %in% c("1", "true", "yes", "y")
+  
+  if (is.numeric(x)) {
+    return(ifelse(is.na(x), NA, x != 0))
+  }
+  
+  str <- trimws(tolower(as.character(x)))
+  str <- gsub("\\[|\\]", "", str)
+  
+  ifelse(
+    str %in% c("1", "true", "t", "yes", "y"),
+    TRUE,
+    ifelse(
+      str %in% c("0", "false", "f", "no", "n", ""),
+      FALSE,
+      NA
+    )
+  )
 }
 
-circ_stats_safe <- function(theta_rad) {
+# Circular stats for directional or axial data
+# theta_rad should be in radians on the original scale
+# axial = FALSE for full-circle directional data
+# axial = TRUE  for 180-degree periodic axial data
+circ_stats_safe <- function(theta_rad, axial = FALSE) {
   theta_rad <- theta_rad[!is.na(theta_rad)]
   n <- length(theta_rad)
+
   if (n == 0) {
-    return(tibble::tibble(R = NA_real_, std_circ = NA_real_, std_circ_deg = NA_real_, variance = NA_real_, SEr = NA_real_, SEs = NA_real_))
+    return(
+      tibble::tibble(
+        R = NA_real_,
+        std_circ = NA_real_,
+        std_circ_deg = NA_real_,
+        variance = NA_real_,
+        SEr = NA_real_,
+        SEs = NA_real_
+      )
+    )
   }
-  C <- sum(cos(theta_rad))
-  S <- sum(sin(theta_rad))
+
+  theta_work <- if (axial) 2 * theta_rad else theta_rad
+
+  C <- sum(cos(theta_work))
+  S <- sum(sin(theta_work))
   R_raw <- sqrt(C^2 + S^2) / n
+
   if (!is.finite(R_raw)) {
     R_raw <- NA_real_
   }
-  R_clamped <- if (is.na(R_raw)) NA_real_ else min(max(R_raw, .Machine$double.eps), 1)
-  std_circ <- if (is.na(R_clamped)) NA_real_ else sqrt(-2 * log(R_clamped))
+
+  R_clamped <- if (is.na(R_raw)) {
+    NA_real_
+  } else {
+    min(max(R_raw, .Machine$double.eps), 1)
+  }
+
+  std_work <- if (is.na(R_clamped)) NA_real_ else sqrt(-2 * log(R_clamped))
+
+  SEr <- if (is.na(R_raw)) {
+    NA_real_
+  } else {
+    sqrt(max(0, 1 - R_raw^2)) / sqrt(n)
+  }
+
+  SEs_work <- if (is.na(R_clamped) || R_clamped <= 0) {
+    NA_real_
+  } else {
+    (1 / (R_clamped * sqrt(-2 * log(R_clamped)))) * SEr
+  }
+
+  divisor <- if (axial) 2 else 1
+
+  std_circ <- if (is.na(std_work)) NA_real_ else std_work / divisor
   std_circ_deg <- if (is.na(std_circ)) NA_real_ else std_circ * (180 / pi)
   variance <- if (is.na(R_raw)) NA_real_ else 1 - R_raw
-  SEr <- if (is.na(R_raw)) NA_real_ else sqrt(max(0, 1 - R_raw^2)) / sqrt(n)
-  SEs <- if (is.na(R_clamped) || R_clamped <= 0) NA_real_ else (1 / (R_clamped * sqrt(-2 * log(R_clamped)))) * SEr
-  tibble::tibble(R = R_raw, std_circ = std_circ, std_circ_deg = std_circ_deg, variance = variance, SEr = SEr, SEs = SEs)
+  SEs <- if (is.na(SEs_work)) NA_real_ else SEs_work / divisor
+
+  tibble::tibble(
+    R = R_raw,
+    std_circ = std_circ,
+    std_circ_deg = std_circ_deg,
+    variance = variance,
+    SEr = SEr,
+    SEs = SEs
+  )
 }
 
-prepare_subset_for_plots <- function(data) {
+prepare_subset_for_plots <- function(data, subset_type, rt_bounds) {
+
+  if (!subset_type %in% c("sub1", "sub2", "sub3")) {
+    stop("subset_type must be 'sub1', 'sub2', or 'sub3'")
+  }
+
+  group_vars <- c("participant_id", "num_items", "cue_type", "duration_ms")
+  axial <- subset_type == "sub3"
+
   mutated <- data %>%
-    mutate(
+    dplyr::mutate(
       rt_ms = parse_resp_num(response_RT_from_start),
       precision_deg = parse_resp_num(response_error_deg),
       abs_precision_deg = abs(precision_deg),
       theta_rad = precision_deg * (pi / 180),
-      abs_precision_radian = abs_precision_deg * (pi / 180),
       too_fast_flag = flag_to_bool(too_fast_trigger),
       too_slow_flag = flag_to_bool(too_slow_trigger)
+    ) %>%
+    dplyr::mutate(
+      fail_missing_pid = is.na(participant_id),
+      fail_too_fast = too_fast_flag,
+      fail_too_slow = too_slow_flag,
+      fail_missing_rt = is.na(rt_ms),
+      fail_rt_below = !is.na(rt_ms) & rt_ms < rt_bounds[1],
+      fail_rt_above = !is.na(rt_ms) & rt_ms > rt_bounds[2],
+      fail_missing_precision = is.na(precision_deg),
+      retain_row = !fail_missing_pid &
+                   !fail_too_fast &
+                   !fail_too_slow &
+                   !fail_missing_rt &
+                   !fail_rt_below &
+                   !fail_rt_above &
+                   !fail_missing_precision
     )
 
   filtered <- mutated %>%
-    filter(
-      !is.na(participant_id),
-      !too_fast_flag,
-      !too_slow_flag,
-      !is.na(rt_ms),
-      between(rt_ms, 300, 3000),
-      !is.na(precision_deg)
+    dplyr::filter(retain_row)
+
+  filtered_trials <- mutated %>%
+    dplyr::group_by(participant_id) %>%
+    dplyr::summarise(
+      subset = subset_type,
+      n_trials_before = dplyr::n(),
+      n_missing_pid_rows = sum(fail_missing_pid, na.rm = TRUE),
+      n_too_fast = sum(fail_too_fast, na.rm = TRUE),
+      n_too_slow = sum(fail_too_slow, na.rm = TRUE),
+      n_missing_rt = sum(fail_missing_rt, na.rm = TRUE),
+      n_rt_below = sum(fail_rt_below, na.rm = TRUE),
+      n_rt_above = sum(fail_rt_above, na.rm = TRUE),
+      n_missing_precision = sum(fail_missing_precision, na.rm = TRUE),
+      n_trials_after = sum(retain_row, na.rm = TRUE),
+      n_filtered_total = n_trials_before - n_trials_after,
+      .groups = "drop"
+    ) %>%
+    dplyr::select(
+      subset,
+      participant_id,
+      n_trials_before,
+      n_trials_after,
+      n_filtered_total,
+      n_too_fast,
+      n_too_slow,
+      n_rt_below,
+      n_rt_above,
+      n_missing_rt,
+      n_missing_precision,
+      n_missing_pid_rows
     )
 
-  filter_stats <- list(
-    total = nrow(mutated),
-    missing_pid = sum(is.na(mutated$participant_id)),
-    too_fast = sum(mutated$too_fast_flag, na.rm = TRUE),
-    too_slow = sum(mutated$too_slow_flag, na.rm = TRUE),
-    missing_rt = sum(is.na(mutated$rt_ms)),
-    rt_below = sum(mutated$rt_ms < 300, na.rm = TRUE),
-    rt_above = sum(mutated$rt_ms > 3000, na.rm = TRUE),
-    retained = nrow(filtered)
-  )
-
-  participant_stats <- filtered %>%
-    group_by(participant_id) %>%
-    summarise(
-      circ = list(circ_stats_safe(theta_rad)),
+  condition_stats <- filtered %>%
+    dplyr::group_by(dplyr::across(dplyr::all_of(group_vars))) %>%
+    dplyr::summarise(
+      circ = list(circ_stats_safe(theta_rad, axial = axial)),
       mean_rt = mean(rt_ms, na.rm = TRUE),
+      median_rt = median(rt_ms, na.rm = TRUE),
       abs_mean = mean(abs_precision_deg, na.rm = TRUE),
-      trials = n(),
+      trials = dplyr::n(),
       .groups = "drop"
     ) %>%
     tidyr::unnest_wider(circ)
 
-  data_with_stats <- filtered %>%
-    left_join(participant_stats, by = "participant_id")
+  prepared_data <- filtered %>%
+    dplyr::left_join(condition_stats, by = group_vars)
 
-  list(data = data_with_stats, filter_stats = filter_stats)
+  list(
+    prepared_data = prepared_data,
+    filtered_trials = filtered_trials
+  )
 }
 
-print_filter_stats <- function(label, stats) {
-  cat(sprintf("%s: retained %d/%d trials after RT bounds and flag filtering.\n", label, stats$retained, stats$total))
-  cat(sprintf("  - missing participant_id: %d\n", stats$missing_pid))
-  cat(sprintf("  - too fast flag: %d\n", stats$too_fast))
-  cat(sprintf("  - too slow flag: %d\n", stats$too_slow))
-  cat(sprintf("  - missing RT: %d\n", stats$missing_rt))
-  cat(sprintf("  - RT < 300ms: %d\n", stats$rt_below))
-  cat(sprintf("  - RT > 3000ms: %d\n", stats$rt_above))
+print_filtered_trials_summary <- function(filtered_trials_df) {
+  summary_df <- filtered_trials_df %>%
+    dplyr::group_by(subset) %>%
+    dplyr::summarise(
+      participants = dplyr::n_distinct(participant_id, na.rm = TRUE),
+      n_trials_before = sum(n_trials_before, na.rm = TRUE),
+      n_trials_after = sum(n_trials_after, na.rm = TRUE),
+      n_filtered_total = sum(n_filtered_total, na.rm = TRUE),
+      n_too_fast = sum(n_too_fast, na.rm = TRUE),
+      n_too_slow = sum(n_too_slow, na.rm = TRUE),
+      n_rt_below = sum(n_rt_below, na.rm = TRUE),
+      n_rt_above = sum(n_rt_above, na.rm = TRUE),
+      n_missing_rt = sum(n_missing_rt, na.rm = TRUE),
+      n_missing_precision = sum(n_missing_precision, na.rm = TRUE),
+      n_missing_pid_rows = sum(n_missing_pid_rows, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  print(summary_df)
 }
 
-sub1_prep <- prepare_subset_for_plots(sub1)
-sub2_prep <- prepare_subset_for_plots(sub2)
-sub3_prep <- prepare_subset_for_plots(sub3)
+sub1_result <- prepare_subset_for_plots(sub1raw, "sub1", rt_bounds)
+sub2_result <- prepare_subset_for_plots(sub2raw, "sub2", rt_bounds)
+sub3_result <- prepare_subset_for_plots(sub3raw, "sub3", rt_bounds)
 
-sub1 <- sub1_prep$data
-sub2 <- sub2_prep$data
-sub3 <- sub3_prep$data
+sub1prepared <- sub1_result$prepared_data
+sub2prepared <- sub2_result$prepared_data
+sub3prepared <- sub3_result$prepared_data
 
-attr(sub1, "subset_key") <- "sub1"
-attr(sub2, "subset_key") <- "sub2"
-attr(sub3, "subset_key") <- "sub3"
-
-print_filter_stats("Sub1", sub1_prep$filter_stats)
-print_filter_stats("Sub2", sub2_prep$filter_stats)
-print_filter_stats("Sub3", sub3_prep$filter_stats)
-```
-
-```{r filter-preview}
-# Example filtering steps for downstream analyses; edit and add new filters as needed.
-sub1_total <- nrow(sub1)
-sub1_no_cue <- sum(is.na(sub1$cue_type) | trimws(sub1$cue_type) == "")
-sub1_filtered <- sub1 %>%
-  filter(!is.na(cue_type) & trimws(cue_type) != "")
-
-sub2_total <- nrow(sub2)
-allowed_sets <- c(2, 4, 6)
-sub2_invalid_set <- sum(is.na(sub2$num_items) | !(sub2$num_items %in% allowed_sets))
-sub2_filtered <- sub2 %>%
-  filter(!is.na(num_items), num_items %in% allowed_sets)
-
-sub3_total <- nrow(sub3)
-sub3_missing_rt <- sum(is.na(sub3$response_RT_from_start))
-sub3_filtered <- sub3 %>%
-  filter(!is.na(response_RT_from_start))
-
-cat(sprintf("sub1: removed %d/%d rows with empty cue_type (retained %d).\n",
-            sub1_no_cue, sub1_total, nrow(sub1_filtered)))
-cat(sprintf("sub2: removed %d/%d rows outside set sizes %s (retained %d).\n",
-            sub2_invalid_set, sub2_total, paste(allowed_sets, collapse = ", "), nrow(sub2_filtered)))
-cat(sprintf("sub3: removed %d/%d rows with missing RT (retained %d).\n",
-            sub3_missing_rt, sub3_total, nrow(sub3_filtered)))
-```
-
-```{r apply-prelim-exclusions}
-exclusion_map <- list(
-  sub1 = c("08", "18", "24", "25", "29", "30"),
-  sub2 = c("01", "10", "12", "22", "29", "30", "31"),
-  sub3 = c("14", "20", "21", "28", "31")
+filtered_trials <- dplyr::bind_rows(
+  sub1_result$filtered_trials,
+  sub2_result$filtered_trials,
+  sub3_result$filtered_trials
 )
 
-sub1e1 <- sub1 %>% filter(!participant_id %in% exclusion_map$sub1)
-sub2e1 <- sub2 %>% filter(!participant_id %in% exclusion_map$sub2)
-sub3e1 <- sub3 %>% filter(!participant_id %in% exclusion_map$sub3)
+print_filtered_trials_summary(filtered_trials)
 
-attr(sub1e1, "subset_key") <- "sub1"
-attr(sub2e1, "subset_key") <- "sub2"
-attr(sub3e1, "subset_key") <- "sub3"
-
-cat("Applied preliminary exclusions; new counts:",
-    "sub1e1 =", nrow(sub1e1),
-    "sub2e1 =", nrow(sub2e1),
-    "sub3e1 =", nrow(sub3e1), "\n")
+attr(sub1prepared, "subset_key") <- "sub1"
+attr(sub2prepared, "subset_key") <- "sub2"
+attr(sub3prepared, "subset_key") <- "sub3"
 ```
 
 
@@ -239,17 +276,17 @@ max_bin_per_subset <- function(data, field, breaks) {
 precision_breaks <- seq(0, 180, by = 5)
 precision_xlim <- c(0, 180)
 precision_ylim_map <- list(
-  sub1 = c(0, max(1, max_bin_per_subset(sub1, "abs_precision_deg", precision_breaks), na.rm = TRUE)),
-  sub2 = c(0, max(1, max_bin_per_subset(sub2, "abs_precision_deg", precision_breaks), na.rm = TRUE)),
-  sub3 = c(0, max(1, max_bin_per_subset(sub3, "abs_precision_deg", precision_breaks), na.rm = TRUE))
+  sub1 = c(0, max(1, max_bin_per_subset(sub1prepared, "abs_precision_deg", precision_breaks), na.rm = TRUE)),
+  sub2 = c(0, max(1, max_bin_per_subset(sub2prepared, "abs_precision_deg", precision_breaks), na.rm = TRUE)),
+  sub3 = c(0, max(1, max_bin_per_subset(sub3prepared, "abs_precision_deg", precision_breaks), na.rm = TRUE))
 )
 
-rt_breaks <- seq(300, 3000, by = 50)
-rt_xlim <- c(300, 3000)
+rt_breaks <- seq(rt_bounds[1], rt_bounds[2], by = 50)
+rt_xlim <- rt_bounds
 rt_ylim_map <- list(
-  sub1 = c(0, max(1, max_bin_per_subset(sub1, "rt_ms", rt_breaks), na.rm = TRUE)),
-  sub2 = c(0, max(1, max_bin_per_subset(sub2, "rt_ms", rt_breaks), na.rm = TRUE)),
-  sub3 = c(0, max(1, max_bin_per_subset(sub3, "rt_ms", rt_breaks), na.rm = TRUE))
+  sub1 = c(0, max(1, max_bin_per_subset(sub1prepared, "rt_ms", rt_breaks), na.rm = TRUE)),
+  sub2 = c(0, max(1, max_bin_per_subset(sub2prepared, "rt_ms", rt_breaks), na.rm = TRUE)),
+  sub3 = c(0, max(1, max_bin_per_subset(sub3prepared, "rt_ms", rt_breaks), na.rm = TRUE))
 )
 
 precision_limits_for <- function(data) {
@@ -269,14 +306,14 @@ rt_limits_for <- function(data) {
 }
 ```
 
-
 ```{r plotting-utils, include=FALSE}
-plot_precision_dist <- function(data, sub_label, pid) {
+plot_precision_dist <- function(data, sub_label, pid, axial = FALSE) {
   participant_data <- data %>% filter(participant_id == pid)
   if (nrow(participant_data) == 0) return(NULL)
 
-  circ_sd <- participant_data$std_circ_deg[1]
-  abs_mean <- participant_data$abs_mean[1]
+  circ_row <- circ_stats_safe(participant_data$theta_rad, axial = axial)
+  circ_sd <- circ_row$std_circ_deg[[1]]
+  abs_mean <- mean(participant_data$abs_precision_deg, na.rm = TRUE)
   if (length(circ_sd) == 0 || is.na(circ_sd)) circ_sd <- NA_real_
   if (length(abs_mean) == 0 || is.na(abs_mean)) abs_mean <- NA_real_
 
@@ -285,7 +322,7 @@ plot_precision_dist <- function(data, sub_label, pid) {
     geom_histogram(breaks = precision_breaks, fill = "steelblue3", color = "white", alpha = 0.8) +
     labs(
       title = paste(sub_label, "-", pid),
-      subtitle = sprintf("circSD = %.2f° | Abs Mean = %.2f°", circ_sd, abs_mean),
+      subtitle = sprintf("circSD = %.2f deg | Abs Mean = %.2f deg", circ_sd, abs_mean),
       x = "Absolute precision (deg)",
       y = "Trial count"
     ) +
@@ -319,84 +356,185 @@ plot_RT_dist <- function(data, sub_label, pid) {
     scale_y_continuous(limits = limits$y, expand = c(0, 0))
 }
 
-render_participant_logits <- function(plot_fn, data, sub_label) {
+walk_participant_histograms <- function(data, base_label, axial) {
   participants <- sort(unique(data$participant_id))
   purrr::walk(participants, function(pid) {
-    plot_obj <- plot_fn(data, sub_label, pid)
-    if (!is.null(plot_obj)) print(plot_obj)
+    p_prec <- plot_precision_dist(data, paste(base_label, "Precision"), pid, axial = axial)
+    if (!is.null(p_prec)) print(p_prec)
+    p_rt <- plot_RT_dist(data, paste(base_label, "RT"), pid)
+    if (!is.null(p_rt)) print(p_rt)
   })
 }
 ```
 
-```{r group-level-plots}
+```{r participant-diagnostic-plots, fig.height=3, fig.width=5, fig.align='center'}
+walk_participant_histograms(sub1prepared, "Sub1e1", axial = FALSE)
+walk_participant_histograms(sub2prepared, "Sub2e1", axial = FALSE)
+walk_participant_histograms(sub3prepared, "Sub3e1", axial = TRUE)
+```
+
+```{r apply-prelim-exclusions}
+exclusion_map <- list(
+  sub1 = c("08", "18", "24", "25", "29", "30"),
+  sub2 = c("01", "10", "12", "22", "29", "30", "31"),
+  sub3 = c("14", "20", "21", "28", "31")
+)
+
+sub1_analysis <- sub1prepared %>% filter(!participant_id %in% exclusion_map$sub1)
+sub2_analysis <- sub2prepared %>% filter(!participant_id %in% exclusion_map$sub2)
+sub3_analysis <- sub3prepared %>% filter(!participant_id %in% exclusion_map$sub3)
+
+attr(sub1_analysis, "subset_key") <- "sub1"
+attr(sub2_analysis, "subset_key") <- "sub2"
+attr(sub3_analysis, "subset_key") <- "sub3"
+
+cat("Applied preliminary exclusions; new counts:",
+    "sub1_analysis =", nrow(sub1_analysis),
+    "sub2_analysis =", nrow(sub2_analysis),
+    "sub3_analysis =", nrow(sub3_analysis), "\n")
+```
+
+```{r group-level-plot-utils, include=FALSE}
 pd <- position_dodge(width = 0.6)
 pj <- position_jitterdodge(dodge.width = 0.6, jitter.width = 0.15, seed = 42)
 
-plot_group_precision <- function(data, label) {
-  summary <- data %>%
-    distinct(participant_id, duration_ms, std_circ_deg, cue_type) %>%
-    group_by(duration_ms, cue_type) %>%
-    summarise(cirSD = mean(std_circ_deg, na.rm = TRUE), .groups = "drop")
+# Consistent across subexperiments: R / NR match sub1; Baseline distinct (sub2, sub3)
+cue_type_colors <- c(
+  "R-cue" = "#E884A6",
+  "NR-cue" = "#3D9B9B",
+  "Baseline" = "#4CAF50"
+)
 
-  ggplot(data, aes(x = factor(duration_ms), y = abs_precision_deg, fill = cue_type, color = cue_type)) +
+add_cue_type_scales <- function(plot) {
+  plot +
+    ggplot2::scale_fill_manual(values = cue_type_colors) +
+    ggplot2::scale_color_manual(values = cue_type_colors)
+}
+
+summarise_cirsd_by_condition <- function(data, include_set_size = FALSE, axial = FALSE) {
+  group_vars <- c("duration_ms", "cue_type")
+  if (include_set_size) group_vars <- c(group_vars, "num_items")
+
+  # group_modify: explicit per-group theta vectors (avoids summarise + .data[[col]] quirks)
+  data %>%
+    dplyr::mutate(theta_axial_rad = 2 * theta_rad) %>%
+    dplyr::group_by(dplyr::across(dplyr::all_of(group_vars))) %>%
+    dplyr::group_modify(~ {
+      theta_vec <- if (axial) .x$theta_axial_rad else .x$theta_rad
+      circ <- circ_stats_safe(theta_vec, axial = FALSE)
+      if (axial) {
+        circ <- circ %>%
+          dplyr::mutate(
+            std_circ = std_circ / 2,
+            std_circ_deg = std_circ_deg / 2
+          )
+      }
+      circ
+    }) %>%
+    dplyr::ungroup()
+}
+
+plot_group_precision <- function(data, label, include_set_size = FALSE, axial = FALSE) {
+  summary <- summarise_cirsd_by_condition(
+    data,
+    include_set_size = include_set_size,
+    axial = axial
+  )
+
+  plot <- ggplot(data, aes(x = factor(duration_ms), y = abs_precision_deg, fill = cue_type, color = cue_type)) +
     geom_boxplot(alpha = 0.5, position = pd, outlier.shape = NA) +
     geom_jitter(position = pj, alpha = 0.35, size = 0.9) +
-    geom_point(data = summary, inherit.aes = FALSE,
-               aes(x = factor(duration_ms), y = cirSD, group = cue_type),
-               shape = 21, color = "black", fill = "white", size = 3, position = pd) +
+    geom_point(
+      data = summary,
+      inherit.aes = FALSE,
+      aes(x = factor(duration_ms), y = std_circ_deg, fill = "gray", color = cue_type, group = cue_type),
+      shape = 23,
+      size = 2.5,
+      stroke = 1.1,
+      position = pd
+    ) +
     labs(title = paste(label, "precision (abs error)"),
-         subtitle = "CirSD (deg) shown as points, jittered trials for raw spread",
+         subtitle = if (axial) "Axial CirSD (deg) per condition" else "CirSD (deg) per condition",
          x = "Encoding duration (ms)", y = "Absolute precision (deg)") +
     scale_x_discrete(labels = function(x) paste0(x, " ms")) +
     theme_minimal() +
     theme(legend.position = "top")
+
+  plot <- add_cue_type_scales(plot)
+
+  if (include_set_size) {
+    plot <- plot + facet_wrap(~ num_items, labeller = ggplot2::label_both)
+  }
+
+  plot
 }
 
-plot_group_rt <- function(data, label) {
-  ggplot(data, aes(x = factor(duration_ms), y = rt_ms, fill = cue_type, color = cue_type)) +
+plot_group_rt <- function(data, label, include_set_size = FALSE) {
+  plot <- ggplot(data, aes(x = factor(duration_ms), y = rt_ms, fill = cue_type, color = cue_type)) +
     geom_boxplot(alpha = 0.5, position = pd, outlier.shape = NA) +
-    geom_jitter(position = pj, alpha = 0.35, size = 0.9) +
+    geom_jitter(position = pj, alpha = 0.4, size = 1) +
     labs(title = paste(label, "RT distribution"),
-         subtitle = "RT spread with jittered points (no axis limits)",
+         subtitle = "Conditioned RT spread with quartiles from boxplots",
          x = "Encoding duration (ms)", y = "Response time (ms)") +
     scale_x_discrete(labels = function(x) paste0(x, " ms")) +
     theme_minimal() +
     theme(legend.position = "top")
+
+  plot <- add_cue_type_scales(plot)
+
+  if (include_set_size) {
+    plot <- plot + facet_wrap(~ num_items, labeller = ggplot2::label_both)
+  }
+
+  plot
 }
 
-plot_group_precision(sub1e1, "Sub1e1")
-plot_group_rt(sub1e1, "Sub1e1")
-plot_group_precision(sub2e1, "Sub2e1")
-plot_group_rt(sub2e1, "Sub2e1")
-plot_group_precision(sub3e1, "Sub3e1")
-plot_group_rt(sub3e1, "Sub3e1")
+plot_participant_condition_precision <- function(data, label, pid, include_set_size = FALSE, axial = FALSE) {
+  d <- data %>% filter(participant_id == pid)
+  if (nrow(d) == 0) return(NULL)
+  plot_group_precision(d, paste0(label, " — ", pid), include_set_size = include_set_size, axial = axial)
+}
+
+plot_participant_condition_rt <- function(data, label, pid, include_set_size = FALSE) {
+  d <- data %>% filter(participant_id == pid)
+  if (nrow(d) == 0) return(NULL)
+  plot_group_rt(d, paste0(label, " — ", pid), include_set_size = include_set_size)
+}
+
+walk_participant_condition_plots <- function(data, label, include_set_size, axial) {
+  pids <- sort(unique(data$participant_id))
+  purrr::walk(pids, function(pid) {
+    p_prec <- plot_participant_condition_precision(data, label, pid, include_set_size, axial)
+    if (!is.null(p_prec)) print(p_prec)
+    p_rt <- plot_participant_condition_rt(data, label, pid, include_set_size)
+    if (!is.null(p_rt)) print(p_rt)
+  })
+}
 ```
 
-```{r sub1-precision-plots, fig.height=3, fig.width=5, fig.align='center'}
-render_participant_logits(plot_precision_dist, sub1, "Sub1 Precision")
+# ```{r participant-condition-plots-sub1, fig.width=7, fig.height=4.5, fig.align='center'}
+# walk_participant_condition_plots(sub1_analysis, "Practice Effect", include_set_size = FALSE, axial = FALSE)
+# ```
+# 
+# ```{r participant-condition-plots-sub2, fig.width=7, fig.height=4.5, fig.align='center'}
+# walk_participant_condition_plots(sub2_analysis, "Context Effect", include_set_size = TRUE, axial = FALSE)
+# ```
+# 
+# ```{r participant-condition-plots-sub3, fig.width=7, fig.height=4.5, fig.align='center'}
+# walk_participant_condition_plots(sub3_analysis, "Multi-feature Stimuli Effect", include_set_size = TRUE, axial = TRUE)
+# ```
+
+```{r group-level-plots-sub1, fig.width=7, fig.height=4.5, fig.align='center'}
+print(plot_group_precision(sub1_analysis, "Practice Effect", include_set_size = FALSE, axial = FALSE))
+print(plot_group_rt(sub1_analysis, "Practice Effect", include_set_size = FALSE))
 ```
 
-```{r sub1-rt-plots, fig.height=3, fig.width=5, fig.align='center'}
-render_participant_logits(plot_RT_dist, sub1, "Sub1 RT")
-```
-Sub1 Exclusion Round1
-Based on precision plots
-
-
-```{r sub2-precision-plots, fig.height=3, fig.width=5, fig.align='center'}
-render_participant_logits(plot_precision_dist, sub2, "Sub2 Precision")
+```{r group-level-plots-sub2, fig.width=7, fig.height=4.5, fig.align='center'}
+print(plot_group_precision(sub2_analysis, "Context Effect", include_set_size = TRUE, axial = FALSE))
+print(plot_group_rt(sub2_analysis, "Context Effect", include_set_size = TRUE))
 ```
 
-```{r sub2-rt-plots, fig.height=3, fig.width=5, fig.align='center'}
-render_participant_logits(plot_RT_dist, sub2, "Sub2 RT")
+```{r group-level-plots-sub3, fig.width=7, fig.height=4.5, fig.align='center'}
+print(plot_group_precision(sub3_analysis, "Multi-feature Stimuli Effect", include_set_size = TRUE, axial = TRUE))
+print(plot_group_rt(sub3_analysis, "Multi-feature Stimuli Effect", include_set_size = TRUE))
 ```
-
-```{r sub3-precision-plots, fig.height=3, fig.width=5, fig.align='center'}
-render_participant_logits(plot_precision_dist, sub3, "Sub3 Precision")
-```
-
-```{r sub3-rt-plots, fig.height=3, fig.width=5, fig.align='center'}
-render_participant_logits(plot_RT_dist, sub3, "Sub3 RT")
-```
-
-<!-- If you need to adjust extraction, go back to data_processing.Rmd to regenerate the CSVs. -->
