@@ -441,7 +441,7 @@ plot_group_precision <- function(data, label, include_set_size = FALSE, axial = 
 
   plot <- ggplot(data, aes(x = factor(duration_ms), y = abs_precision_deg, fill = cue_type, color = cue_type)) +
     geom_boxplot(alpha = 0.5, position = pd, outlier.shape = NA) +
-    geom_jitter(position = pj, alpha = 0.35, size = 0.9) +
+    #geom_jitter(position = pj, alpha = 0.35, size = 0.9) +
     geom_point(
       data = summary,
       inherit.aes = FALSE,
