@@ -18,9 +18,13 @@ sub1_path <- file.path(subset_dir, "sub1_key_cols.csv")
 sub2_path <- file.path(subset_dir, "sub2_key_cols.csv")
 sub3_path <- file.path(subset_dir, "sub3_key_cols.csv")
 
-sub1raw <- read.csv(sub1_path, stringsAsFactors = FALSE)
-sub2raw <- read.csv(sub2_path, stringsAsFactors = FALSE)
-sub3raw <- read.csv(sub3_path, stringsAsFactors = FALSE)
+# Force participant_id as character (column 2) so IDs match across subs and exclusion_map
+# (read.csv otherwise coerces numeric-looking IDs and drops leading zeros).
+colclasses_keycols <- c(NA, "character", rep(NA, 16))
+
+sub1raw <- read.csv(sub1_path, stringsAsFactors = FALSE, colClasses = colclasses_keycols)
+sub2raw <- read.csv(sub2_path, stringsAsFactors = FALSE, colClasses = colclasses_keycols)
+sub3raw <- read.csv(sub3_path, stringsAsFactors = FALSE, colClasses = colclasses_keycols)
 
 cat("Loaded", nrow(sub1raw), "rows for sub1,", nrow(sub2raw), "for sub2,", nrow(sub3raw), "for sub3.\n")
 ```
@@ -29,6 +33,9 @@ cat("Loaded", nrow(sub1raw), "rows for sub1,", nrow(sub2raw), "for sub2,", nrow(
 ```{r prepare-plot-data}
 rt_bounds <- c(300, 3000)
 
+# Strips jsPsych-style brackets from numeric strings, e.g. "[12.3]" -> 12.3.
+# Non-numeric sentinels (e.g. "[None]" -> "None") yield NA from as.numeric;
+# those rows are not is.na() in the CSV but count as fail_missing_precision.
 parse_resp_num <- function(x) {
   if (is.numeric(x)) return(x)
   suppressWarnings(as.numeric(gsub("\\[|\\]", "", as.character(x))))
@@ -138,20 +145,18 @@ prepare_subset_for_plots <- function(data, subset_type, rt_bounds) {
       precision_deg = parse_resp_num(response_error_deg),
       abs_precision_deg = abs(precision_deg),
       theta_rad = precision_deg * (pi / 180),
-      too_fast_flag = flag_to_bool(too_fast_trigger),
-      too_slow_flag = flag_to_bool(too_slow_trigger)
+      started_outof_center_flag = flag_to_bool(started_outof_center)
     ) %>%
     dplyr::mutate(
       fail_missing_pid = is.na(participant_id),
-      fail_too_fast = too_fast_flag,
-      fail_too_slow = too_slow_flag,
+      # Exclude only when explicitly TRUE; NA on started_outof_center does not drop the trial
+      fail_started_outof_center = !is.na(started_outof_center_flag) & started_outof_center_flag,
       fail_missing_rt = is.na(rt_ms),
       fail_rt_below = !is.na(rt_ms) & rt_ms < rt_bounds[1],
       fail_rt_above = !is.na(rt_ms) & rt_ms > rt_bounds[2],
       fail_missing_precision = is.na(precision_deg),
       retain_row = !fail_missing_pid &
-                   !fail_too_fast &
-                   !fail_too_slow &
+                   !fail_started_outof_center &
                    !fail_missing_rt &
                    !fail_rt_below &
                    !fail_rt_above &
@@ -167,8 +172,7 @@ prepare_subset_for_plots <- function(data, subset_type, rt_bounds) {
       subset = subset_type,
       n_trials_before = dplyr::n(),
       n_missing_pid_rows = sum(fail_missing_pid, na.rm = TRUE),
-      n_too_fast = sum(fail_too_fast, na.rm = TRUE),
-      n_too_slow = sum(fail_too_slow, na.rm = TRUE),
+      n_started_outof_center = sum(fail_started_outof_center, na.rm = TRUE),
       n_missing_rt = sum(fail_missing_rt, na.rm = TRUE),
       n_rt_below = sum(fail_rt_below, na.rm = TRUE),
       n_rt_above = sum(fail_rt_above, na.rm = TRUE),
@@ -183,8 +187,7 @@ prepare_subset_for_plots <- function(data, subset_type, rt_bounds) {
       n_trials_before,
       n_trials_after,
       n_filtered_total,
-      n_too_fast,
-      n_too_slow,
+      n_started_outof_center,
       n_rt_below,
       n_rt_above,
       n_missing_rt,
@@ -221,8 +224,7 @@ print_filtered_trials_summary <- function(filtered_trials_df) {
       n_trials_before = sum(n_trials_before, na.rm = TRUE),
       n_trials_after = sum(n_trials_after, na.rm = TRUE),
       n_filtered_total = sum(n_filtered_total, na.rm = TRUE),
-      n_too_fast = sum(n_too_fast, na.rm = TRUE),
-      n_too_slow = sum(n_too_slow, na.rm = TRUE),
+      n_started_outof_center = sum(n_started_outof_center, na.rm = TRUE),
       n_rt_below = sum(n_rt_below, na.rm = TRUE),
       n_rt_above = sum(n_rt_above, na.rm = TRUE),
       n_missing_rt = sum(n_missing_rt, na.rm = TRUE),
@@ -363,6 +365,13 @@ render_participant_logits <- function(plot_fn, data, sub_label) {
     if (!is.null(plot_obj)) print(plot_obj)
   })
 }
+
+# Walks all participants: abs precision (0–180°) then RT. `axial` is unused here but
+# kept so call sites match sub3 vs sub1/2; group-level plots use `axial` separately.
+walk_participant_histograms <- function(data, sub_label, axial = FALSE) {
+  render_participant_logits(plot_precision_dist, data, sub_label)
+  render_participant_logits(plot_RT_dist, data, sub_label)
+}
 ```
 
 ```{r participant-diagnostic-plots, fig.height=3, fig.width=5, fig.align='center'}
@@ -371,11 +380,156 @@ walk_participant_histograms(sub2prepared, "Sub2e1", axial = FALSE)
 walk_participant_histograms(sub3prepared, "Sub3e1", axial = TRUE)
 ```
 
+```{r mixture-uniform-vm-fit, include=FALSE}
+# Per participant trial-level mixture model fitting: 
+# per duration, alpha * Uniform + (1 - alpha) * von Mises(mu = 0, kappa fixed). 
+# Uses sub*prepared (post trial-level filtering).
+# Only fit set-size 6 (num_items == 6)
+# Only fit duration_ms 50 150 250 as they are present across 3 subs
+# cue_type pooled.
+# sub1/2: signed error wrapped to (-pi, pi]. sub3: double-angle wrap for axial (see prepare chunk).
+
+mixture_duration_ms <- c(50L, 150L, 250L)
+mixture_kappa_fixed <- 1
+mixture_set_size <- 6L
+mixture_n_starts <- 40L
+
+von_mises_pdf <- function(x, mu, kappa) {
+  exp(kappa * cos(x - mu)) / (2 * pi * besselI(kappa, nu = 0))
+}
+
+circ_error_rad_for_mixture <- function(precision_deg, subset_key) {
+  phi <- precision_deg * (pi / 180)
+  if (subset_key %in% c("sub1", "sub2")) {
+    atan2(sin(phi), cos(phi))
+  } else if (subset_key == "sub3") {
+    atan2(sin(2 * phi), cos(2 * phi))
+  } else {
+    stop("subset_key must be sub1, sub2, or sub3")
+  }
+}
+
+negloglik_mixture_strata <- function(alpha_vec, angle_lists, kappa, mu = 0) {
+  if (length(alpha_vec) != length(angle_lists)) stop("alpha_vec length mismatch")
+  if (any(alpha_vec < 0 | alpha_vec > 1)) return(Inf)
+  u_dens <- 1 / (2 * pi)
+  total_ll <- 0
+  for (j in seq_along(angle_lists)) {
+    ang <- angle_lists[[j]]
+    if (length(ang) == 0) next
+    a <- alpha_vec[j]
+    vm_d <- von_mises_pdf(ang, mu, kappa)
+    mix <- a * u_dens + (1 - a) * vm_d
+    mix <- pmax(mix, 1e-300)
+    total_ll <- total_ll + sum(log(mix))
+  }
+  -total_ll
+}
+
+fit_mixture_one_participant <- function(d_sub, pid, subset_key,
+                                        kappa = mixture_kappa_fixed,
+                                        duration_levels = mixture_duration_ms,
+                                        set_size = mixture_set_size,
+                                        n_starts = mixture_n_starts) {
+  d <- d_sub %>%
+    dplyr::filter(
+      .data$participant_id == pid,
+      .data$num_items == set_size,
+      .data$duration_ms %in% duration_levels
+    )
+  if (nrow(d) == 0) {
+    return(NULL)
+  }
+
+  d$x_circ <- circ_error_rad_for_mixture(d$precision_deg, subset_key)
+
+  active_idx <- which(vapply(duration_levels, function(dd) sum(d$duration_ms == dd) > 0L, logical(1)))
+  if (length(active_idx) == 0) {
+    return(NULL)
+  }
+  active_durs <- duration_levels[active_idx]
+  angle_lists <- lapply(active_durs, function(dd) d$x_circ[d$duration_ms == dd])
+  n_par <- length(angle_lists)
+
+  best <- list(value = Inf, par = rep(NA_real_, n_par), convergence = NA_integer_)
+
+  for (s in seq_len(n_starts)) {
+    init <- stats::runif(n_par, min = 0.05, max = 0.95)
+    o <- tryCatch(
+      stats::optim(
+        init,
+        negloglik_mixture_strata,
+        method = "L-BFGS-B",
+        lower = rep(0, n_par),
+        upper = rep(1, n_par),
+        angle_lists = angle_lists,
+        kappa = kappa,
+        mu = 0
+      ),
+      error = function(e) NULL
+    )
+    if (!is.null(o) && is.finite(o$value) && o$value < best$value) {
+      best$value <- o$value
+      best$par <- o$par
+      best$convergence <- as.integer(o$convergence)
+    }
+  }
+
+  alpha_full <- rep(NA_real_, length(duration_levels))
+  names(alpha_full) <- as.character(duration_levels)
+  n_trials <- rep(0L, length(duration_levels))
+  names(n_trials) <- as.character(duration_levels)
+  for (j in seq_along(active_durs)) {
+    dd <- active_durs[j]
+    alpha_full[as.character(dd)] <- best$par[j]
+    n_trials[as.character(dd)] <- sum(d$duration_ms == dd)
+  }
+
+  tibble::tibble(
+    participant_id = pid,
+    alpha_ms50 = alpha_full[["50"]],
+    alpha_ms150 = alpha_full[["150"]],
+    alpha_ms250 = alpha_full[["250"]],
+    n_trials_50 = n_trials[["50"]],
+    n_trials_150 = n_trials[["150"]],
+    n_trials_250 = n_trials[["250"]],
+    kappa_fixed = kappa,
+    neg_loglik = best$value,
+    optim_convergence = best$convergence,
+    n_alpha_params = n_par,
+    subset = subset_key
+  )
+}
+
+mixture_fit_report <- function(prepared_df, subset_key) {
+  pids <- sort(unique(prepared_df$participant_id))
+  out <- purrr::map(pids, function(pid) {
+    fit_mixture_one_participant(prepared_df, pid, subset_key)
+  })
+  dplyr::bind_rows(purrr::compact(out))
+}
+
+set.seed(42)
+mixture_fit_sub1 <- mixture_fit_report(sub1prepared, "sub1")
+mixture_fit_sub2 <- mixture_fit_report(sub2prepared, "sub2")
+mixture_fit_sub3 <- mixture_fit_report(sub3prepared, "sub3")
+
+cat(
+  "Mixture fit (set size", mixture_set_size, ", durations 50/150/250 ms, kappa =",
+  mixture_kappa_fixed, "): sub1 rows =", nrow(mixture_fit_sub1),
+  "| sub2 =", nrow(mixture_fit_sub2),
+  "| sub3 =", nrow(mixture_fit_sub3), "\n"
+)
+```
+
 ```{r apply-prelim-exclusions}
 exclusion_map <- list(
-  sub1 = c("08", "18", "24", "25", "29", "30"),
-  sub2 = c("01", "10", "12", "22", "29", "30", "31"),
-  sub3 = c("14", "20", "21", "28", "31")
+  #sub1 = c("08", "18", "24", "25", "29", "30"),
+  sub1 = c("08", "14", "18", "21", "24", "25", "29","30","32"),
+  #sub2 = c("01", "10", "12", "22", "29", "30", "31"),
+  sub2 = c("01", "09", "10","12","15","17","18","22","23","24","26","27","28","29","30","31"),
+  #sub3 = c("14", "20", "21", "28", "31")
+  sub3 = c("01","14","20","21","23","24","25","26","27","28","29","30","31")
 )
 
 sub1_analysis <- sub1prepared %>% filter(!participant_id %in% exclusion_map$sub1)
@@ -487,6 +641,116 @@ plot_group_rt <- function(data, label, include_set_size = FALSE) {
   plot
 }
 
+# Per-participant circular SD within each condition (same theta / axial rules as summarise_cirsd_by_condition)
+participant_circsd_by_condition <- function(data, include_set_size = FALSE, axial = FALSE) {
+  group_vars <- c("participant_id", "duration_ms", "cue_type")
+  if (include_set_size) group_vars <- c(group_vars, "num_items")
+
+  data %>%
+    dplyr::mutate(theta_axial_rad = 2 * theta_rad) %>%
+    dplyr::group_by(dplyr::across(dplyr::all_of(group_vars))) %>%
+    dplyr::group_modify(~ {
+      theta_vec <- if (axial) .x$theta_axial_rad else .x$theta_rad
+      circ <- circ_stats_safe(theta_vec, axial = FALSE)
+      deg <- circ$std_circ_deg[[1]]
+      if (axial) deg <- deg / 2
+      tibble::tibble(std_circ_deg = deg, n_trials = nrow(.x))
+    }) %>%
+    dplyr::ungroup()
+}
+
+# Mean and 95% CI of participant-level CirSDs (one-sample t interval on participants)
+summarise_participant_circsd_ci <- function(part_df, include_set_size = FALSE) {
+  group_vars <- c("duration_ms", "cue_type")
+  if (include_set_size) group_vars <- c(group_vars, "num_items")
+
+  part_df %>%
+    dplyr::group_by(dplyr::across(dplyr::all_of(group_vars))) %>%
+    dplyr::reframe({
+      x <- std_circ_deg[is.finite(std_circ_deg)]
+      n <- length(x)
+      if (n == 0L) {
+        tibble::tibble(
+          n_participants = 0L,
+          mean_circsd = NA_real_,
+          ci_low = NA_real_,
+          ci_high = NA_real_
+        )
+      } else if (n == 1L) {
+        tibble::tibble(
+          n_participants = 1L,
+          mean_circsd = x[1],
+          ci_low = x[1],
+          ci_high = x[1]
+        )
+      } else {
+        tt <- stats::t.test(x)
+        tibble::tibble(
+          n_participants = n,
+          mean_circsd = mean(x),
+          ci_low = tt$conf.int[1],
+          ci_high = tt$conf.int[2]
+        )
+      }
+    }) %>%
+    dplyr::ungroup()
+}
+
+pj_circsd <- position_jitterdodge(dodge.width = 0.6, jitter.width = 0.15, seed = 42)
+
+plot_group_precision_participant_circsd <- function(data, label, include_set_size = FALSE, axial = FALSE) {
+  pdat <- participant_circsd_by_condition(data, include_set_size, axial)
+  sdat <- summarise_participant_circsd_ci(pdat, include_set_size)
+
+  plot <- ggplot2::ggplot() +
+    ggplot2::geom_point(
+      data = pdat,
+      ggplot2::aes(
+        x = factor(duration_ms),
+        y = std_circ_deg,
+        color = cue_type
+      ),
+      position = pj_circsd,
+      alpha = 0.4,
+      size = 1.1
+    ) +
+    ggplot2::geom_pointrange(
+      data = sdat,
+      ggplot2::aes(
+        x = factor(duration_ms),
+        y = mean_circsd,
+        ymin = ci_low,
+        ymax = ci_high,
+        color = cue_type
+      ),
+      position = pd,
+      size = 0.25,
+      linewidth = 0.9,
+      fatten = 3
+    ) +
+    ggplot2::labs(
+      title = paste(label, "precision — participant CirSD"),
+      subtitle = if (axial) {
+        "Per-participant axial CirSD (jitter); mean and 95% CI across participants"
+      } else {
+        "Per-participant CirSD (jitter); mean and 95% CI across participants"
+      },
+      x = "Encoding duration (ms)",
+      y = "Circular SD (deg)"
+    ) +
+    ggplot2::scale_x_discrete(labels = function(x) paste0(x, " ms")) +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(legend.position = "top")
+
+  plot <- add_cue_type_scales(plot)
+
+  if (include_set_size) {
+    plot <- plot + ggplot2::facet_wrap(~ num_items, labeller = ggplot2::label_both)
+  }
+
+  plot
+}
+
 plot_participant_condition_precision <- function(data, label, pid, include_set_size = FALSE, axial = FALSE) {
   d <- data %>% filter(participant_id == pid)
   if (nrow(d) == 0) return(NULL)
@@ -534,5 +798,20 @@ print(plot_group_rt(sub2_analysis, "Context Effect", include_set_size = TRUE))
 
 ```{r group-level-plots-sub3, fig.width=7, fig.height=4.5, fig.align='center'}
 print(plot_group_precision(sub3_analysis, "Multi-feature Stimuli Effect", include_set_size = TRUE, axial = TRUE))
+print(plot_group_rt(sub3_analysis, "Multi-feature Stimuli Effect", include_set_size = TRUE))
+```
+
+```{r group-level-plots-participant-circsd-sub1, fig.width=7, fig.height=4.5, fig.align='center'}
+print(plot_group_precision_participant_circsd(sub1_analysis, "Practice Effect", include_set_size = FALSE, axial = FALSE))
+print(plot_group_rt(sub1_analysis, "Practice Effect", include_set_size = FALSE))
+```
+
+```{r group-level-plots-participant-circsd-sub2, fig.width=7, fig.height=4.5, fig.align='center'}
+print(plot_group_precision_participant_circsd(sub2_analysis, "Context Effect", include_set_size = TRUE, axial = FALSE))
+print(plot_group_rt(sub2_analysis, "Context Effect", include_set_size = TRUE))
+```
+
+```{r group-level-plots-participant-circsd-sub3, fig.width=7, fig.height=4.5, fig.align='center'}
+print(plot_group_precision_participant_circsd(sub3_analysis, "Multi-feature Stimuli Effect", include_set_size = TRUE, axial = TRUE))
 print(plot_group_rt(sub3_analysis, "Multi-feature Stimuli Effect", include_set_size = TRUE))
 ```
