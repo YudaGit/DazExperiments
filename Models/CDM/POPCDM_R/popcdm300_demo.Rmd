@@ -1,0 +1,73 @@
+---
+title: "POPCDM300 Demo"
+output: html_document
+---
+
+# POPCDM300 Demo
+
+Runs a basic validation of `popcdm300()` using the same parameter settings described in the MATLAB notes.
+
+```{r setup}
+# Must be in the same folder as popcdm300.R
+# If not, setwd(...) first or adjust source path.
+source("popcdm300.R")
+```
+
+## Demo parameters
+The first parameter set (P1) uses alpha = 2.
+The second (P2) uses alpha = 1, which should produce heavier tails in Ptheta.
+
+```{r }
+# P = c(vnorm, eta1, eta2, a,   alpha, kappa, ter, st)
+P1 <- c(2.5,   0.01, 0.01, 2.0,   2,    20,   0.3, 0)
+P2 <- c(2.5,   0.01, 0.01, 2.0,   1,    20,   0.3, 0)
+nw <- 50
+h <- 2.5 / 300
+tmax <- 2.5
+```
+
+```{r POPCDM-TEST-RUN!}
+out1 <- popcdm300(P1, nw, h, tmax)
+out2 <- popcdm300(P2, nw, h, tmax)
+```
+
+```{r Structural-sanity-checks}
+cat("dim(out1$Gt): ", paste(dim(out1$Gt), collapse = " x "), "\n")
+cat("length(out1$T): ", length(out1$T), "\n")
+cat("length(out1$Theta): ", length(out1$Theta), "\n")
+cat("length(out1$Ptheta): ", length(out1$Ptheta), "\n")
+cat("length(out1$Mt): ", length(out1$Mt), "\n")
+```
+
+```{r Probability/Mass-sanity-checks}
+dtheta <- 2 * pi / nw
+mass_gt <- sum(out1$Gt) * dtheta * h
+sum_p <- sum(out1$Ptheta)
+
+cat("Approx total mass from Gt grid (out1): ", mass_gt, "\n")
+cat("Sum of Ptheta (out1): ", sum_p, "\n")
+```
+
+```{r Compare-angular-marginals-(alpha2vs1)}
+plot(out1$Theta, out1$Ptheta, type = "l", lwd = 2, col = "blue",
+     xlab = "Theta (radians)", ylab = "Ptheta",
+     main = "POPCDM angular distribution")
+lines(out2$Theta, out2$Ptheta, lwd = 2, col = "red")
+legend("topright",
+       legend = c("alpha = 2", "alpha = 1"),
+       col = c("blue", "red"), lwd = 2, bty = "n")
+```
+
+```{r Mean-decision-time-by-angle}
+plot(out1$Theta, out1$Mt, type = "l", lwd = 2, col = "darkgreen",
+     xlab = "Theta (radians)", ylab = "Mt",
+     main = "Conditional mean decision time by angle")
+```
+
+```{r joint-density-matrix}
+# Option A: swap axes to match matrix shape directly
+image(x = out1$Theta, y = out1$T, z = out1$Gt,
+      xlab = "Theta (radians)", ylab = "Time",
+      main = "Joint density Gt (out1)",
+      col = hcl.colors(64, "YlOrRd", rev = TRUE))
+```
