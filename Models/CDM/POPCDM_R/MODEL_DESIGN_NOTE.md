@@ -303,3 +303,65 @@ This schema allows direct:
 - 2026-04-30: Added simulation runner layer and trial-wise output schema for full verification (factors + arrays + params + behavior).
 - 2026-04-30: Added `vis_sim.R` for condition-wise response-error and RT distribution visualization.
 
+## 15) Session Handoff (Next-Day Resume)
+
+This section is intended to let work continue from a different machine without chat history.
+
+### Current code status
+
+- POPCDM core/model scripts:
+  - `besselFPT.R`
+  - `popcode.R`
+  - `popcdm300.R` (contains `cdm_core` + `popcdm300`)
+- Trial generation:
+  - `trial_gen.R`
+  - includes `gen_trial`, `validate_design`, `make_conditions`, `gen_trial_table`
+  - invalid condition combinations are filtered automatically.
+- Parameter mapping:
+  - `p_mapping.R`
+  - includes `default_beta`, `map_trial_to_params`
+- Simulation:
+  - `sim_runner.R`
+  - includes `sim_one_trial`, `sim_from_table`
+  - outputs full trial info + parameters + behavior (`response_deg`, `error_deg`, `rt`)
+- Visualization:
+  - `vis_sim.R`
+  - includes condition summaries and basic error/RT distribution plots
+
+### Confirmed condition validity rules (implemented)
+
+Let `N = itemN`, `R = redundantN`:
+- `baseline`: `R = 1` (all unique)
+- `homoR`: `R = N`, only meaningful for `N >= 2`
+- `R_R` / `R_NR`: `N >= 3` and `2 <= R < N`
+
+### Quick smoke-test sequence
+
+```r
+source("trial_gen.R")
+source("sim_runner.R")
+source("vis_sim.R")
+
+design <- list(
+  itemN = 1:6,
+  mode = c("baseline", "R_R", "R_NR", "homoR"),
+  preDur = c(0.2, 0.4),
+  retDur = 0.8,
+  min_sep = 30,
+  even_positions = TRUE,
+  redundantN = 1:6
+)
+
+x <- gen_trial_table(design, reps_per_cell = 50, seed = 42)
+sim <- sim_from_table(x$trial_table)
+sum_tab <- summarize_sim(sim)
+head(sum_tab)
+plot_cond_pair(sim, cond = unique(cond_key(sim))[1])
+```
+
+### Planned next step
+
+- Keep current single-condition plotting tools.
+- Next implementation target (deferred): multi-panel condition plotting helper.
+- After that: start visual interface scaffolding (settings panel + model-state visualization panel).
+
