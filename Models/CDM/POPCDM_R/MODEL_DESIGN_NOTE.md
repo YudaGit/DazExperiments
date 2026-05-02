@@ -136,6 +136,7 @@ Model interpretation:
    - error histogram / circular stats,
    - RT quantiles,
    - conditional error-RT trends.
+5. Longer-term POPCODE extension: allow the population-code layer (e.g. `pang` or the von Mises mean/concentration) to depend on **trial-level** information — target hue, set size, spatial layout — rather than only global `alpha` and `kappa`.
 
 ## 8) Trial Matrix (Current Experiment) -> Simulation Inputs
 
