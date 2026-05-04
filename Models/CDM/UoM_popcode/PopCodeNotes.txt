@@ -1,7 +1,10 @@
 Notes on population coding CDM 23/04/26
 =======================================
 <popcdm2.m>
- I implemented the population code model with a von Mises tuning function and standard Gumbel noise, since other noise assumptions are not identified because of the LCM scaling. So there are two pop code parameters, alpha, the peak of the von Mises, and kappa, the von Mises dispersion. Their relative magnitudes determines how heavy the tails are.
+ I implemented the population code model with a von Mises tuning function and standard Gumbel noise, 
+ since other noise assumptions are not identified because of the LCM scaling. 
+ So there are two pop code parameters, alpha, the peak of the von Mises, and kappa, the von Mises dispersion. 
+ Their relative magnitudes determines how heavy the tails are.
  
 The calling conventions are
  
@@ -12,14 +15,21 @@ help popcdm2
      [T,Gt, Theta, Ptheta, Mt] = popcdm2(P, nw, h, tmax) 
       P = [vnorm, eta1, eta2, a, alpha, kappa, ter, st]
   vnorm is the drift rate norm, eta1 and eta2 are the radial and tangential
-  components of drift rate variability. 
+  components of drift rate variability.
   Uses circular shifts of distributions in canonical orientation to make
   eta1 and eta2 radial and tangential variability. Avoids the need to 
   use the complicated expressions in Smith (2019) for the rotationally
   invariant model.
    =======================================================================
 
-<popcdm2> packages up the pop code model with <cdm> which is the circular diffusion model with the serafin correction described in Smith, Garrett, and Zhou (2023) to control the spike artifact with big drift rates and criteria. Jason's R code from the paper should be an R-equivalent of the Matlab. The only tricky bit in <popcmd2> is the use of the Matlab circshift function to generate predictions across a polar distributions of drift rates. It allows you take a theta x time joint distribution and shift it theta one step at a time to vary the polar angle. It means you only have to generate the CDM predictions once rather than once for each polar angle, which is about 10 times faster. 
+<popcdm2> packages up the pop code model with <cdm> which is the circular diffusion model 
+with the serafin correction described in Smith, Garrett, and Zhou (2023) to control the 
+spike artifact with big drift rates and criteria. 
+Jason's R code from the paper should be an R-equivalent of the Matlab. The only tricky bit 
+in <popcmd2> is the use of the Matlab circshift function to generate predictions across a 
+polar distributions of drift rates. It allows you take a theta x time joint distribution 
+and shift it theta one step at a time to vary the polar angle. It means you only have to 
+generate the CDM predictions once rather than once for each polar angle, which is about 10 times faster. 
 
 help cdm
   ========================================================================
@@ -33,7 +43,16 @@ example:
 
  [t1,g1,th1,pth1,mt1]=popcdm2([2.5,.01,.01,2.0,2,20,0.3,0],50,2.5/300,2.5);
  
- Generates predictions for drift rate norm of 2.6, criterion of 2.0, no drift rate variability, Ter = .3, st = .3. Pop code model with alpha = 2.0, kappa=2.0. Discretized with nw=50 error angular steps and 300 time steps, is what I've typically used to give a reasonable trade-off between speed and accuracy. 
+ Generates predictions for 
+ drift rate norm of 2.5, 
+ criterion of 2.0, 
+ no drift rate variability, 
+ Ter = .3, st = .3. 
+ Pop code model with 
+ alpha = 2.0, 
+ kappa=2.0. 
+ Discretized with nw=50 error angular steps and 300 time steps, 
+ is what I've typically used to give a reasonable trade-off between speed and accuracy. 
 
 [t2,g2,th2,pth2,mt2]=popcdm2([2.5,.01,.01,2.0,1,20,.3,0],50,2.5/300,2.5); 
 
@@ -41,7 +60,8 @@ reduces the pop code amplitude to 1.0 and generates heavy-tailed error distribut
 
 plot(th1, pth1, th2, pth2)
 
-plot(t1, g1) gives joint density. Because there is (almost) no drift rate variability the functions are scaled copies of each other. 
+plot(t1, g1) gives joint density. 
+Because there is (almost) no drift rate variability the functions are scaled copies of each other. 
 
 
 

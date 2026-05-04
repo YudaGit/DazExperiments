@@ -16,8 +16,8 @@ vm <- function(kappa, nw){
     stop("nw must be an integer >= 3", call. = FALSE)
   }
   
-  w <- 2 * pi / nw
-  theta <- -pi + (0:(nw-1)) * w
+  w <- 2 * pi / nw # computes angular bin width
+  theta <- -pi + (0:(nw-1)) * w 
   
   # grid sanity
   if (length(theta) != nw) {

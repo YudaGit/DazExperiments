@@ -1,9 +1,13 @@
 # Visual walkthrough: pang (population layer) vs POPCDM marginals (joint hitting + mixing).
 #
-# Run from this directory:
-#   cd POPCDM_R && Rscript popcdm_figure_walkthrough.R
-# Or in R:
-#   setwd("POPCDM_R"); source("popcdm_figure_walkthrough.R")
+# pang: PMF over nw drift-orientation bins; sum(pang)=1.
+#
+# Ptheta = sum_i pang[i] * circshift(Pthetas, i-1). contrib_mat rows feed the decomposition panel.
+#
+# Layout (2 rows): [ pang | Ptheta polar wrap | RT ]
+#                  [ Ptheta vs pang (linear) | largest pang[i] terms ]
+#
+# Run: cd POPCDM_R && Rscript popcdm_figure_walkthrough.R
 
 source("popcdm300.R")
 
@@ -19,10 +23,22 @@ polar_segments <- function(theta, radii, col = "#3366CC", lwd = 2) {
   }
 }
 
+polar_closed_curve <- function(theta, radii, border = "#CC6633", fill = NA,
+                               lwd = 2, ...) {
+  ord <- order(theta)
+  th <- theta[ord]
+  r <- radii[ord]
+  xx <- r * cos(th)
+  yy <- r * sin(th)
+  if (!is.na(fill)) {
+    polygon(c(xx, xx[1L]), c(yy, yy[1L]), border = NA, col = fill)
+  }
+  lines(c(xx, xx[1L]), c(yy, yy[1L]), col = border, lwd = lwd, ...)
+}
+
 marginal_rt_from_gt <- function(Theta, Tvec, Gt) {
   w <- 2 * pi / length(Theta)
   h <- if (length(Tvec) > 1L) diff(Tvec)[1] else 1
-  # p(t_k) ∝ sum_i Gt[i,k] * w  (angular marginalization), then normalize discrete bins.
   pt <- colSums(Gt) * w
   pt <- pmax(pt, 0)
   pt <- pt / sum(pt * h)
@@ -35,68 +51,167 @@ nw <- 50L
 h <- 2.5 / 300
 tmax <- 2.5
 
-P_pop <- c(alpha = 2.0, kappa = 20.0)
+P_pop <- c(alpha = 2.0, kappa = 4.0)
 pc <- popcode(P_pop, nw = nw)
 pang <- pc$pang
 Theta <- pc$th
 
-P_full <- c(vnorm = 2.5, eta1 = 0.05, eta2 = 0.05, a = 2.0, alpha = 2.0, kappa = 20.0, ter = 0.30, st = 0.05)
+P_full <- c(vnorm = 2.5, eta1 = 0.05, eta2 = 0.05, a = 1.0, alpha = 2.0, kappa = 4.0, ter = 0.30, st = 0.05)
 
 out <- popcdm300(P_full, nw = nw, h = h, tmax = tmax)
 
-# Normalize marginals for shape comparison on the circle (not equal to "same units").
+wbin <- 2 * pi / nw
+Theta_full <- -pi + (0:(nw - 1L)) * wbin
+v1 <- P_full["vnorm"] * cos(Theta_full[1L])
+v2 <- P_full["vnorm"] * sin(Theta_full[1L])
+Pi <- c(v1, v2, P_full["eta1"], P_full["eta2"], 1.0, P_full["a"])
+base <- cdm_core(Pi, nw = nw, h = h, tmax = tmax)
+Pthetas <- base$Ptheta
+
+contrib_mat <- matrix(0, nrow = nw, ncol = nw)
+for (i in seq_len(nw)) {
+  k <- i - 1L
+  contrib_mat[i, ] <- pang[i] * circshift_vec(Pthetas, k)
+}
+
+Ptheta_rebuilt <- colSums(contrib_mat)
+err_mix <- max(abs(Ptheta_rebuilt - out$Ptheta))
+
 pang_n <- pang / max(pang)
 Ptheta_n <- out$Ptheta / max(out$Ptheta)
+
+# Smooth wrap: same normalized Ptheta as linear panel, periodic spline for a clean polar trace.
+th_fine <- seq(-pi, pi, length.out = 360L)
+th_ext <- c(Theta_full - 2 * pi, Theta_full, Theta_full + 2 * pi)
+p_ext <- c(Ptheta_n, Ptheta_n, Ptheta_n)
+p_fine <- spline(th_ext, p_ext, xout = th_fine)$y
+p_fine <- pmax(p_fine, 0)
+p_fine <- p_fine / max(p_fine)
 
 mr <- marginal_rt_from_gt(out$Theta, out$T, out$Gt)
 
 ## --- figure ----------------------------------------------------------------
 
-png("popcdm_walkthrough_fig.png", width = 1600, height = 700, res = 140)
+png("popcdm_walkthrough_fig.png", width = 1180, height = 720, res = 120)
 
-layout(matrix(1:3, nrow = 1), widths = c(1.1, 1.1, 1.2))
-
-# (1) Population PMF pang — drift-direction weights before CDM mixture.
-par(mar = c(1, 1, 3, 1))
-r_max <- max(c(pang_n, Ptheta_n)) * 1.15
-plot(
-  0, 0, type = "n",
-  xlim = c(-1, 1) * r_max, ylim = c(-1, 1) * r_max,
-  asp = 1, xlab = "", ylab = "", axes = FALSE, main = "Left: pang (drift-direction weights)"
+# Two rows: row1 three equal panels; row2 two equal panels (not overly wide).
+layout(
+  rbind(
+    c(1, 1, 2, 2, 3, 3),
+    c(4, 4, 4, 5, 5, 5)
+  ),
+  heights = c(1, 1),
+  widths = rep(1, 6)
 )
-symbols(0, 0, circles = r_max, inches = FALSE, add = TRUE, fg = "grey85", lwd = 1)
-abline(h = 0, v = 0, col = "grey92")
-polar_segments(Theta, pang_n, col = "#3366CC", lwd = 2)
-text(0, -r_max * 1.08, "radius = PMF scaled to max 1", cex = 0.85, col = "grey35")
 
-# (2) Overlay pang vs Ptheta (after POPCDM): hitting spreads angle beyond drift prior.
+r_max <- max(c(pang_n, Ptheta_n)) * 1.15
+
+# (1) pang
 par(mar = c(1, 1, 3, 1))
 plot(
   0, 0, type = "n",
   xlim = c(-1, 1) * r_max, ylim = c(-1, 1) * r_max,
   asp = 1, xlab = "", ylab = "", axes = FALSE,
-  main = "Middle: pang (blue) vs Ptheta (orange)\n(scaled separately to max 1)"
+  main = "pang — drift-direction weights (scaled to max 1)"
 )
 symbols(0, 0, circles = r_max, inches = FALSE, add = TRUE, fg = "grey85", lwd = 1)
 abline(h = 0, v = 0, col = "grey92")
-polar_segments(Theta, pang_n, col = "#3366CC", lwd = 2)
-polar_segments(Theta, Ptheta_n, col = "#CC6633", lwd = 2)
-legend(
-  "topright",
-  legend = c("pang (population layer)", "Ptheta (after CDM + mixture)"),
-  col = c("#3366CC", "#CC6633"), lwd = 2, bty = "n", cex = 0.8
-)
+polar_segments(Theta, pang_n * r_max, col = "#3366CC", lwd = 2)
+text(0, -r_max * 1.08, "one spoke = one bin", cex = 0.78, col = "grey40")
 
-# (3) Marginal RT from mixed joint Gt.
-par(mar = c(4, 4, 3, 1))
+# (2) Ptheta: same curve as bottom-left linear plot, wrapped (radius \propto Ptheta / max).
+par(mar = c(1, 1, 3, 1))
+plot(
+  0, 0, type = "n",
+  xlim = c(-1, 1) * r_max, ylim = c(-1, 1) * r_max,
+  asp = 1, xlab = "", ylab = "", axes = FALSE,
+  main = expression(P[theta] ~ " on circle (same marginal as linear panel)")
+)
+symbols(0, 0, circles = r_max, inches = FALSE, add = TRUE, fg = "grey85", lwd = 1)
+abline(h = 0, v = 0, col = "grey92")
+polar_closed_curve(
+  th_fine, p_fine * r_max,
+  border = "#CC6633", lwd = 2.6,
+  fill = adjustcolor("#CC6633", alpha.f = 0.22)
+)
+text(0, -r_max * 1.08, "radius \u221d Ptheta / max (spline between bins)", cex = 0.68, col = "grey40")
+
+# (3) Marginal RT
+par(mar = c(3.5, 3.5, 3, 1))
 plot(
   mr$t, mr$dens,
   type = "l", lwd = 2, col = "#225522",
   xlab = "Time (s)", ylab = "Approx. marginal density",
-  main = "Right: marginal RT from Gt\n(sum over angle bins × Δθ, normalized)"
+  main = "Marginal RT from Gt"
+)
+mtext(expression(sum * " over angle bins (" * Delta * theta * ")"), side = 3, line = 0.2, cex = 0.7, col = "grey45")
+grid(col = "grey90")
+
+# (4) Linear angular marginal (same Ptheta shape as polar: spline on normalized marginal).
+par(mar = c(3.5, 3.5, 3, 1))
+plot(
+  th_fine, p_fine,
+  type = "l", lwd = 2.5, col = "#CC6633",
+  xlab = expression(theta ~ "(rad)"), ylab = "Mass / max",
+  main = "Ptheta (solid) vs pang (dashed)",
+  ylim = c(0, 1.05)
+)
+lines(Theta, pang_n, lwd = 2, col = "#3366CC", lty = 2)
+abline(h = 0, col = "grey88")
+legend(
+  "topright",
+  legend = c(
+    expression(P[theta] ~ "(response marginal)"),
+    expression(p["ang"] ~ "(drift weights)")
+  ),
+  col = c("#CC6633", "#3366CC"),
+  lty = c(1, 2),
+  lwd = c(2.5, 2),
+  bty = "n",
+  cex = 0.85
 )
 grid(col = "grey90")
+
+# (5) Largest pang[i] mixture rows + total Ptheta
+par(mar = c(3.5, 3.5, 3, 1))
+k_show <- min(6L, nw)
+top_i <- order(pang, decreasing = TRUE)[seq_len(k_show)]
+ylim_c <- range(c(contrib_mat[top_i, , drop = FALSE], out$Ptheta), na.rm = TRUE)
+plot(
+  Theta_full, contrib_mat[top_i[1L], ],
+  type = "l", lwd = 2, col = 1,
+  xlab = expression(theta[resp] ~ "(rad)"),
+  ylab = "mass contribution",
+  main = sprintf(
+    "Largest %d pang[i] rows + total Ptheta",
+    k_show
+  ),
+  ylim = ylim_c
+)
+grid(col = "grey90")
+pal <- hcl.colors(k_show, "Dark 3")
+for (ii in seq_along(top_i)) {
+  i <- top_i[ii]
+  lines(Theta_full, contrib_mat[i, ], col = pal[ii], lwd = 1.6)
+}
+lines(Theta_full, out$Ptheta, col = "black", lwd = 2.8)
+legend(
+  "topright",
+  legend = c(
+    sprintf("i=%d (pang=%.3f)", top_i, pang[top_i]),
+    expression(P[theta] ~ "total")
+  ),
+  col = c(pal, "black"),
+  lwd = c(rep(1.6, k_show), 2.8),
+  bty = "n",
+  cex = 0.68,
+  ncol = 1
+)
+mtext(sprintf("mixture rebuild err = %.2e", err_mix), side = 3, line = 0.2, cex = 0.7, col = "grey45")
 
 dev.off()
 
 message("Wrote popcdm_walkthrough_fig.png in ", normalizePath(getwd()))
+if (err_mix > 1e-8) {
+  warning("Ptheta rebuild mismatch max abs err = ", err_mix, call. = FALSE)
+}
