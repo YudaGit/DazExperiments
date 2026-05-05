@@ -32,12 +32,12 @@ sample_unique_hues <- function(n, min_sep = 30L, max_tries = 5000L) {
 # mode: "baseline" (all unique), "homoR" (all redundant),
 #       "R_R" (mixed, cue redundant), "R_NR" (mixed, cue nonredundant)
 gen_trial <- function(
-  set_size = 6L,
+  set_size = 1:4,
   mode = c("baseline", "homoR", "R_R", "R_NR"),
   pre_dur = 0.5,
-  ret_dur = NA_real_,
+  ret_dur = 1.0,
   min_sep = 30L,
-  redundant_n = 3L,
+  redundant_n = 1:3L,
   even_positions = TRUE,
   seed = NULL
 ) {

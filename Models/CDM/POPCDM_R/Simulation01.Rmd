@@ -1,0 +1,136 @@
+---
+title: "Simulation01"
+output: html_document
+---
+
+This notebook mirrors `TempTest.R` with the same simulation settings, but uses `ggplot2` panels for quick visual checks.
+
+```{r setup}
+source("trial_gen.R")
+source("sim_runner.R")
+library(ggplot2)
+```
+
+## Model parameters
+
+```{r beta}
+# Editable model parameters for this run.
+beta <- list(
+  baseAlpha = 4.5,
+  baseKappa = 18.0,
+  vnorm = 5.5,
+  eta1 = 0.8,
+  eta2 = 0.001,
+  a = 6.0,
+  ter = 0.0,
+  st = 0.00
+)
+```
+
+## Design
+
+```{r design}
+design <- list(
+  itemN = 1:4,
+  mode = c("baseline", "R_R", "R_NR"),
+  preDur = 0.4,
+  retDur = 0.8,
+  min_sep = 30,
+  even_positions = TRUE,
+  redundantN = 1:4
+)
+
+x <- gen_trial_table(design, reps_per_cell = 500, seed = 42)
+```
+
+## Run simulation
+
+```{r simulate}
+sim <- sim_from_table(
+  x$trial_table,
+  beta = beta,
+  pop_tune = "alpha",
+  sim_mode = "error_only",
+  smooth_gt = TRUE,
+  smooth_theta_bw = 1,
+  smooth_time_bw = 1,
+  reuse_dist = TRUE
+)
+
+sim$cond <- cond_key(sim)
+sim$cond <- factor(sim$cond, levels = unique(sim$cond))
+```
+
+## Panel label map (edit this)
+
+```{r panel-labels}
+# Replace the RIGHT-HAND side text with your own panel labels.
+# IMPORTANT: the order you write entries in `label_map` defines panel order.
+cond_levels <- levels(sim$cond)
+
+label_map <- c(
+  "N1_baseline_R1_cueNA_pre0.4_ret0.8" = "Set1 Baseline",
+  "N2_baseline_R1_cueNA_pre0.4_ret0.8" = "Set2 Baseline",
+  "N3_baseline_R1_cueNA_pre0.4_ret0.8" = "Set3 Baseline",
+  "N4_baseline_R1_cueNA_pre0.4_ret0.8" = "Set4 Baseline",
+  "N3_R_NR_R2_cueNR_pre0.4_ret0.8" = "Set3(2R)-NR cue",
+  "N3_R_R_R2_cueR_pre0.4_ret0.8" = "Set3(2R)-R cue",
+  "N4_R_NR_R2_cueNR_pre0.4_ret0.8" = "Set6(2R)-NR cue",
+  "N4_R_R_R2_cueR_pre0.4_ret0.8" = "Set6(2R)-R cue",
+  "N4_R_NR_R3_cueNR_pre0.4_ret0.8" = "Set6(3R)-NR cue",
+  "N4_R_R_R3_cueR_pre0.4_ret0.8" = "Set6(3R)-R cue"
+)
+
+unknown <- setdiff(names(label_map), cond_levels)
+if (length(unknown)) {
+  stop(sprintf("Unknown condition key(s) in label_map: %s", paste(unknown, collapse = ", ")), call. = FALSE)
+}
+
+# Keep your manual order first; append any unlabeled conditions after that.
+panel_order <- c(names(label_map), setdiff(cond_levels, names(label_map)))
+
+# Full label vector aligned to panel_order.
+cond_labels <- stats::setNames(panel_order, panel_order)
+cond_labels[names(label_map)] <- label_map
+sim$cond <- factor(sim$cond, levels = panel_order)
+
+# Optional global RT x-range (set to NULL to use ggplot default)
+rt_xlim <- c(min(sim$rt, na.rm = TRUE), max(sim$rt, na.rm = TRUE))
+```
+
+## Quick check
+
+# ```{r quick-check}
+# nrow(sim)
+# length(levels(sim$cond))
+# head(sim[c("itemN", "mode", "redundantN", "error_deg", "rt", "alpha", "kappa")])
+# ```
+
+## Error distributions by condition
+
+```{r error-panels, fig.width=12, fig.height=9}
+ggplot(sim, aes(x = error_deg)) +
+  geom_histogram(bins = 180, fill = "grey80", color = "darkblue") +
+  geom_vline(xintercept = 0, color = "red", linewidth = 0.1) +
+  facet_wrap(~ cond, labeller = as_labeller(cond_labels)) +
+  labs(
+    x = "Response error (deg)",
+    y = ""
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+## RT distributions by condition
+
+```{r rt-panels, fig.width=12, fig.height=9}
+ggplot(sim, aes(x = rt)) +
+  geom_histogram(bins = 30, fill = "skyblue", color = "white") +
+  facet_wrap(~ cond, labeller = as_labeller(cond_labels)) +
+  labs(
+    x = "RT (s)",
+    y = ""
+  ) +
+  coord_cartesian(xlim = rt_xlim) +
+  theme_minimal(base_size = 12)
+```
+

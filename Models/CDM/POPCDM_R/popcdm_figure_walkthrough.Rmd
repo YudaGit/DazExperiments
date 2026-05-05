@@ -1,0 +1,328 @@
+---
+title: "POPCDM Figure Walkthrough (ggplot)"
+output: html_document
+---
+
+This notebook recreates the original POPCDM walkthrough figure using `ggplot2`, with each panel in a separate chunk so you can run and inspect them one-by-one.
+
+```{r setup}
+source("popcdm300.R")
+library(ggplot2)
+```
+
+## Shared helpers
+
+```{r helpers}
+marginal_rt_from_gt <- function(Theta, Tvec, Gt) {
+  w <- 2 * pi / length(Theta)
+  h <- if (length(Tvec) > 1L) diff(Tvec)[1] else 1
+  pt <- colSums(Gt) * w
+  pt <- pmax(pt, 0)
+  pt <- pt / sum(pt * h)
+  data.frame(t = Tvec, dens = pt)
+}
+```
+
+## Run one POPCDM configuration
+
+```{r model-run}
+nw <- 50L
+h <- 2.5 / 300
+tmax <- 2.5
+
+P_pop <- c(alpha = 1.0, kappa = 20.0)
+pc <- popcode(P_pop, nw = nw)
+
+P_full <- c(
+  vnorm = 5.0, eta1 = 0.5, eta2 = 0.001, a = 5.0,
+  alpha = 10.0, kappa = 20.0, ter = 0.0, st = 0.0
+)
+out <- popcdm300(P_full, nw = nw, h = h, tmax = tmax, return_components = TRUE)
+
+pang_n <- pc$pang / max(pc$pang)
+Ptheta_n <- out$Ptheta / max(out$Ptheta)
+rt_df <- marginal_rt_from_gt(out$Theta, out$T, out$Gt)
+
+polar_pang <- data.frame(
+  theta = pc$th,
+  xend = pang_n * cos(pc$th),
+  yend = pang_n * sin(pc$th),
+  value = pang_n
+)
+
+circle_df <- data.frame(
+  phi = seq(0, 2 * pi, length.out = 361)
+)
+circle_df$x <- cos(circle_df$phi)
+circle_df$y <- sin(circle_df$phi)
+
+theta_deg <- out$Theta * 180 / pi
+comp_df <- do.call(
+  rbind,
+  lapply(seq_len(nw), function(i) {
+    data.frame(
+      source_bin = i,
+      theta_deg = theta_deg,
+      ptheta = out$Ptheta_components[i, ],
+      pang_weight = out$Pang[i],
+      ptheta_weighted = out$Pang[i] * out$Ptheta_components[i, ]
+    )
+  })
+)
+
+# RT component decomposition:
+# under current shift-mix construction, shifting is along theta rows only, so each source-bin
+# component has the same RT shape before Pang weighting.
+sigma <- 1.0
+Theta_model <- out$Theta
+v1 <- P_full["vnorm"] * cos(Theta_model[1])
+v2 <- P_full["vnorm"] * sin(Theta_model[1])
+Pi <- c(v1, v2, P_full["eta1"], P_full["eta2"], sigma, P_full["a"])
+base <- cdm_core(Pi, nw = nw, h = h, tmax = tmax)
+rt_component <- marginal_rt_from_gt(base$Theta, base$T, base$Gt)
+rt_comp_df <- do.call(
+  rbind,
+  lapply(seq_len(nw), function(i) {
+    data.frame(
+      source_bin = i,
+      t = rt_component$t,
+      rt_comp = rt_component$dens,
+      pang_weight = out$Pang[i],
+      rt_comp_weighted = out$Pang[i] * rt_component$dens
+    )
+  })
+)
+
+gt_df <- expand.grid(
+  theta_deg = theta_deg,
+  t = out$T
+)
+gt_df$gt <- as.vector(out$Gt)
+```
+
+## Panel 1: `pang` (population drift-direction weights)
+
+**Figure title:** `pang` (population drift-direction weights)  
+**Figure subtitle:** Population-layer PMF over drift directions.  
+**Figure description:** Spokes show normalized `pang` values on the circular angle grid before CDM mixing.
+
+```{r panel-1-pang}
+ggplot() +
+  geom_path(data = circle_df, aes(x = x, y = y), color = "grey80", linewidth = 0.6) +
+  geom_hline(yintercept = 0, color = "grey92") +
+  geom_vline(xintercept = 0, color = "grey92") +
+  geom_segment(
+    data = polar_pang,
+    aes(x = 0, y = 0, xend = xend, yend = yend),
+    color = "#3366CC", linewidth = 0.8
+    ) +
+  coord_equal(xlim = c(-1.1, 1.1), ylim = c(-1.1, 1.1)) +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank()
+  )
+```
+
+## Panel 2: `Ptheta` components (all bins, colored)
+
+**Figure title:** `Ptheta` components (all bins, colored)  
+**Figure subtitle:** Per-source-bin angle marginals before `Pang` weighting.  
+**Figure description:** Each colored line is one shifted component `Ptheta_i(theta)` from `out$Ptheta_components`.
+
+```{r panel-5-components-top}
+comp_all <- comp_df
+comp_all$source_bin <- factor(comp_all$source_bin)
+
+ggplot(comp_all, aes(x = theta_deg, y = ptheta, color = source_bin, group = source_bin)) +
+  geom_line(linewidth = 0.6, alpha = 0.8) +
+  labs(
+    x = "Theta (deg)",
+    y = "Component Ptheta",
+    color = "Source bin i"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none")
+```
+
+## Panel 3: weighted components for all bins
+
+**Figure title:** Weighted `Ptheta` components (all bins)  
+**Figure subtitle:** Source-bin contributions after `Pang` weighting.  
+**Figure description:** Each line is `Pang[i] * Ptheta_i(theta)`; these contributions sum to final `out$Ptheta`.
+
+```{r panel-6-components-weighted-all}
+comp_all_w <- comp_df
+comp_all_w$source_bin <- factor(comp_all_w$source_bin)
+
+ggplot(comp_all_w, aes(x = theta_deg, y = ptheta_weighted, color = source_bin, group = source_bin)) +
+  geom_line(linewidth = 0.55, alpha = 0.8) +
+  labs(
+    x = "Theta (deg)",
+    y = "Weighted component contribution",
+    color = "Source bin i"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none")
+```
+
+## Panel 4: weighted RT components for all bins
+
+**Figure title:** Weighted RT components (all bins)  
+**Figure subtitle:** RT-side contributions after `Pang` weighting.  
+**Figure description:** Under current shift-mix implementation, RT component shape is shared across bins and scaled by `Pang[i]`.
+
+```{r panel-9-rt-components-weighted}
+rt_comp_all <- rt_comp_df
+rt_comp_all$source_bin <- factor(rt_comp_all$source_bin)
+
+ggplot(rt_comp_all, aes(x = t, y = rt_comp_weighted, color = source_bin, group = source_bin)) +
+  geom_line(linewidth = 0.55, alpha = 0.8) +
+  labs(
+    x = "Time (s)",
+    y = "Weighted RT contribution",
+    color = "Source bin i"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none")
+```
+
+## Panel 5: weighted contributions (all bins) + final `Ptheta`
+
+**Figure title:** Weighted `Ptheta` contributions and final `Ptheta`  
+**Figure subtitle:** Sum-of-components reconstruction in angle space.  
+**Figure description:** Colored lines are `Pang[i] * Ptheta_i(theta)`; black line is the final mixed `out$Ptheta`.
+
+```{r panel-7-components-weighted-top}
+comp_all_w <- comp_df
+comp_all_w$source_bin <- factor(comp_all_w$source_bin)
+ptheta_final_df <- data.frame(theta_deg = theta_deg, ptheta_final = out$Ptheta)
+
+ggplot() +
+  geom_line(
+    data = comp_all_w,
+    aes(x = theta_deg, y = ptheta_weighted, color = source_bin, group = source_bin),
+    linewidth = 0.5, alpha = 0.45
+  ) +
+  geom_line(
+    data = ptheta_final_df,
+    aes(x = theta_deg, y = ptheta_final),
+    color = "black", linewidth = 1.1
+  ) +
+  labs(
+    x = "Theta (deg)",
+    y = "Contribution / final Ptheta",
+    color = "Source bin i"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none")
+```
+
+## Panel 6: weighted RT contributions + final RT marginal
+
+**Figure title:** Weighted RT contributions and final RT marginal  
+**Figure subtitle:** Sum-of-components reconstruction in time space.  
+**Figure description:** Colored lines are `Pang[i] * RT_component_i(t)`; black line is the final RT marginal from mixed `Gt`.
+
+```{r panel-10-rt-components-weighted-plus-final}
+rt_final_df <- data.frame(t = rt_df$t, rt_final = rt_df$dens)
+
+ggplot() +
+  geom_line(
+    data = rt_comp_all,
+    aes(x = t, y = rt_comp_weighted, color = source_bin, group = source_bin),
+    linewidth = 0.5, alpha = 0.45
+  ) +
+  geom_line(
+    data = rt_final_df,
+    aes(x = t, y = rt_final),
+    color = "black", linewidth = 1.1
+  ) +
+  labs(
+    x = "Time (s)",
+    y = "Contribution / final RT marginal",
+    color = "Source bin i"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none")
+```
+
+## Panel 7: `Gt(theta, t)` in 3D
+
+**Figure title:** 3D surface of `Gt(theta, t)`  
+**Figure subtitle:** Joint density over response angle and decision time.  
+**Figure description:** Height encodes the joint density value at each `(theta, t)` grid location.
+
+```{r panel-4b-gt-3d, fig.width=11, fig.height=8, out.width='100%'}
+# persp() expects z with rows aligned to x and columns to y.
+# out$Gt is [theta_index, time_index], so we can pass it directly.
+theta_deg_vec <- theta_deg
+time_vec <- out$T
+z_mat <- out$Gt
+
+oldpar <- par(no.readonly = TRUE)
+on.exit(par(oldpar), add = TRUE)
+par(bg = "white", mar = c(3.5, 3.5, 2, 1))
+
+persp(
+  x = theta_deg_vec,
+  y = time_vec,
+  z = z_mat,
+  theta = 35,
+  phi = 30,
+  expand = 0.75,
+  col = "lightblue",
+  shade = 0.45,
+  border = NA,
+  ticktype = "detailed",
+  xlab = "Theta (deg)",
+  ylab = "Time (s)",
+  zlab = "Gt"
+)
+```
+
+## Appendix: Additional `Gt(theta, t)` Views
+
+### `Gt(theta, t)` as a heatmap
+
+**Figure title:** `Gt(theta, t)` heatmap  
+**Figure subtitle:** Joint density in 2D color map form.  
+**Figure description:** Color indicates density magnitude across theta-time grid cells.
+
+```{r panel-a1-gt-heatmap}
+ggplot(gt_df, aes(x = theta_deg, y = t, fill = gt)) +
+  geom_raster(interpolate = TRUE) +
+  scale_fill_viridis_c(option = "C") +
+  labs(
+    x = "Theta (deg)",
+    y = "Time (s)",
+    fill = "Gt"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+### `Gt(theta, t)` contour view
+
+**Figure title:** `Gt(theta, t)` contours  
+**Figure subtitle:** Iso-density contours of the same joint surface.  
+**Figure description:** Filled contour bands show equal-density regions and highlight the geometry of the joint.
+
+```{r panel-a2-gt-contour}
+ggplot(gt_df, aes(x = theta_deg, y = t, z = gt)) +
+  geom_contour_filled(bins = 12) +
+  labs(
+    x = "Theta (deg)",
+    y = "Time (s)",
+    fill = "Gt level"
+  ) +
+  theme_minimal(base_size = 12)
+```
+
+## Optional: print parameter values used above
+
+```{r params}
+P_pop
+P_full
+```
+

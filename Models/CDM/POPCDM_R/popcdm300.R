@@ -131,7 +131,7 @@ cdm_core <- function(P, nw, h, tmax) {
 }
 
 ################################################################################
-popcdm300 <- function(P, nw, h, tmax) {
+popcdm300 <- function(P, nw, h, tmax, return_components = FALSE) {
 ################################################################################
 # POPCDM wrapper (adopted from popcdm2 Matlab)
 # P = c(vnorm, eta1, eta2, a, alpha, kappa, ter, st)
@@ -163,6 +163,7 @@ popcdm300 <- function(P, nw, h, tmax) {
   Mt <- rep(0, szh)
   Gta <- matrix(0, nrow = szh, ncol = sz) # joint dist. without nondecision times
   Gt <- matrix(0, nrow = szh, ncol = sz)  #joint dist. with nondecision time
+  Ptheta_components <- if (return_components) matrix(0, nrow = nw, ncol = nw) else NULL
   
   # Population code distribution of polar angles of drift rate
   pc_out <- popcode(c(alpha, kappa), nw)
@@ -183,9 +184,14 @@ popcdm300 <- function(P, nw, h, tmax) {
   for (i in 1:nw) {
     k <- i - 1
     Gmix <- circshift_rows(Gts, k)
+    Ptheta_i <- circshift_vec(Pthetas, k)
+    Mt_i <- circshift_vec(Mts, k)
     Gta <- Gta + Pang[i] * Gmix
-    Ptheta <- Ptheta + Pang[i] * circshift_vec(Pthetas, k)
-    Mt <- Mt + Pang[i] * circshift_vec(Mts, k)
+    Ptheta <- Ptheta + Pang[i] * Ptheta_i
+    Mt <- Mt + Pang[i] * Mt_i
+    if (return_components) {
+      Ptheta_components[i, ] <- Ptheta_i
+    }
   }
   
   # Add nondecision time mean shift
@@ -205,5 +211,10 @@ popcdm300 <- function(P, nw, h, tmax) {
     Mt <- Mt + ter
   }
   
-  list(T = T, Gt = Gt, Theta = Theta, Ptheta = Ptheta, Mt = Mt)
+  out <- list(T = T, Gt = Gt, Theta = Theta, Ptheta = Ptheta, Mt = Mt)
+  if (return_components) {
+    out$Pang <- Pang
+    out$Ptheta_components <- Ptheta_components
+  }
+  out
 }
