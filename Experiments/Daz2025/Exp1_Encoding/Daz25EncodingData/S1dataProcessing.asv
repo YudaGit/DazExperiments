@@ -261,8 +261,8 @@ modelT.Grouping = reordercats(categorical(modelT.Grouping), {'Grouped','Separate
 
 modelT.logRT = log(modelT.RT);
 
-summaryT = groupcounts(modelT, {'ID','Session'});
-disp(summaryT);
+disp('Model-ready table summary:');
+disp(groupsummary(modelT, {'ID','Session'}, 'numel', 'AbsErr'));
 
 writetable(modelT, 'S1_smallN_model_ready.csv');
 fprintf('\nSaved: S1_smallN_model_ready.csv\n');
