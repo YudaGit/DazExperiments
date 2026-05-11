@@ -271,7 +271,7 @@ persp(
   z = z_mat,
   theta = 35,
   phi = 30,
-  expand = 0.75,
+  expand = 0.4,
   col = "lightblue",
   shade = 0.45,
   border = NA,
