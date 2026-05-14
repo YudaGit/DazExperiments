@@ -1,0 +1,169 @@
+1. Overview
+-----------
+The headline news is hypothesis that the power law exponent will be greater for desaturated stimuli hasn't panned out. If anything, it is the contrary in 2 x beta models. But 1 x beta models do well in model comparisons with large betas and the reason is open to conjecture (see the bottom of this file). 
+
+There are two ways to do model fitting, the way I've done it in the past, using the Nelder-Mead simplex algorithm (fminsearch in Matlab), which requires good starting values, based on exploratory visualisation. The alternative is to use the particle swarm optimiser, which is a Monte Carlo method, which doesn't require starting values, just a range of possible values. It's comparatively slow and I've had trouble with it timing out on the VPN. The fits I've reported below were based on time-limiting it to three hours and then running simplex on the best estimates. It's possible they can be improved. I've shown both methods below, because they use different syntaxes. 
+
+2. Data
+--------
+>> load Jay5
+Has data for Jay (jgai), Allen (aqai), and Jay's daughter (jdai). The data structures are cell arrays:
+aqai =
+    {450x4 double}    {450x4 double}    {450x4 double}    {450x4 double}
+    {450x4 double}    {450x4 double}    {450x4 double}    {450x4 double}
+The rows are saturation and the columns are set size. Each cell is a 450 x 4 array with columns: stimulus, error, RT, response. I scale angular measures in signed radians (-pi...pi) and time in seconds. 
+
+3. Fitting routine
+------------------
+
+<jgjp5> => <vjp300rot.c>
+
+The Matlab calls C, which must be compiled (mexed, see l. 10 of code). On Linux the Bessel function routines and other math routines are supplied by the Gnu library, GSL, and the related gslcblas library. Building the code from with Matlab is done as
+>> mex vjp300rot.c -lgsl  -lgslcblas -lm
+
+>> help jgjp5
+  ==========================================================================
+  Circular diffusion model with Jones-Pewsey phase angle to Jay Gu's
+  desaturation experiment, 2 saturation x 4 set size (1, 2, 4, 6)
+  Same as Allen Qian's experiment but with blocked saturation. 
+  Power-law 2 x beta model. Modified <vwmjp79x> % 27/04/26
+  03/05/26 - delta > .25, already has st < .25
+    [ll,qaic, qbic,Pred] =  jgj5(Pvar, Pfix, Sel, Data, trace)
+  P = [nrm1:nrm8 k1:k8, eta1..eta4, Psi1..Psi4,   B,     A,   alpha, a, Ter1:Ter4 st delta, beta1:beta2]  
+          1:8     9:16   17:20       21:24      25:28  29:32   33   34   35:38    39   40   41:42
+     'Data' is a (2 x 4) -element cell array using the new conventions. 
+      A is raw bias angles, B is bias strength; k, and psi are JP precision
+      and shape. The etas are radial variability.
+  5/5/26 - modified to allow A to go outside (-pi,pi], wraps around
+  5/5/26 - allow 1 x eta
+  ===========================================================================
+  
+This is the current version of the fitting routine. It has a total of 42 parameters, but we typically want to restrict some of them to be equal to others, which is handled internally, by passing a vector of variable Parameters, Pvar, which are estimated, a vector of fixed parameters, Pfix, which is held fixed, and a selector vector, Sel, which determines which are fixed which are free.   
+
+For example, 
+P=[
+   5.4011    5.8348    5.9706    5.5818    6.1061    5.7703    5.7495    5.3210    3.9859    1.0000    1.0000
+   1.0000    4.3702    1.0000    1.0000    1.0000    1.2306    1.0000    1.0000    1.0000   -0.6350         0
+       0         0    0.5197    0.5240    0.6104    0.0000    2.4717   -1.7010    1.7397    0.1984    1.3168
+   2.6321    0.4302    0.5614    0.6320    0.6391    0.3428    0.1256    0.6881    0.5000]
+
+Sel=[
+  1     1     1     1     1     1     1     1     1     0     0     0     1     0     0     0     1     0     0
+  0     1     0     0     0     1     1     1     1     1     1     1     1     1     1     1     1     1     0
+  1     1     1     1]
+  
+Then    
+   
+>>  [ll,a,b,Pred]=jgjp5(P(Sel==1), P(Sel==0), Sel, jdai);
+
+The fitted model has 8 drift rate norms (1:8), two free Jones-Pewey kappas (9 & 13) and a power law on set size. The other values of kappa (10,11,12,14,15,16) in P don't matter; they are ignored. (See ll. 132-146 of jgjp5.). It has a single eta (17) and a single Psi (21), 4 x Ter's, and a single free beta (31). The B, A, alpha, and delta are all related to the bias model. If the B parameters are all 0 and the associated Sel parameters are all 0, the bias model can be removed. The outputs are LL, AIC, BIC, and fitted values. 
+
+>> [ll, a,b]
+ans = 1.0e+03 *
+      1.4936    3.0192    3.2048
+
+The compute bottleneck is associated with the bias model, which requires a numerical integration across all of the possible stimulus values. This is speeded up a bit by the use of a parfor loop in l. 482 which does this in parallel.       
+
+4. Plotting
+-----------
+>>  [ll,a,b,Pred]=jgjp5(P(Sel==1), P(Sel==0), Sel, jdai);
+          
+Plots the marginal error and RT distribution (Fig1 and Fig2). 
+
+>>  qvwm26(@jgjp5, P(Sel==1), P(Sel==0), Sel, jdai)
+
+Plots the QxQ joint distributions (Fig3). (This generates the predictions for the specified function rather than than taking the fitted Pred structure. 
+
+>>  angvwm26(jdai, Pred)
+
+Plots the bias model in error and RT (Fig4 and Fig5). All of these functions have some optional plotting range parameters to control x and y axis ranges
+
+5. Fitting - Simplex
+--------------------
+Assume P contains good starting values chosen by visualisation and trial-and-error
+
+>> setopt  % turn on iteration tracing in simplex, create 'options' structure
+
+>> pest = fminsearch(@jgjp4, P(Sel==1), options, P(Sel==0), Sel, jgai)
+
+>> P(Sel==1) = pest % pest are best fitting parameters, update parameter vector
+>> [ll,a,b,Pred]=jgjp5(P(Sel==1), P(Sel==0), Sel, jdai); % Generate fit statistics, predictions for best-fitting model.
+
+6. Fitting - particle swarm
+---------------------------
+The sytax for the modern optimisers is different. It only allows you to pass the vector of parameters to be minimised, not the others, so you have to it using an anonymous function. You also have to pass permissible lower and upper bounds of the functions. I do all the extra work that's needed in an auxiliary function, 
+
+<set_jgjp5> => <jpjg5>
+
+Inside set_jgjp5, the anonymous function called is handled as:
+
+>>  jgjp_dummy = @(x) jgjp5(x, Pfix, Sel, Data);
+
+which passes in the extra parameters Pfix, Sel, and Data. <set_jgjp5> is currently set up to do a two-stage optimization. It runs the particle swarm for three hours (based on the time LL seemed to have stopped changing on my Cloud VM; it should maybe have been set to stop after a predetermined number of iterations). It then runs the contrained optimizer using the best-fitting parameters from the particle swarm as starting parameters.
+
+7. A bit of automation
+-----------------------
+<alljgjp7> runs fits for the three subjects for a single beta model; <alljgjp5> does the same for a 2 x beta model. The only difference is whether P(42) is free or fixed. If it is fixed (Sel(42) = 0) then a single beta model is used (ll. 128-129 in <jgjp5>). These routines have an internal switch: do_bias = 1, will fit the bias model; do_bias = 0 will set all the B amplitudes to zero and fix all the associated parameters. 
+
+After I ran <alljgjp5> and <alljgjp7> I consolidated them and reran the fits with simplex in <allbeta>. The results are saved in {allbeta.mat}
+
+>> load allbeta
+
+Statbeta1 (from <alljgjp7>, 1 x beta model)
+  1.0e+03 *
+
+    4.4808    8.9583    9.1378
+    1.7739    3.5571    3.7366
+    1.5072    3.0242    3.2037
+
+Statbeta2 (from <alljgjp5>, 2 x beta model)
+    4.4858    8.9418    9.1274
+    1.7802    3.5717    3.7573
+    1.4936    3.0192    3.2048
+
+There doesn't seem to be much in it, fitwise. The likelihoods of the 2 x beta model are not necessarily better because of convergence issues. 
+
+Paramsbeta1(:,41:42) (both betas set to P(41).
+ans =
+    0.9061    0.5000
+    0.9005    0.5000
+    0.6881    0.5000
+
+Two-beta model 
+ 
+Paramsbeta2(:,41:42)
+ans =
+    0.5654    0.9068
+    0.9037    0.9018
+    0.6281    0.9062
+
+Differences here for jgai and jdai, but not aqai, but in the opposite direction predicted. Kappas are smaller for desaturated stimuli.  Kappa(1) is larger for deaturated stimuli (P(13)) than for desaturated stimuli (P(9)), as expected.   
+Paramsbeta1(:,[9,13])
+ans =
+    3.7741    3.8812
+    4.7757    4.8838
+    3.9859    4.3702
+
+Paramsbeta2(:,[9,13])
+ans =
+    2.8928    4.2322
+    4.8368    4.9547
+    3.8545    4.6068
+
+So......?
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
