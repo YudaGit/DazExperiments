@@ -1,0 +1,193 @@
+---
+title: "popcdm_fitting_1 — all participants"
+output: html_document
+---
+
+Fit the redundancy POPCDM design model **once per participant** (`uid`).  
+When you knit or run chunks, set the working directory to this folder (same directory as `data2_final.csv` and `fit_popcdm_redundancy.R`).
+
+**Parameters (edit one chunk below):** use **named** starts / lower / upper for the **seven** optimised coordinates (`redundancy_Pvar_free_names()`). Set **fixed** CDM tail values (`eta1`, `eta2`, `ter`, `st`) in `fixed_eta_ter`; **`a` is free** here (seventh coordinate). `redundancy_fit_inputs_seven()` builds `P_var_start`, box bounds, and `P_fix` for the fitter.
+
+**Grid / RT (step 1):** Before fitting, run `redundancy_rt_grid_audit()` with your candidate `tmax` and `h`. If `frac_rt_ge_tmax` is non-negligible, many trial log-likelihoods sit on the **interpolation floor** and parameters can be pulled to **bounds**.
+
+**Multistart + logit β:** `beta_link = "logit"` maps **only** `beta1` and `beta2` (positions 4 and 5 in the seven-vector) through a logistic; `P_var_hat` is always physical.
+
+**Iteration speed:** For pilots, set `TRIAL_CAP`; set `TRIAL_CAP <- NULL` for full data.
+
+# Setup
+
+```{r}
+source("fit_popcdm_redundancy.R")
+load_popcdm_sources()
+
+data_csv <- "data2_final.csv"
+if (!file.exists(data_csv)) {
+  stop("Cannot find ", data_csv, " — set working directory to Data/Redundancy 2024")
+}
+
+uids <- sort(unique(utils::read.csv(data_csv, stringsAsFactors = FALSE)$uid))
+uids
+```
+
+# RT and grid audit (tune `tmax`, `h`, `nw`)
+
+Use the **same** `tmax`, `h`, and `nw` you will pass into the fitter.
+
+```{r}
+fit_df_all <- prepare_redundancy_fit_frame(data_csv, uid_filter = NULL, drop_na_cond = TRUE)
+
+nw <- 100L
+h <- 5 / 100
+tmax <- 3.5
+
+redundancy_rt_grid_audit(fit_df_all, tmax = tmax, h = h, nw = nw)
+```
+
+# Parameters (free seven-vector + fixed eta / ter / st)
+
+Edit **`starts`**, **`lower`**, **`upper`** (all **named**; names must match `redundancy_Pvar_free_names()`). Edit **`fixed_eta_ter`** for the four slots that are **not** in `P_var` (everything except the seven free names is fixed via `P_fix`; `a` is taken from `starts["a"]`).
+
+```{r}
+fixed_eta_ter <- list(eta1 = 1, eta2 = 1e-6, ter = 0.2, st = 0.1)
+
+starts <- c(
+  alphaEst = 5.0,
+  vnorm_R = 2.5,
+  vnorm_NR = 2.2,
+  beta1 = 0.5,
+  beta2 = 0.5,
+  kappa = 5.0,
+  a = 2.0
+)
+lower <- c(
+  alphaEst = 0.05,
+  vnorm_R = 1.0,
+  vnorm_NR = 1.0,
+  beta1 = 0.05,
+  beta2 = 0.05,
+  kappa = 0.2,
+  a = 0.1
+)
+upper <- c(
+  alphaEst = 20.0,
+  vnorm_R = 10.0,
+  vnorm_NR = 10.0,
+  beta1 = 1.0,
+  beta2 = 1.0,
+  kappa = 20.0,
+  a = 10.0
+)
+
+fit_inp <- redundancy_fit_inputs_seven(starts, lower, upper, fixed_eta_ter = fixed_eta_ter)
+P_var_start <- fit_inp$P_var_start
+lower_b <- fit_inp$lower
+upper_b <- fit_inp$upper
+P_fix <- fit_inp$P_fix
+
+fit_control <- list(maxit = 500L, factr = 1e7)
+
+TRIAL_CAP <- 50L
+n_starts <- 3L
+ms_seed <- 1L
+beta_link <- "logit"
+```
+
+# Fit each participant (multistart + logit β)
+
+```{r, message=TRUE, warning=TRUE}
+fits <- vector("list", length(uids))
+names(fits) <- uids
+
+for (uid in uids) {
+  message("Fitting participant: ", uid)
+  fit_df_full <- prepare_redundancy_fit_frame(data_csv, uid_filter = uid, drop_na_cond = TRUE)
+  fit_df <- if (is.null(TRIAL_CAP)) {
+    fit_df_full
+  } else {
+    redundancy_thin_trials_by_cond(fit_df_full, max_per_cond = TRIAL_CAP, seed = ms_seed)
+  }
+  fits[[uid]] <- fit_redundancy_popcdm_multistart(
+    fit_df,
+    P_var_start = P_var_start,
+    lower = lower_b,
+    upper = upper_b,
+    P_fix = P_fix,
+    n_starts = n_starts,
+    seed = ms_seed + match(uid, uids),
+    beta_link = beta_link,
+    beta_latent_limit = 15,
+    nw = nw,
+    h = h,
+    tmax = tmax,
+    control = fit_control
+  )
+}
+```
+
+# Summary table
+
+```{r}
+nms <- redundancy_Pvar_free_names()
+
+fit_summary <- do.call(
+  rbind,
+  lapply(uids, function(u) {
+    f <- fits[[u]]
+    pv <- unname(as.numeric(f$P_var_hat))
+    if (length(pv) != length(nms)) {
+      stop("Unexpected P_var length for ", u)
+    }
+    names(pv) <- nms
+    eps <- 1e-5
+    il <- which(abs(pv - lower_b) < eps)
+    iu <- which(abs(upper_b - pv) < eps)
+    on_lower <- if (length(il)) paste(nms[il], collapse = ",") else NA_character_
+    on_upper <- if (length(iu)) paste(nms[iu], collapse = ",") else NA_character_
+    ms <- f$multistart_detail
+    data.frame(
+      uid = u,
+      n_trials = f$n_trials,
+      nll = f$nll,
+      n_starts = ms$n_starts,
+      best_start_index = ms$best_index,
+      nll_spread = max(ms$nll_each) - min(ms$nll_each),
+      np_free = f$np_free,
+      convergence = f$optim$convergence,
+      alphaEst = pv["alphaEst"],
+      vnorm_R = pv["vnorm_R"],
+      vnorm_NR = pv["vnorm_NR"],
+      beta1 = pv["beta1"],
+      beta2 = pv["beta2"],
+      kappa = pv["kappa"],
+      a = pv["a"],
+      at_lower = on_lower,
+      at_upper = on_upper,
+      stringsAsFactors = FALSE
+    )
+  })
+)
+rownames(fit_summary) <- NULL
+fit_summary
+```
+
+# When parameters still hit bounds (diagnostics)
+
+Pass the **same** `P_fix` as in the fit. Alpha / multiplier logic lives in **`redundancy_nll()`** in `fit_popcdm_redundancy.R` (function `redundancy_branch_m` sits directly above it).
+
+```{r, eval=FALSE}
+uid <- uids[[1]]
+fit_df <- prepare_redundancy_fit_frame(data_csv, uid_filter = uid, drop_na_cond = TRUE)
+fit_df <- redundancy_thin_trials_by_cond(fit_df, max_per_cond = 80L, seed = 1L)
+P0 <- P_var_start
+redundancy_mesh_hit_rates(P0, fit_df, P_fix = P_fix, nw = 48L, h = 0.008, tmax = 5)
+redundancy_curve_nll_1d(1L, seq(0.2, 8, length.out = 25L), P0, fit_df, P_fix = P_fix, nw = 48L, h = 0.008, tmax = 5)
+```
+
+# Per-participant objects
+
+`fits[["YL"]]` holds `optim`, `P_hat`, **`P_var_hat`** (physical seven-vector in order: alphaEst, vnorm_R, vnorm_NR, beta1, beta2, kappa, a), `nll`, `multistart_detail`, etc.
+
+```{r, eval=FALSE}
+fits[["YL"]]$P_var_hat
+fits[["YL"]]$P_hat
+```
