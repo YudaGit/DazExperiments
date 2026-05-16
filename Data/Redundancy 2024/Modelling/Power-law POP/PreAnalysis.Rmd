@@ -1,0 +1,741 @@
+---
+title: "Daz Pre Analysis"
+author: "Paul Garrett"
+date: '2024-03-21'
+output: 
+  html_document:
+    code_folding: hide
+---
+
+
+```{r setup, include=FALSE}
+shell('cls'); rm(list=ls())
+setwd('C:\\Users\\PGGARR\\Documents\\GitHub\\Javascript Experiments\\Daz2024_PostStimCue\\results')
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE)
+options(dplyr.summarise.inform = FALSE)
+
+library('circular')
+library('dplyr')
+library('tidyverse')
+library('ggplot2')
+
+load('preprocessed.RData')
+data = preprocessed$data
+v = preprocessed$v
+rm(preprocessed)
+
+```
+
+
+
+```{r, fig.width = 14, fig.height = 50}
+
+data %>% ggplot() + aes(x =response_error, fill = num_items) + geom_histogram(binwidth = 10) + v$theme + 
+  facet_wrap(~uid + num_items, ncol = 4)
+
+
+```
+
+
+```{r, fig.width = 14, fig.height = 70}
+
+data %>% ggplot() + aes(x = response_error, fill = num_items) + geom_density() + v$theme + 
+  facet_wrap(~uid + num_items, ncol = 4)
+
+
+```
+
+
+```{r, fig.width = 14, fig.height = 70}
+
+data %>% filter(response_RT < 5000) %>% ggplot() + aes(x = response_RT, fill = num_items) + geom_density() + v$theme + 
+  facet_wrap(~ uid + num_items, ncol = 4)
+
+
+```
+
+
+
+```{r, fig.width = 14, fig.height = 8}
+
+
+#data %>% filter(uid == 'YL') %>% ggplot() + aes(x = response_error, fill = num_items) + geom_density56() + v$theme + 
+#  facet_wrap(~num_items + ColorN + redundancy, ncol = 7)
+
+data %>% filter(response_RT < 5000) %>% ggplot() + aes(x = response_error, fill = num_items) + geom_density() + v$theme + 
+  facet_wrap(~num_items + ColorN + redundancy, ncol = 7)
+
+
+
+```
+
+```{r, fig.width = 18, fig.height = 12}
+
+
+data %>% filter(response_RT < 5000) %>% ggplot() + aes(x = response_RT, fill = num_items) + geom_density() + v$theme + 
+  facet_wrap(~num_items + ColorN + redundancy, ncol = 7)
+
+
+
+```
+
+
+
+```{r, fig.width = 14, fig.height = 20}
+
+data_summary <- data %>% filter(uid %in% c('ES','YL','AQ','HC','PG')) %>% 
+  group_by(uid, num_items, ColorN, redundancy) %>%
+  summarise(
+    mean_response_error = mean(response_error, na.rm = TRUE),
+    sd_response_error = sd(response_error, na.rm = TRUE),
+    n = n(),  # Get sample size for each group
+    se_response_error = sd_response_error / sqrt(n),  # Calculate standard error
+    .groups = 'drop'  # Drop the grouping for subsequent operations
+  )
+
+
+color_mapping = data.frame(
+  ColorN = c("One Color", "Two Colors", "Four Colors", "Six Colors"),
+  Number = c(1, 2, 4, 6)  
+)
+data_summary = merge(data_summary, color_mapping, by = "ColorN", all.x = TRUE)
+
+
+ggplot(data_summary, aes(x = num_items, group = interaction(redundancy, ColorN), color = ColorN, y = abs(mean_response_error))) + 
+  geom_errorbar(aes(ymin = abs(mean_response_error) - se_response_error, ymax = abs(mean_response_error) + se_response_error), width = .2, position = position_dodge(.7)) + 
+  geom_point(position = position_dodge(.7), size = 10) + 
+  geom_text(aes(label = Number), position = position_dodge(.7), color = 'black', size = 7, fontface = 'bold') + 
+  facet_wrap(~uid + redundancy, ncol=2) + 
+  v$theme + labs(x = "Set Size", y = "Abs. Response Error") + 
+  theme(legend.position = "bottom")
+
+
+```
+
+
+
+```{r, fig.width = 14, fig.height = 50}
+
+data_summary = data %>%
+  group_by(uid, num_items, ColorN, redundancy) %>%
+  summarise(
+    mean_RT = mean(response_RT, na.rm = TRUE),
+    sd_response_error = sd(response_RT, na.rm = TRUE),
+    n = n(),
+    se_response_error = sd_response_error / sqrt(n), 
+    .groups = 'drop'  
+  )
+
+
+color_mapping = data.frame(
+  ColorN = c("One Color", "Two Colors", "Four Colors", "Six Colors"),
+  Number = c(1, 2, 4, 6)  
+)
+data_summary = merge(data_summary, color_mapping, by = "ColorN", all.x = TRUE)
+
+
+ggplot(data_summary, aes(x = num_items, group = interaction(redundancy, ColorN), color = ColorN, y = mean_RT)) + 
+  geom_errorbar(aes(ymin = abs(mean_RT) - se_response_error, ymax = abs(mean_RT) + se_response_error), width = .2, position = position_dodge(.7), linetype = 1) + 
+  geom_point(position = position_dodge(.7), size = 12) + 
+  geom_text(aes(label = Number), position = position_dodge(.7), color = 'black', size = 7, fontface = 'bold') + 
+  facet_wrap(~uid + redundancy, ncol=2) + 
+  v$theme + labs(x = "Set Size", y = "Mean RT") + 
+  theme(legend.position = "bottom")
+
+```
+
+
+```{r}
+models = list()
+fit = list()
+models$samplesize = function(params, data, minpars, maxpars){
+  if ((min(params - minpars) < 0) | (min(maxpars - params) < 0)){
+    return(.Machine$double.xmax)
+  }
+  kappa        = params[1]
+  error        = circular(rad(data$response_error[!is.na(data$response_error)]))
+  mu           = circular(0)
+  
+  Likelihood = 0
+  ItemSize = c(1,2,4,6)
+  ItemColors = levels(data$ColorN)
+  ItemLevels = levels(data$num_items)
+  for( ii in 1:length(ItemLevels) ){
+    Likelihood = Likelihood + -sum(log(dvonmises( error[data$num_items == ItemLevels[ii] & data$ColorN == ItemColors[ii]], 
+                                                  mu = circular(0), kappa = kappa / sqrt(ItemSize[ii]))))
+  }
+  
+  if( Likelihood == Inf || Likelihood == -Inf || is.na(Likelihood)){
+    return(.Machine$double.xmax)
+  } else {
+    return(Likelihood)
+  }
+}
+
+fit$samplesize = function(data){
+  kappa = c(3, 6, 9)
+  minparams = c(0)
+  maxparams = c(1000)
+  loglikelihood = Inf
+  for (ii in 1:length(kappa)){
+    model_est = optim(par = c(kappa[ii]),
+                      fn = models$samplesize,
+                      data = data,
+                      minpars = minparams,
+                      maxpars = maxparams,
+                      lower = 0,
+                      upper = 20,
+                      method = c("Brent"))
+    
+    if(model_est$value < loglikelihood & !is.nan(model_est$value)) {
+      loglikelihood = model_est$value
+      parameters = c(model_est$par[1])
+      parameters = round(parameters, 4)
+    }
+  }
+  return(list(par = parameters, loglikelihood = -loglikelihood, obs = length(data$response_error), id = unique(data$uid) ))
+}
+
+
+for( uids in unique(data$uid) ){
+  if (uids == unique(data$uid)[1]){
+    output = data %>% filter(uid == uids) %>% fit$samplesize() %>% as.data.frame()
+  }
+    else{
+      output = rbind(output, data %>% filter(uid == uids) %>% fit$samplesize() %>% as.data.frame())
+  }
+}
+
+
+```
+
+
+
+
+```{r, fig.width=15, fig.height=40}
+
+
+ggplot(data %>% filter(!is.na(Gestalt) & uid %in% c('PG','AQ','ES','HC','YL') ) ) + 
+  aes(x = abs(response_error), fill = Gestalt) + 
+  geom_density() + v$theme + 
+  facet_wrap(~Gestalt + redundancy + uid, ncol = 5) 
+
+```
+
+```{r, fig.width=15, fig.height=40}
+
+
+ggplot(data %>% filter(!is.na(Gestalt) & uid %in% c('PG','AQ','ES','HC','YL') ) ) + 
+  aes(x = response_RT, fill = Gestalt) + 
+  geom_density() + v$theme + 
+  facet_wrap(~Gestalt + redundancy + uid, ncol = 5) 
+
+```
+
+
+```{r}
+
+load('NonParametricModels.RData')
+#data = NonParametricModels$data
+v = NonParametricModels$v
+
+
+extraction = function(d){
+  output = data.frame( matrix(nrow = 0, ncol = 5)) 
+  colnames(output) = c('ItemN','ColorN', 'Redundancy','ColorAngle','SwapLikelihood')
+  
+  for (ii in names(d)){
+    for (kk in names(d[[ii]]) ){
+      for (jj in names(d[[ii]][[kk]])){
+        for (deg in 1:length(d[[ii]][[kk]][[jj]])){
+          swapdeg = 1 - sum ( d[[ii]][[kk]][[jj]][[deg]] == 0 ) / length(d[[ii]][[kk]][[jj]][[deg]])
+        
+          if (nrow(output) == 0){
+            output[1,] = c(ii, kk, jj, deg - 1, swapdeg)
+          } else {
+            output = rbind(output, c(ii, kk, jj, deg - 1, swapdeg))
+          }
+          
+        }
+      }
+    }
+  }
+  
+  output$ItemN = as.factor(output$ItemN)
+  output$ColorN = as.factor(output$ColorN)
+  output$Redundancy = as.factor(output$Redundancy)
+  output$ColorAngle = as.numeric(output$ColorAngle)
+  output$SwapLikelihood = as.numeric(output$SwapLikelihood)
+  return(output)
+}
+
+
+
+
+PGcolor = extraction(NonParametricModels$NonParaModel$PG)
+YLcolor = extraction(NonParametricModels$NonParaModel$YL)
+rm(NonParametricModels)
+
+
+load('NonParametricModels_ResponseErrorCentered.RData')
+
+
+
+PGresp = extraction(NonParametricModels$NonParaModel$PG)
+YLresp = extraction(NonParametricModels$NonParaModel$YL)
+rm(NonParametricModels)
+
+
+```
+
+
+
+```{r, fig.width=15}
+
+PGcolor %>% 
+  ggplot(aes(x = ColorAngle, y = SwapLikelihood, fill = ItemN)) + 
+  geom_col() + 
+  v$theme + 
+  facet_wrap(~ItemN * ColorN * Redundancy)
+
+
+```
+
+
+
+
+
+```{r, fig.width=15}
+
+PGresp %>% 
+  ggplot(aes(x = ColorAngle, y = SwapLikelihood, fill = ItemN)) + 
+  geom_col() + 
+  v$theme + 
+  facet_wrap(~ItemN * ColorN * Redundancy)
+
+
+```
+
+
+
+```{r, fig.width=15}
+
+YLcolor %>% 
+  ggplot(aes(x = ColorAngle, y = SwapLikelihood, fill = ItemN)) + 
+  geom_col() + 
+  v$theme + 
+  facet_wrap(~ItemN * ColorN * Redundancy)
+
+
+```
+
+
+
+
+```{r, fig.width=15}
+
+YLresp %>% 
+  ggplot(aes(x = ColorAngle, y = SwapLikelihood, fill = ItemN)) + 
+  geom_col() + 
+  v$theme + 
+  facet_wrap(~ItemN * ColorN * Redundancy)
+
+
+```
+
+
+```{r, fig.width = 15}
+
+x = rbind( PGcolor %>% mutate(ID = 'PG'), YLcolor %>% mutate(ID = 'YL') )
+x$ID = as.factor(x$ID)
+
+x %>% 
+  ggplot(aes(x = ColorAngle, y = SwapLikelihood, color = ID, group = ID)) + 
+  geom_point() + 
+  v$theme + 
+  facet_wrap(~ItemN * ColorN * Redundancy)
+
+
+
+
+```
+
+
+
+
+```{r, fig.width = 15}
+
+x = rbind( PGresp %>% mutate(ID = 'PG'), YLresp %>% mutate(ID = 'YL') )
+x$ID = as.factor(x$ID)
+
+x %>% 
+  ggplot(aes(x = ColorAngle, y = SwapLikelihood, color = ID, group = ID)) + 
+  geom_point() + 
+  v$theme + 
+  facet_wrap(~ItemN * ColorN * Redundancy)
+
+
+
+
+```
+
+# Distractor Centered Swap Model
+
+
+```{r}
+
+find_repeats = function(row){
+  repeats = duplicated(row)
+  return(which(repeats))
+}
+
+find_firstrepeat = function(row){
+  return( which( duplicated(row, fromLast = T) )[1] )
+}
+
+find_uniques = function(row){
+  uniques = !( duplicated(row) | duplicated(row, fromLast = TRUE) )
+  return(which(uniques))
+}
+
+distractorModel_Redundant = function(data, subjectID){
+  data = data[as.integer(data$ColorN) != as.integer(data$num_items) & data$uid == subjectID,]
+  data = data[!is.na(data$response_error),]
+  x = as.data.frame(matrix(nrow = 0, ncol = 8) )
+  names(x) = c('Error', 'Position', 'ItemN','ColorN', 'RedundancyCue','ID','TrialOrder','OnTarget')
+  
+  cnd = data %>% select(num_items, ColorN, redundancy) %>% unique()
+  for (ii in 1:nrow(cnd)){
+    loc = data %>% filter(num_items == cnd$num_items[ii], ColorN == cnd$ColorN[ii], redundancy == cnd$redundancy[ii]) %>% select(starts_with('Patch_Location'))
+    ang = data %>% filter(num_items == cnd$num_items[ii], ColorN == cnd$ColorN[ii], redundancy == cnd$redundancy[ii]) %>% select(starts_with('Patch_Color') )
+    rsp = data %>% filter(num_items == cnd$num_items[ii], ColorN == cnd$ColorN[ii], redundancy == cnd$redundancy[ii]) %>% select(response_derotated_degress)
+    err = do.call(cbind, rep(rsp, 6) ) - ang
+    tar = data %>% filter(num_items == cnd$num_items[ii], ColorN == cnd$ColorN[ii], redundancy == cnd$redundancy[ii]) %>% select(target_patchN)
+    
+    tar_loc = do.call(rbind, mapply(function(row, col) loc[row, col], row = 1:nrow(loc), col = (tar$target_patchN)) )
+    loc_offset = do.call(cbind, rep( as.data.frame(tar_loc), 6) ) - loc
+    loc_offset = round( loc_offset / 10 ) * 10
+    
+    loc_offset = loc_offset[,colSums(is.na(loc_offset)) == 0]
+    loc_offset [loc_offset < 0] = loc_offset [loc_offset < 0] + 360
+    
+    loc_pos = t( apply(loc_offset, 1, order) )
+    
+    err = err[,colSums(is.na(err)) == 0]
+    err[err < -360] = err[err < -360] + 360
+    err[err >= 360] = err[err >= 360] - 360
+    err[err < -180] = err[err < -180] + 360
+    err[err > 180] = err[err > 180] - 360
+    
+    repeats  = t(apply(err, 1, find_repeats))
+    firstrep = apply(err, 1, find_firstrepeat)
+    uniques  = t(apply(err, 1, find_uniques))
+    if (ncol(uniques) > nrow(uniques)){ uniques = t(uniques) }
+    Ncolors = ncol(uniques) + 1
+    
+    redmat  = as.data.frame(matrix(nrow = 0, ncol = 8) )
+    nredmat = as.data.frame(matrix(nrow = 0, ncol = 8) )
+    tarmat  = as.data.frame(matrix(nrow = 0, ncol = 8) )
+    names(redmat) = c('Error', 'Position', 'ItemN','ColorN', 'RedundancyCue','ID','TrialOrder','OnTarget')
+    names(nredmat) = c('Error', 'Position', 'ItemN','ColorN', 'RedundancyCue','ID','TrialOrder','OnTarget')
+    names(tarmat) = c('Error', 'Position', 'ItemN','ColorN', 'RedundancyCue','ID','TrialOrder','OnTarget')
+    rc  = 1
+    nrc = 1
+    tc  = 1
+      
+    for (jj in 1:nrow(err)){
+      onTarget = FALSE
+      for (kk in 1:ncol(err)){
+        if ( kk %in% tar[jj,1] ){
+          if (err[jj,kk] > -15 & err[jj,kk] < 15 ){
+            onTarget = TRUE
+          }
+          tarmat[tc,] = c(err[jj,kk], loc_offset[jj,kk], ncol(err), Ncolors, cnd$redundancy[ii], subjectID, jj, onTarget )
+          tc = tc + 1
+        } else if ( kk %in% repeats[jj,]  ){
+          next
+        } else if ( kk %in% uniques[jj,] & !kk %in% tar[jj,1] ){
+          nredmat[nrc,] = c(err[jj,kk], loc_offset[jj,kk], ncol(err), Ncolors, cnd$redundancy[ii], subjectID, jj, FALSE )
+          nrc = nrc + 1
+        } else if ( kk %in% firstrep[jj] & !kk %in% tar[jj,1] ){
+          redmat[rc,] = c(err[jj,kk], loc_offset[jj,kk], ncol(err), Ncolors, cnd$redundancy[ii], subjectID, jj, FALSE )
+          rc = rc + 1
+        }
+      }
+    }
+    
+    
+    tmp = rbind(tarmat, nredmat)
+    tmp = rbind(tmp, redmat)
+    positions = as.integer( unique(tmp$Position))[order( as.integer( unique(tmp$Position) ) )]
+    
+    tmp$TrialOrder = as.numeric(tmp$TrialOrder)
+    onTargets = tmp$TrialOrder[tmp$OnTarget == TRUE]
+    tmp$OnTarget = tmp$TrialOrder %in% onTargets
+    
+    tmp$Position = as.integer(tmp$Position)
+    count = 1
+    for (jj in positions){
+      tmp$Position[tmp$Position == jj] = count
+      count = count + 1
+    }
+    x = rbind(x, tmp)
+  }
+  
+  x$ItemN = as.integer(x$ItemN)
+  x$ColorN = as.integer(x$ColorN)
+  x$RedundancyCue = as.integer(x$RedundancyCue)
+  
+  x$Position = factor(x$Position, levels = c(1, 2, 3, 4, 5, 6), labels = c('Target', '2nd Location','3rd Location','4th Location','5th Location','6th Location'))
+  x$ItemN = factor( x$ItemN, levels = c(4, 6), labels = c('Four Items', 'Six Items') )
+  x$ColorN = factor( x$ColorN, levels = c(2, 4), labels = c('Two Colors', 'Four Colors') )
+  x$RedundancyCue = factor( x$RedundancyCue, levels = c(1, 2, 3), labels = c('Redundant Cued', 'Non-Redundant Cued', 'Unique Colors') )
+  x$Error = as.numeric(x$Error)
+  
+  return(x)
+}
+
+
+
+distractorModel = function(data, subjectID){
+  data = data[as.integer(data$ColorN) == as.integer(data$num_items) & data$uid == subjectID,]
+  data = data[!is.na(data$response_error),]
+  x = as.data.frame(matrix(nrow = 0, ncol = 8) )
+  names(x) = c('Error', 'Position', 'ItemN','ColorN', 'RedundancyCue','ID','TrialOrder','OnTarget')
+  
+  for (ii in unique(data$num_items)){
+    loc = data %>% filter(num_items == ii) %>% select(starts_with('Patch_Location'))
+    ang = data %>% filter(num_items == ii) %>% select(starts_with('Patch_Color') )
+    rsp = data %>% filter(num_items == ii) %>% select(response_derotated_degress)
+    err = do.call(cbind, rep(rsp, 6) ) - ang
+    tar = data %>% filter(num_items == ii) %>% select(target_patchN)
+    
+    tar_loc = do.call(rbind, mapply(function(row, col) loc[row, col], row = 1:nrow(loc), col = (tar$target_patchN)) )
+    loc_offset = do.call(cbind, rep( as.data.frame(tar_loc), 6) ) - loc
+    loc_offset = round( loc_offset / 10 ) * 10
+    
+    loc_offset = loc_offset[,colSums(is.na(loc_offset)) == 0]
+    loc_offset [loc_offset < 0] = loc_offset [loc_offset < 0] + 360
+    
+    loc_pos = t( apply(loc_offset, 1, order) )
+    
+    err = err[,colSums(is.na(err)) == 0]
+    err[err < -360] = err[err < -360] + 360
+    err[err >= 360] = err[err >= 360] - 360
+    err[err < -180] = err[err < -180] + 360
+    err[err > 180] = err[err > 180] - 360
+    
+    tmp = as.data.frame(matrix(nrow = 0, ncol = 8) )
+    names(tmp) = c('Error', 'Position', 'ItemN','ColorN', 'RedundancyCue','ID','TrialOrder','OnTarget')
+    
+    count = 1
+    for (jj in 1:nrow(err)){
+      for (kk in 1:ncol(err)){
+        if (loc_offset[jj,kk] == 0 & err[jj,kk] > -15 & err[jj,kk] < 15){
+          tmp[count,] = c(err[jj,kk], loc_offset[jj,kk], ncol(err), ncol(err), 3, subjectID, jj, TRUE)
+        } else { 
+          tmp[count,] = c(err[jj,kk], loc_offset[jj,kk], ncol(err), ncol(err), 3, subjectID, jj, FALSE)
+        }
+        count = count + 1
+      }
+    }
+    
+    tmp$TrialOrder = as.numeric(tmp$TrialOrder)
+    onTargets = tmp$TrialOrder[tmp$OnTarget == TRUE]
+    tmp$OnTarget = tmp$TrialOrder %in% onTargets
+    
+    positions = as.integer( unique(tmp$Position))[order( as.integer( unique(tmp$Position) ) )]
+    tmp$Position = as.integer(tmp$Position)
+    count = 1
+    for (jj in positions){
+      tmp$Position[tmp$Position == jj] = count
+      count = count + 1
+    }
+    x = rbind(x, tmp)
+  }
+  x$Error = as.numeric(x$Error)
+  x$Position = factor(x$Position, levels = c(1, 2, 3, 4, 5, 6), labels = c('Target', '2nd Location','3rd Location','4th Location','5th Location','6th Location'))
+  x$ItemN = factor( x$ItemN, levels = c(2, 4, 6), labels = c('Two Items', 'Four Items', 'Six Items') )
+  x$ColorN = factor( x$ColorN, levels = c(2, 4, 6), labels = c('Two Colors', 'Four Colors', 'Six Colors') )
+  x$RedundancyCue = factor( x$RedundancyCue, levels = c(1, 2, 3), labels = c('Redundant Cued', 'Non-Redundant Cued', 'Unique Colors') )
+  
+  x$TrialOrder = as.numeric(x$TrialOrder)
+  return(x)
+}
+
+
+
+
+```
+
+
+```{r, fig.width=15}
+
+ggplot(distractorModel(data, 'PG'), aes(x = Error)) + 
+  geom_histogram(bins = 360) + 
+  geom_density(alpha = 0.1, size = 1.1) + 
+  facet_wrap(~Position) + 
+  v$theme + 
+  labs(title = 'PG', x = 'Response Error (Deg)')
+
+
+```
+
+```{r, fig.width=15}
+
+ggplot(x, aes(x = Error)) + 
+  geom_histogram(bins = 360) + 
+  geom_density(alpha = 0.1, size = 1.1) + 
+  facet_wrap(~RedundancyCue * Position) + 
+  v$theme + 
+  labs(title = 'PG', x = 'Response Error (Deg)')
+
+
+```
+
+
+```{r, fig.width=15}
+
+ggplot(distractorModel(data, 'PG'), aes(x = Error, y = ..density.., fill = ItemN)) + 
+  geom_histogram(bins = 360) + 
+  geom_density(alpha = 0.1, size = 1.1) + 
+  facet_wrap(~ItemN * Position, ncol = 6) + 
+  v$theme + 
+  labs(title = 'PG', x = 'Response Error (Deg)', y = 'Density')
+  
+
+```
+
+
+
+
+
+```{r, fig.width=15}
+
+ggplot(distractorModel(data, 'YL'), aes(x = Error, y = ..density.., fill = ItemN)) + 
+  geom_histogram(bins = 360) + 
+  geom_density(alpha = 0.1, size = 1.1) + 
+  facet_wrap(~ItemN * Position, ncol = 6) + 
+  v$theme + 
+  labs(title = 'YL', x = 'Response Error (Deg)', y = 'Density')
+  
+
+```
+
+
+
+
+
+
+
+
+
+```{r, fig.width=15}
+
+ggplot(distractorModel(data, 'HC'), aes(x = Error, y = ..density.., fill = ItemN)) + 
+  geom_histogram(bins = 360) + 
+  geom_density(alpha = 0.1, size = 1.1) + 
+  facet_wrap(~ItemN * Position, ncol = 6) + 
+  v$theme + 
+  labs(title = 'HC', x = 'Response Error (Deg)', y = 'Density')
+  
+
+```
+
+
+
+
+
+
+```{r, fig.width=15}
+
+ggplot(distractorModel(data, 'ES'), aes(x = Error, y = ..density.., fill = ItemN)) + 
+  geom_histogram(bins = 360) + 
+  geom_density(alpha = 0.1, size = 1.1) + 
+  facet_wrap(~ItemN * Position, ncol = 6) + 
+  v$theme + 
+  labs(title = 'ES', x = 'Response Error (Deg)', y = 'Density')
+  
+
+```
+
+
+
+
+
+
+```{r, fig.width=15}
+
+ggplot(distractorModel(data, 'AQ'), aes(x = Error, y = ..density.., fill = ItemN)) + 
+  geom_histogram(bins = 360) + 
+  geom_density(alpha = 0.1, size = 1.1) + 
+  facet_wrap(~ItemN * Position, ncol = 6) + 
+  v$theme + 
+  labs(title = 'AQ', x = 'Response Error (Deg)', y = 'Density')
+  
+
+```
+
+
+
+
+```{r, fig.width=12}
+
+distractorModel(data, 'AQ') %>% filter(Position != 'Target' & OnTarget == FALSE) %>% 
+ggplot(aes(x = Error, y = ..density.., fill = ItemN)) + 
+  geom_histogram(bins = 180) + 
+  geom_density(alpha = 0.1, size = 1.1) + 
+  facet_wrap(~ItemN, ncol = 3) + 
+  v$theme + 
+  labs(title = 'AQ', x = 'Response Error (Deg)', y = 'Density')
+  
+
+```
+
+
+
+
+
+
+
+
+
+```{r, fig.width=15, fig.height = 30}
+x = distractorModel_Redundant(data, 'AQ')
+
+ggplot(x, aes(x =  Error, fill = interaction(ColorN,RedundancyCue) , y = ..density..)) + 
+  geom_histogram(bins = 180) + 
+  geom_density(alpha = 0.1, size = 1.1) + 
+  facet_wrap(~ItemN * ColorN * RedundancyCue * Position, ncol = 4) + 
+  v$theme + 
+  labs(title = 'AQ', x = 'Response Error (Deg)', y = 'Density') + 
+  theme(legend.position = "none")
+
+
+```
+
+
+
+```{r, fig.width=12}
+x = distractorModel_Redundant(data, 'AQ') %>% filter(Position != 'Target' & OnTarget == FALSE)
+
+ggplot(x, aes(x =  Error, fill = interaction(ColorN,RedundancyCue) , y = ..density..)) + 
+  geom_histogram(bins = 180) + 
+  geom_density(alpha = 0.1, size = 1.1) + 
+  facet_wrap(~ItemN * ColorN * RedundancyCue, ncol = 6) + 
+  v$theme + 
+  labs(title = 'AQ: Correct Target Responses Removed', x = 'Response Error (Deg)', y = 'Density') + 
+  theme(legend.position = "none")
+
+
+```
+
+```{r}
+
+
+
+
+
+
+```
+

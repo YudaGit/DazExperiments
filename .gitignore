@@ -9,3 +9,6 @@ Experiments/Daz2025/Exp1_Encoding/screenCalibration.mat
 .Rproj.user
 .DS_Store
 **/.DS_Store
+/Data/Redundancy 2024/Modelling/Power-law POP/CSVresults
+Data/Redundancy 2024/Modelling/Power-law POP/NonParametricModels.RData
+Data/Redundancy 2024/Modelling/Power-law POP/NonParametricModels_ResponseErrorCentered.RData

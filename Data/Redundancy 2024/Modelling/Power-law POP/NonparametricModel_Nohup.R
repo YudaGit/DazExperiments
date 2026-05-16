@@ -1,0 +1,133 @@
+#shell('cls'); 
+rm(list=ls())
+#setwd('C:\\Users\\PGGARR\\Documents\\GitHub\\Javascript Experiments\\Daz2024_PostStimCue\\results')
+setwd('/home/paul/Desktop/Daz2024')
+#knitr::opts_chunk$set(echo = TRUE, warning=FALSE)
+#options(dplyr.summarise.inform = FALSE)
+
+library('circular')
+library('dplyr')
+library('tidyverse')
+library('ggplot2')
+
+load('preprocessed.RData')
+data = preprocessed$data
+v = preprocessed$v
+rm(preprocessed)
+
+data = data %>% filter(uid %in% c('PG','ES','YL','HC','AQ'), response_RT < 3000)
+#data %>% select(uid, session) %>% unique() %>% filter(session == 10)
+
+
+nonparametricModel = function(data, subID){
+  starttime = Sys.time()
+  print(paste('Starting', subID, 'at', starttime))
+  # Get conditions...
+  cnds = data %>% select(num_items, ColorN, redundancy) %>% unique()
+  # Filter by subjectt
+  data = data %>% filter(uid == subID)
+  # Set search +- 15 deg from 0 - 359
+  SearchBounds = seq(0, 359) - 15
+  SearchBounds[ SearchBounds < 0 ] = 360 + SearchBounds[SearchBounds < 0]
+  # Add search to unique cnds
+  cnds = do.call(rbind, lapply(1:nrow(cnds), function(ii) cnds[rep(ii, length(SearchBounds)), ]))
+  cnds$search = rep(SearchBounds, nrow(cnds) / length(SearchBounds))
+  # Store output in list
+  SwapErrorOffsets = list()
+  printcounter = 0
+  
+  for (ii in 1:nrow(cnds)){
+    # Toggle an output counter to check it's running in nohup...
+    printcounter = printcounter + 1
+    # Get cnd as characters for output storage
+    n = as.character.factor(cnds$num_items[ii])
+    c = as.character.factor(cnds$ColorN[ii])
+    r = as.character.factor(cnds$redundancy[ii])
+    if (!n %in% names(SwapErrorOffsets)){ SwapErrorOffsets[[n]] = list() }
+    if (!c %in% names(SwapErrorOffsets[[n]])){ SwapErrorOffsets[[n]][[c]] = list() }
+    if (!r %in% names(SwapErrorOffsets[[n]][[c]])){ SwapErrorOffsets[[n]][[c]][[r]] = list() }
+    # Get only target color data
+    d = data %>% filter(num_items == cnds$num_items[ii], ColorN == cnds$ColorN[ii], redundancy == cnds$redundancy[ii])
+    d = d[!is.na(d$response_error),]
+    # Correct >360 deg angles
+    if ((cnds$search[ii] + 30) > 360 ){ 
+      d = d[(d$target_angle_norotation >= cnds$search[ii] & d$target_angle_norotation <= 360) | (d$target_angle_norotation >= 0 & d$target_angle_norotation <= (cnds$search[ii] + 30 - 360)),]
+    } else { 
+      d = d[(d$target_angle_norotation >= cnds$search[ii] & d$target_angle_norotation <= (cnds$search[ii] + 30)),]
+    }
+    # If data exists +-15 deg from target
+    if (nrow(d)){
+      # Get All Stim Color's Angles
+      ColorAngles = d %>% select(target_patchN, starts_with('Patch_Color'))
+      ColorAngles = lapply(1:nrow(ColorAngles), function(ii) ColorAngles[rep(ii, 1000), ])
+      ColorAngles = do.call(rbind, ColorAngles)
+      ColorAngles = ColorAngles[,colSums(is.na.data.frame(ColorAngles)) == 0]
+      # Get All Stim Color's Locations
+      Locations = d %>% select(target_patchN, starts_with('Patch_Locations'))
+      Locations = lapply(1:nrow(Locations), function(ii) Locations[rep(ii, 1000), ])
+      Locations = do.call(rbind, Locations)
+      Locations = Locations[,colSums(is.na.data.frame(Locations)) == 0]
+      # Matrix : 1000 * unique trials x Randsample of d's Resp Errors
+      RespErrors = data.frame( matrix( sample(d$response_error, 
+                                              (ncol(ColorAngles) - 1)  * nrow(ColorAngles), replace = TRUE), 
+                                       ncol = ncol(ColorAngles) - 1, nrow = nrow(ColorAngles)) )
+      # Generate Model Responses
+      Model = ColorAngles[,-1] + RespErrors
+      # Calculate Model Error
+      RespAngle = rep( d$response_derotated_degress, 1000)
+      ModelOutcome = Model - do.call(cbind, rep(as.data.frame(rep(RespAngle, each = 1000)), 4))
+      # Correct Model to -180:180 degrees
+      ModelOutcome[ModelOutcome < -360] = ModelOutcome[ModelOutcome < -360] + 360
+      ModelOutcome[ModelOutcome >= 360] = ModelOutcome[ModelOutcome >= 360] - 360
+      ModelOutcome[ModelOutcome < -180] = ModelOutcome[ModelOutcome < -180] + 360
+      ModelOutcome[ModelOutcome > 180] = ModelOutcome[ModelOutcome > 180] - 360
+      # Get closest response error column
+      ModelResponse = apply(abs(ModelOutcome), 1, function(row) which.min(row))
+      # Get associated location (angle) for the Model & Target, and their difference
+      ModelResponseLocation = do.call(rbind, mapply(function(row, col) Locations[row, col], row = 1:nrow(Locations), col = (ModelResponse + 1)) )
+      TargetResponseLocation = do.call(rbind, mapply(function(row, col) Locations[row, col], row = 1:nrow(Locations), col = (Locations$target_patchN + 1)) )
+      LocationOffset = TargetResponseLocation - ModelResponseLocation
+      # Correct for -180 : 180 deg
+      LocationOffset[LocationOffset < -360] = LocationOffset[LocationOffset < -360] + 360
+      LocationOffset[LocationOffset >= 360] = LocationOffset[LocationOffset >= 360] - 360
+      LocationOffset[LocationOffset < -180] = LocationOffset[LocationOffset < -180] + 360
+      LocationOffset[LocationOffset > 180] = LocationOffset[LocationOffset > 180] - 360
+      # Store based on center of search range
+      centerAngle = cnds$search[ii] + 15
+      if (centerAngle > 359){
+        centerAngle = as.character( centerAngle - 360 )
+      }
+      # Store with cnd, color, redundancy, and center-angle as nested lists
+      SwapErrorOffsets[[n]][[c]][[r]][[centerAngle]] = round( LocationOffset / (180/ (ncol(ColorAngles)-1) ) ) * (180/ (ncol(ColorAngles)-1) )
+      
+      # Print to show where we're up to...
+      if (printcounter == 20){
+        print(paste( do.call(cbind, lapply(cnds[ii,], as.character) ), collapse = ' ' ) )
+        print(round( sum( SwapErrorOffsets[[n]][[c]][[r]][[centerAngle]] != 0 ) / length(SwapErrorOffsets[[n]][[c]][[r]][[centerAngle]]) * 100, 2))
+        printcounter = 0
+      }
+      
+    } else {
+      print(paste( do.call(cbind, lapply(cnds[ii,], as.character) ), collapse = ' ' ) )
+      print('No Responses In Target Interval')
+    }
+  }
+  endtime = Sys.time()
+  print(paste('Finished', subID, 'at', endtime))
+  print(paste('Elapsed time:', endtime - starttime))
+  return(SwapErrorOffsets)
+}
+
+SwapErrorOffsets_AQ = nonparametricModel(data, 'AQ')
+SwapErrorOffsets_YL = nonparametricModel(data, 'YL')
+SwapErrorOffsets_PG = nonparametricModel(data, 'PG')
+
+NonParaModel = list()
+NonParaModel[['AQ']] = SwapErrorOffsets_AQ
+NonParaModel[['PG']] = SwapErrorOffsets_PG
+NonParaModel[['YL']] = SwapErrorOffsets_YL
+
+NonParametricModels = list(data = data, v = v, NonParaModel = NonParaModel)
+save(NonParametricModels, file = 'NonParametricModels.RData')
+
+
