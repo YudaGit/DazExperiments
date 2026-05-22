@@ -7,20 +7,15 @@ output: html_document
 
 Clean POPCDM fitting workflow for `data2_final.csv`.
 
-This notebook fits the current 14-free-parameter model:
+Switch **`beta_variant`** in the config chunk to compare beta schemes:
 
-- `alphaEst`: 1 shared value
-- `vnorm`: 3 `ColorNi`/`ci` groups
-- `beta`: 2 values
-- `kappa`: 3 `ci` groups
-- `a`: 1 shared value
-- `ter`: 3 `ci` groups
-- `eta1`: 1 shared value
-- `eta2` and `st`: fixed by default
+- `down_up`: shared down-scaling (`beta_down`), separate up-scaling for R (`beta_up`)
+- `base_nr_r`: separate exponents for baseline, NR, and R (`beta_baseline`, `beta_nr`, `beta_r`)
 
-The full 50-parameter vector is still used internally for the Jay-style
-`P/Sel/Pvar/Pfix` contract, but the equality groups in the model-spec chunk
-reduce the fitted model to 14 free parameters.
+Other constraints (your current setup): singleton `kappa`, `a`, `eta1`; `vnorm` and `ter` grouped by colour-count.
+
+**Amplitude scaling:** `alphaEst` is the theoretical resource baseline \(B\). Trial precision uses  
+`alpha_trial = alphaEst * (ColorNi / color_count_ref)^(-beta) * ...` with default `color_count_ref = 2` (smallest set in the design), matching `amplitude_test.Rmd` method 2.
 
 ```{r setup}
 rm(list = ls())
@@ -28,11 +23,9 @@ rm(list = ls())
 data_csv <- "data2_final.csv"
 helper_file <- "fit_popcdm_redundancy.R"
 
-# POPCDM source folder. Use "." if besselFPT.R, popcode.R, and popcdm300.R
-# are copied into this folder. The current fallback points to the central copy.
 POPCDM_R_DIR <- Sys.getenv(
   "POPCDM_R_DIR",
-  "/Users/prefabteam_ysl/Documents/GitHub/DazExperiments/Models/CDM/POPCDM_R"
+  "C:/Users/Yuda/Documents/GitHub/DazExperiments/Models/CDM/POPCDM_R"
 )
 
 load_popcdm_sources <- function(dir = POPCDM_R_DIR) {
@@ -61,24 +54,24 @@ load_popcdm_sources()
 # User-editable settings
 
 ```{r config}
-# Use NULL for all participants, or e.g. c("YL", "PG") for a subset.
-participant_ids <- NULL
+# --- Beta model switch (change this line to compare variants) ---
+beta_variant <- "base_nr_r"   # "down_up" | "base_nr_r"
 
-# Set trial_cap_per_condition <- NULL only after the pilot works.
+# Use NULL for all participants, or e.g. c("YL", "PG") for a subset.
+participant_ids <- "AQ"
+
 trial_cap_per_condition <- 200L
 random_seed <- 1L
 
-# Coarse pilot grid. Increase nw / decrease h after the workflow is stable.
 grid <- list(
   nw = 50L,
-  h =3.5/200,
-  tmax = 3.5
+  h = 3.4 / 200,
+  tmax = 3.4
 )
 
-# Very short optimizer settings for a pipeline check.
-# Increase n_starts and maxit for real fitting.
 optim_settings <- list(
   n_starts = 1L,
+  # If betas keep hitting bounds with logit, try beta_link = "identity".
   beta_link = "logit",
   beta_latent_limit = 15,
   progress = TRUE,
@@ -86,23 +79,19 @@ optim_settings <- list(
   control = list(maxit = 200L, factr = 1e7)
 )
 
-# Parallelise across participants. This is useful when participant_ids is NULL
-# or contains more than one uid. On macOS this uses forked R processes.
 parallel_settings <- list(
-  use_parallel = FALSE,
+  use_parallel = TRUE,
   n_cores = min(parallel::detectCores(logical = FALSE), 5L, na.rm = TRUE)
 )
 ```
 
-# Build the fully free model
+# Build model inputs
 
 ```{r model-spec}
-# Full starting vector and broad bounds.
 P_start <- redundancy_default_P(
-  alphaEst = 5.0,
+  beta_variant = beta_variant,
+  alphaEst = 2.0,
   vnorm = 2.5,
-  beta1 = 0.5,
-  beta2 = 0.5,
   kappa = 5.0,
   a = 2.0,
   ter = 0.2,
@@ -111,10 +100,13 @@ P_start <- redundancy_default_P(
   st = 0.2
 )
 
-bounds <- redundancy_default_bounds()
+bounds <- redundancy_default_bounds(beta_variant = beta_variant)
 
-# Fully free condition-specific model: eta2 and st fixed, everything else free.
-Sel <- redundancy_default_sel(free_eta2 = FALSE, free_st = FALSE)
+Sel <- redundancy_default_sel(
+  beta_variant = beta_variant,
+  free_eta2 = FALSE,
+  free_st = TRUE
+)
 
 ci2_conditions <- c(
   "set2_baseline",
@@ -128,22 +120,18 @@ ci4_conditions <- c(
   "set6_R_cue_ci4",
   "set6_NR_cue_ci4"
 )
-m_ci_vkt <- redundancy_model_spec(
-  label = "ci_group_vnorm_kappa_ter_one_a_one_eta1",
+
+m_ci_t <- redundancy_model_spec(
+  label = paste0("ci_vet_", beta_variant),
+  beta_variant = beta_variant,
+  color_count_ref = 2L,
   equal_groups = list(
-    # One shared a across all conditions.
     redundancy_equal_group("a", COND_LEVELS),
-    # One shared eta1 across all conditions.
-    redundancy_equal_group("eta1", COND_LEVELS),
-    # vnorm grouped by ci.
-    redundancy_equal_group("vnorm", ci2_conditions),
-    redundancy_equal_group("vnorm", ci4_conditions),
-    # kappa grouped by ci.
-    redundancy_equal_group("kappa", ci2_conditions),
-    redundancy_equal_group("kappa", ci4_conditions),
-    # ter grouped by ci.
+    redundancy_equal_group("kappa", COND_LEVELS),
+    redundancy_equal_group("vnorm", COND_LEVELS),
     redundancy_equal_group("ter", ci2_conditions),
-    redundancy_equal_group("ter", ci4_conditions)
+    redundancy_equal_group("ter", ci4_conditions),
+    redundancy_equal_group("eta1", COND_LEVELS)
   )
 )
 
@@ -152,13 +140,28 @@ fit_inputs <- redundancy_fit_inputs(
   lower = bounds$lower,
   upper = bounds$upper,
   Sel = Sel,
-  model_spec = m_ci_vkt
+  model_spec = m_ci_t
 )
 
 length(P_start)
 length(fit_inputs$P_var_start)
-names(fit_inputs$P_fix)
-stopifnot(length(fit_inputs$P_var_start) == 14L)
+names(fit_inputs$P_var_start)
+length(fit_inputs$P_fix)
+stopifnot(
+  beta_variant == redundancy_resolve_beta_variant(fit_inputs$model_spec),
+  length(fit_inputs$P_var_start) == sum(fit_inputs$Sel)
+)
+
+# Pre-fit: every condition must get a valid alpha multiplier m at starting values
+branch_m_audit <- redundancy_branch_m_audit(P_start, model_spec = m_ci_t)
+branch_m_audit
+if (!all(branch_m_audit$ok)) {
+  stop(
+    "Invalid branch multiplier m at P_start for some conditions (see branch_m_audit). ",
+    "Re-source fit_popcdm_redundancy.R and check beta_variant matches P_start/Sel.",
+    call. = FALSE
+  )
+}
 ```
 
 # Prepare and audit data
@@ -188,7 +191,7 @@ redundancy_rt_grid_audit(
 
 ```{r fit-pilot, message=TRUE, warning=TRUE}
 fit_one_participant <- function(uid) {
-  message("Fitting participant: ", uid)
+  message("Fitting participant: ", uid, " (beta_variant=", beta_variant, ")")
   fit_df_full <- prepare_redundancy_fit_frame(
     data_csv,
     uid_filter = uid,
@@ -250,10 +253,12 @@ fit_summary <- do.call(
     f <- fits[[uid]]
     data.frame(
       uid = uid,
+      beta_variant = redundancy_resolve_beta_variant(f$model_spec),
       model = f$model_spec$label,
       n_trials = f$n_trials,
       np_free = f$np_free,
       nll = f$nll,
+      AIC = 2 * f$np_free + 2 * f$nll,
       convergence = f$optim$convergence,
       stringsAsFactors = FALSE
     )
@@ -261,14 +266,31 @@ fit_summary <- do.call(
 )
 fit_summary
 
-# Full named parameter vectors for all participants.
 P_hats <- lapply(fits, `[[`, "P_hat")
 P_hats[[uids_to_fit[1]]]
+
+# Beta bound diagnostics (physical scale)
+beta_bound_reports <- lapply(uids_to_fit, function(uid) {
+  f <- fits[[uid]]
+  br <- f$beta_bound_report
+  if (nrow(br)) {
+    br$uid <- uid
+  }
+  br
+})
+beta_bound_reports <- do.call(rbind, beta_bound_reports)
+if (is.null(beta_bound_reports) || !nrow(beta_bound_reports)) {
+  message("No beta parameters on/near bounds (good).")
+} else {
+  beta_bound_reports
+}
 ```
 
 # Condition-specific parameter table
 
 ```{r condition-parameter-table}
+beta_cols <- redundancy_beta_names(beta_variant)
+
 condition_parameter_table <- do.call(
   rbind,
   lapply(uids_to_fit, function(uid) {
@@ -276,12 +298,11 @@ condition_parameter_table <- do.call(
     do.call(
       rbind,
       lapply(COND_LEVELS, function(cl) {
-        data.frame(
+        row <- data.frame(
           uid = uid,
           cond_label = cl,
+          trial_kind = redundancy_trial_kind(cl),
           alphaEst = P_hat["alphaEst"],
-          beta1 = P_hat["beta1"],
-          beta2 = P_hat["beta2"],
           vnorm = P_hat[paste0("vnorm_", cl)],
           kappa = P_hat[paste0("kappa_", cl)],
           a = P_hat[paste0("a_", cl)],
@@ -290,6 +311,10 @@ condition_parameter_table <- do.call(
           stringsAsFactors = FALSE,
           row.names = NULL
         )
+        for (bn in beta_cols) {
+          row[[bn]] <- P_hat[bn]
+        }
+        row
       })
     )
   })
@@ -298,21 +323,14 @@ numeric_cols <- vapply(condition_parameter_table, is.numeric, logical(1))
 condition_parameter_table[numeric_cols] <- lapply(
   condition_parameter_table[numeric_cols],
   round,
-  digits = 2
+  digits = 3
 )
 condition_parameter_table
 ```
 
 # Plot predictions against data
 
-Example plotting functions compare empirical condition summaries against
-model predictions from the fitted density. Because this POPCDM version predicts
-`error x RT` by condition, the first diagnostic plots compare condition-wise
-marginals: signed-error density and RT density.
-
 ```{r plot-data-source}
-# Re-source the helper so plotting uses the latest axis-handling code even if
-# the fitting chunks were run earlier in the same R session.
 source(helper_file)
 ```
 
@@ -327,6 +345,7 @@ for (plot_uid in uids_to_fit) {
   plot_redundancy_error_marginals(
     plot_df,
     P_hats[[plot_uid]],
+    model_spec = fits[[plot_uid]]$model_spec,
     nw = grid$nw,
     h = grid$h,
     tmax = grid$tmax,
@@ -346,6 +365,7 @@ for (plot_uid in uids_to_fit) {
   plot_redundancy_rt_marginals(
     plot_df,
     P_hats[[plot_uid]],
+    model_spec = fits[[plot_uid]]$model_spec,
     nw = grid$nw,
     h = grid$h,
     tmax = grid$tmax,

@@ -1,0 +1,725 @@
+---
+title: "S1_Bayesian_Hierarchical_Analysis"
+output: html_document
+---
+
+---
+title: "Study 1 Bayesian Hierarchical Regression"
+
+author: "Yu Liu"
+
+date: "11th May 2026"
+
+output:
+
+  html_document:
+
+    toc: true
+
+    toc_float: true
+
+    number_sections: true
+
+---
+
+# Setup
+
+```{r setup, message=FALSE, warning=FALSE}
+#install.packages("cmdstanr", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
+#cmdstanr::install_cmdstan()
+#options(brms.backend = "cmdstanr")
+library(tidyverse)
+
+library(brms)
+
+library(bayesplot)
+
+library(tidybayes)
+
+library(emmeans)
+
+library(patchwork)
+
+library(loo)
+
+theme_set(theme_bw())
+
+options(mc.cores = parallel::detectCores())
+
+set.seed(1234)
+
+```
+
+# Load Data
+
+```{r load-data}
+d <- read_csv("S1_smallN_model_ready.csv")
+glimpse(d)
+summary(d)
+```
+
+# Factor Preparation
+
+```{r factors}
+d <- d %>%
+  mutate(
+    ID = factor(ID),
+    CueType = factor(CueType,
+      levels = c("NR", "R")),
+    DurationF = factor(Duration,
+      levels = c(
+        "50ms",
+        "100ms",
+        "150ms",
+        "200ms",
+        "250ms",
+        "300ms",
+        "350ms")),
+    Grouping = factor(Grouping),
+    SessionF = factor(Session),
+    SessionPhase = factor(
+      SessionPhase,
+      levels = c("Early", "Middle", "Late")
+    ),
+    logRT = log(RT)
+  )
+
+levels(d$DurationF)
+levels(d$SessionF)
+levels(d$CueType)
+levels(d$Grouping)
+```
+
+# Initial Data Checks
+
+## Trial Counts
+
+```{r counts}
+d %>%
+  count(ID, CueType, DurationF)
+```
+
+## Signed Error Bias Check
+Maximum response bias was 3.73deg (NR-cue at 150ms Encoding Duration), in comparison to SD (18.31-31.79 for R-cue, 49.67-58.49 for NR-cue), biases are tiny. Thus we do not consider the bias factor, and use abs error deg.
+
+```{r signed-bias}
+d %>%
+  group_by(CueType, DurationF) %>%
+  summarise(
+    mean_signed = mean(SignedErr, na.rm = TRUE),
+    sd_signed = sd(SignedErr, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+# Descriptive Figures
+
+## Absolute Error by Duration and Cue
+
+```{r descriptives-participant-cirSd-duration}
+library(circular)
+
+circSD_deg <- function(x) {
+  circular::sd.circular(
+    circular(x, units = "degrees")
+  ) * (180/pi)
+}
+
+circ_summary <- d %>%
+  group_by(ID, CueType, DurationF) %>%
+  summarise(
+    circSD = circSD_deg(SignedErr),
+    meanAbs = mean(AbsErr),
+    .groups = "drop"
+  )
+
+ggplot(circ_summary,
+       aes(DurationF, circSD,
+           colour = CueType,
+           group = CueType)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  facet_wrap(~ID) +
+  labs(
+    y = "Circular SD (deg)",
+    x = "Exposure Duration"
+  ) +
+  theme_bw()
+```
+```{r group-cirSD-Duration} 
+group_circ <- d %>%
+  group_by(CueType, DurationF) %>%
+  summarise(
+    circSD = circSD_deg(SignedErr),
+    .groups = "drop"
+  )
+
+ggplot(group_circ,
+       aes(DurationF, circSD,
+           colour = CueType,
+           group = CueType)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  labs(
+    y = "Circular SD (deg)",
+    x = "Exposure Duration"
+  )
+```
+
+# Redundancy Gain Function
+This plot isolates redundancy gain: Redundancy Gain = (NR error - R error)
+Theoretically important because the primary research question concerns whether 
+redundancy gain changes as exposure duration increases, rather than just whether overall performance improves with duration.
+Encoding-rate/perceptual accounts predict that non-redundant items should 
+gradually "catch up" with increased exposure duration, producing a decreasing 
+redundancy-gain function
+In contrast, mnemonic/post-encoding accounts predict that redundancy
+gain should emerge rapidly and remain relatively stable across durations.
+
+Thus, the shape of the redundancy-gain function directly visualizes
+whether redundancy effects themselves are exposure-duration dependent.
+
+Current descriptive pattern:
+
+# NOTE:
+This figure is descriptive only. Bayesian hierarchical models are required to 
+formally assess the magnitude and uncertainty of the Cue × Duration interaction.
+
+```{r redundancy-gain}
+gain_d <- d %>%
+  group_by(ID, DurationF, CueType) %>%
+  summarise(
+    mean_abs = mean(AbsErr),
+    .groups = "drop"
+  ) %>%
+  pivot_wider(
+    names_from = CueType,
+    values_from = mean_abs
+  ) %>%
+  mutate(
+    RedundancyGain = NR - R
+  )
+ggplot(gain_d,
+       aes(DurationF, RedundancyGain,
+           group = ID)) +
+  geom_line(alpha = .5) +
+  geom_point(alpha = .7) +
+  stat_summary(
+    aes(group = 1),
+    fun = mean,
+    geom = "line",
+    linewidth = 1.5,
+    colour = "black"
+  ) +
+  stat_summary(
+    aes(group = 1),
+    fun = mean,
+    geom = "point",
+    size = 3,
+    colour = "black"
+  ) +
+  labs(
+    y = "Redundancy Gain (NR - R)",
+    x = "Exposure Duration"
+  )
+```
+
+# INITIAL BAYESIAN HIERARCHICAL PRECISION MODEL
+Goal:
+First inferential test of whether redundancy gain depends on exposure duration.
+
+DV
+- Absolute circular response error (AbsErr)
+
+Fixed effects:
+- CueType: tests overall redundancy gain (R vs NR)
+- DurationF: tests whether overall precision changes across exposure durations
+- CueType × DurationF: critical interaction term testing whether redundancy gain 
+changes as a function of exposure duration
+- SessionF: included as a fixed-effect control factor to account for 
+practice/learning effects across sessions
+
+Random effects:
+- varying intercepts by participant
+- varying CueType slopes by participant
+Random-effects structure allows:
+- baseline precision differences between participants
+- participant-specific redundancy gain magnitude
+
+Distributional family:
+- Student-t likelihood was chosen because trial-level response-error 
+distributions contain heavy tails and occasional large-error trials, which 
+violate normality assumptions.
+
+Current modelling rationale:
+
+- Duration and Session are initially treated as categorical factors to avoid 
+imposing assumptions about monotonicity or functional form.
+
+Further analyses:
+- continuous duration/session models
+- logarithmic/asymptotic duration functions
+- model comparison (categorical vs continuous formulations)
+- practical magnitude assessment of Cue × Duration interaction
+
+Theoretically:
+- encoding-rate/perceptual accounts predict duration-dependent redundancy gain
+- mnemonic/post-encoding accounts predict relatively stable redundancy gain 
+across durations
+Thus, CueType × DurationF is the primary theoretical parameter of interest.
+
+```{r model1, message=FALSE}
+m1 <- brm(
+  AbsErr ~ CueType * DurationF + SessionF +
+    (1 + CueType | ID),
+  data = d,
+  family = student(),
+  prior = c(
+    prior(normal(40, 20), class = Intercept),
+    prior(normal(0, 10), class = b),
+    prior(exponential(1), class = sigma),
+    prior(exponential(1), class = sd)
+  ),
+  chains = 4,
+  cores = 4,
+  iter = 4000,
+  warmup = 2000,
+  control = list(
+    adapt_delta = .95,
+    max_treedepth = 15
+  ),
+  seed = 1234
+)
+
+saveRDS(m1, "m1_categorical_sessionfactor.rds")
+```
+
+# Model Summary (seed 1234)
+ Family: student 
+  Links: mu = identity 
+Formula: AbsErr ~ CueType * DurationF + SessionF + (1 + CueType | ID) 
+   Data: d (Number of observations: 12599) 
+  Draws: 4 chains, each with iter = 4000; warmup = 2000; thin = 1;
+         total post-warmup draws = 8000
+
+Multilevel Hyperparameters:
+~ID (Number of levels: 3) 
+                        Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+sd(Intercept)               2.07      0.85     0.95     4.22 1.00     5399     5513
+sd(CueTypeR)                1.68      0.78     0.66     3.65 1.00     4774     5356
+cor(Intercept,CueTypeR)    -0.12      0.39    -0.78     0.64 1.00     5005     5291
+
+Regression Coefficients:
+                        Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+Intercept                  18.02      1.44    15.26    20.97 1.00     3038     4063
+CueTypeR                   -6.97      1.28    -9.42    -4.32 1.00     2949     3974
+DurationF100ms              1.09      0.83    -0.55     2.70 1.00     3094     4615
+DurationF150ms             -2.38      0.83    -3.99    -0.76 1.00     3070     4613
+DurationF200ms             -2.01      0.80    -3.56    -0.44 1.00     2883     4493
+DurationF250ms             -1.66      0.78    -3.20    -0.12 1.00     3014     4723
+DurationF300ms             -2.90      0.74    -4.35    -1.43 1.00     2770     4118
+DurationF350ms             -2.46      0.77    -3.94    -0.96 1.00     2823     4334
+SessionF2                   0.03      0.52    -0.98     1.02 1.00     4048     5713
+SessionF3                  -0.96      0.49    -1.91    -0.02 1.00     3720     5482
+SessionF4                  -1.10      0.48    -2.05    -0.18 1.00     3682     5628
+SessionF5                  -1.15      0.49    -2.11    -0.19 1.00     3747     5029
+SessionF6                  -1.27      0.48    -2.20    -0.31 1.00     3659     5577
+SessionF7                  -0.44      0.49    -1.40     0.51 1.00     3620     5043
+SessionF8                  -1.14      0.49    -2.09    -0.17 1.00     3703     5314
+SessionF9                  -1.46      0.49    -2.42    -0.49 1.00     3679     5214
+SessionF10                 -1.51      0.48    -2.46    -0.57 1.00     3863     5762
+CueTypeR:DurationF100ms    -1.88      0.96    -3.74     0.01 1.00     3198     4557
+CueTypeR:DurationF150ms     1.59      0.96    -0.28     3.44 1.00     3169     5032
+CueTypeR:DurationF200ms     0.68      0.93    -1.12     2.49 1.00     2927     4508
+CueTypeR:DurationF250ms    -0.10      0.90    -1.85     1.66 1.00     2873     4608
+CueTypeR:DurationF300ms     1.74      0.87     0.02     3.46 1.00     2834     4754
+CueTypeR:DurationF350ms     1.56      0.90    -0.21     3.35 1.00     2885     4588
+
+Further Distributional Parameters:
+      Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+sigma     8.52      0.13     8.27     8.77 1.00     7641     6496
+nu        1.20      0.02     1.16     1.24 1.00     8467     5890
+
+Draws were sampled using sample(hmc). For each parameter, Bulk_ESS
+and Tail_ESS are effective sample size measures, and Rhat is the potential
+scale reduction factor on split chains (at convergence, Rhat = 1).
+
+
+```{r model1-summary}
+m1 <- readRDS("m1_categorical_sessionfactor.rds")
+summary(m1)
+#save.image("S1_analysis_workspace.RData")
+```
+
+# Posterior Diagnostics
+
+```{r diagnostics}
+plot(m1, variable = "^b_", regex = TRUE)
+plot(m1, variable = "^sd_", regex = TRUE)
+pp_check(m1, ndraws = 100)
+```
+
+# Conditional Effects
+
+## Cue × Duration
+
+```{r cond-effects}
+conditional_effects(
+  m1,
+  effects = "DurationF:CueType"
+)
+```
+
+# Posterior Estimates
+
+```{r posterior-estimates}
+fixef(m1)
+```
+
+# Model 1 Sum coding: Summed reference
+
+```{r Model1Sum}
+contrasts(d$CueType) <- contr.sum(2)
+contrasts(d$DurationF) <- contr.sum(7)
+contrasts(d$SessionF) <- contr.sum(length(levels(d$SessionF)))
+
+m1_sum <- brm(
+  AbsErr ~ CueType * DurationF + SessionF +
+    (1 + CueType | ID),
+  data = d,
+  family = student(),
+  prior = c(
+    prior(normal(40, 20), class = Intercept),
+    prior(normal(0, 10), class = b),
+    prior(exponential(1), class = sigma),
+    prior(exponential(1), class = sd)
+  ),
+  chains = 4,
+  cores = 4,
+  iter = 4000,
+  warmup = 2000,
+  control = list(adapt_delta = .95, max_treedepth = 15),
+  seed = 1234
+)
+
+saveRDS(m1_sum, "m1_sum.rds")
+```
+
+```{r model1sum-summary}
+m1_sum <- readRDS("m1_sum.rds")
+summary(m1_sum)
+
+#save.image("S1_analysis_workspace.RData")
+```
+
+
+```{r cond-effects}
+conditional_effects(
+  m1_sum
+)
+```
+
+```{r posterior-estimates}
+fixef(m1_sum)
+emm_cue_duration <- emmeans(
+  m1_sum,
+  ~ CueType * DurationF
+)
+
+emm_cue_duration
+
+gain_by_duration <- contrast(
+  emm_cue_duration,
+  method = list("NR - R" = c(1, -1)),
+  by = "DurationF"
+)
+
+gain_by_duration
+
+gain_df <- as.data.frame(confint(gain_by_duration))
+
+ggplot(gain_df, aes(x = DurationF, y = estimate)) +
+  geom_line(aes(group = 1), linewidth = 1) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = lower.HPD, ymax = upper.HPD), width = .15) +
+  labs(
+    x = "Exposure Duration",
+    y = "Estimated Redundancy Gain (NR - R)"
+  ) +
+  theme_bw()
+```
+
+# MODEL 2: CATEGORICAL INTERACTION-LEARNING MODEL
+
+Goal: Tests whether the CueType × DurationF pattern changes across sessions.
+
+Compared with m1_sum:
+- m1_sum controls for SessionF as a categorical nuisance factor.
+- m2_sum tests whether session/practice modulates the duration-dependence of 
+redundancy gain.
+
+Critical term:
+CueType × DurationF × SessionF
+
+Interpretation:
+If this three-way interaction is meaningfully large, then practice changes how 
+redundancy gain varies across exposure duration.
+
+If small/uncertain, then practice may improve overall performance without 
+substantially changing the redundancy-duration relation.
+
+```{r model2, message=FALSE}
+m2_sessionz <- brm(
+  AbsErr ~ CueType * DurationF * Session_z +
+    (1 + CueType | ID),
+  data = d,
+  family = student(),
+  prior = c(
+    prior(normal(40, 20), class = Intercept),
+    prior(normal(0, 10), class = b),
+    prior(exponential(1), class = sigma),
+    prior(exponential(1), class = sd)
+  ),
+  chains = 4,
+  cores = 4,
+  iter = 4000,
+  warmup = 2000,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 15
+  ),
+  seed = 2346
+)
+
+saveRDS(m2_sessionz, "m2_sessionz_cue_duration_learning.rds")
+```
+
+# Model 2 Summary
+
+```{r model2-summary}
+m2_sessionz <- readRDS("m2_sessionz_cue_duration_learning.rds")
+summary(m2_sessionz)
+
+```
+
+# Estimated marginal means: Cue × Duration at average session
+```{r}
+emm_m2 <- emmeans(
+
+  m2_sessionz,
+
+  ~ CueType * DurationF,
+
+  at = list(Session_z = 0)
+
+)
+
+emm_m2
+
+confint(emm_m2)
+```
+
+# Posterior redundancy gain estimates at average session
+```{r}
+gain_m2 <- contrast(
+  emm_m2,
+  method = list("NR - R" = c(1, -1)),
+  by = "DurationF"
+)
+
+gain_m2
+confint(gain_m2)
+```
+
+# Convert redundancy gain estimates to dataframe and plot
+```{r}
+gain_m2_df <- as.data.frame(confint(gain_m2))
+
+names(gain_m2_df)
+
+ggplot(gain_m2_df, aes(x = DurationF, y = estimate)) +
+  geom_line(aes(group = 1), linewidth = 1) +
+  geom_point(size = 3) +
+  geom_errorbar(
+    aes(ymin = lower.HPD, ymax = upper.HPD),
+    width = .15
+  ) +
+  labs(
+    x = "Exposure Duration",
+    y = "Estimated Redundancy Gain (NR - R)",
+    title = "Posterior Redundancy Gain at Average Session"
+  ) +
+  theme_bw()
+```
+
+
+# Session learning visualization: predicted AbsErr across Session_z
+```{r}
+session_grid <- expand.grid(
+  Session_z = seq(min(d$Session_z), max(d$Session_z), length.out = 100),
+  CueType = levels(d$CueType),
+  DurationF = levels(d$DurationF)
+)
+
+pred_session <- fitted(
+  m2_sessionz,
+  newdata = session_grid,
+  re_formula = NA,
+  summary = TRUE
+)
+
+session_pred_df <- bind_cols(
+  session_grid,
+  as.data.frame(pred_session)
+)
+
+ggplot(
+  session_pred_df,
+  aes(x = Session_z, y = Estimate, colour = CueType)
+) +
+  geom_line(linewidth = 1) +
+  geom_ribbon(
+    aes(ymin = Q2.5, ymax = Q97.5, fill = CueType),
+    alpha = .15,
+    colour = NA
+  ) +
+  facet_wrap(~DurationF) +
+  labs(
+    x = "Session progression (z-scored)",
+    y = "Predicted Absolute Error (deg)",
+    title = "Predicted Session Learning by Cue and Duration"
+  ) +
+  theme_bw()
+```
+
+# Optional: easier session plot averaged across duration
+```{r}
+session_grid_avg <- expand.grid(
+  Session_z = seq(min(d$Session_z), max(d$Session_z), length.out = 100),
+  CueType = levels(d$CueType),
+  DurationF = levels(d$DurationF)
+)
+
+pred_session_avg <- fitted(
+  m2_sessionz,
+  newdata = session_grid_avg,
+  re_formula = NA,
+  summary = TRUE
+)
+
+session_avg_df <- bind_cols(
+  session_grid_avg,
+  as.data.frame(pred_session_avg)
+) %>%
+  group_by(Session_z, CueType) %>%
+  summarise(
+    Estimate = mean(Estimate),
+    Q2.5 = mean(Q2.5),
+    Q97.5 = mean(Q97.5),
+    .groups = "drop"
+  )
+
+ggplot(
+  session_avg_df,
+  aes(x = Session_z, y = Estimate, colour = CueType)
+) +
+  geom_line(linewidth = 1.2) +
+  geom_ribbon(
+    aes(ymin = Q2.5, ymax = Q97.5, fill = CueType),
+    alpha = .15,
+    colour = NA
+  ) +
+  labs(
+    x = "Session progression (z-scored)",
+    y = "Predicted Absolute Error (deg)",
+    title = "Predicted Session Learning Averaged Across Durations"
+  ) +
+  theme_bw()
+```
+
+# Model comparison: m1_sum vs m2_sessionz
+```{r}
+loo_m1_sum <- loo(m1_sum)
+loo_m2_sessionz <- loo(m2_sessionz)
+
+loo_compare(loo_m1_sum, loo_m2_sessionz)
+```
+
+```{r}
+loo_m1_sum <- loo(m1_sum, moment_match = TRUE)
+loo_m2_sessionz <- loo(m2_sessionz, moment_match = TRUE)
+
+loo_compare(loo_m1_sum, loo_m2_sessionz)
+```
+
+```{r}
+saveRDS(loo_m1_sum, "loo_m1_sum.rds")
+saveRDS(loo_m2_sessionz, "loo_m2_sessionz.rds")
+saveRDS(gain_m2, "gain_m2_sessionz.rds")
+```
+
+# RT Model
+
+Secondary analysis.
+
+```{r rt-model, message=FALSE}
+
+m_rt <- brm(
+
+  logRT ~ CueType * Duration + Session_z +
+
+    (1 + CueType | ID),
+
+  data = d,
+
+  family = gaussian(),
+
+  prior = c(
+
+    prior(normal(6, 1), class = Intercept),
+
+    prior(normal(0, .2), class = b),
+
+    prior(exponential(1), class = sigma),
+
+    prior(exponential(1), class = sd)
+
+  ),
+
+  chains = 4,
+
+  cores = 4,
+
+  iter = 4000,
+
+  control = list(
+
+    adapt_delta = .95
+
+  ),
+
+  seed = 2468
+
+)
+
+```
+
+# RT Summary
+
+```{r rt-summary}
+
+summary(m_rt)
+
+```
+
+# Save Models
+
+```{r save-models}
+
+saveRDS(m1, "m1_precision_main.rds")
+
+saveRDS(m2, "m2_precision_learning.rds")
+
+saveRDS(m_rt, "m_rt.rds")
+
+```

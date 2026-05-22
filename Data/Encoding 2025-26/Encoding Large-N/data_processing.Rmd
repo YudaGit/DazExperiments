@@ -1,0 +1,232 @@
+---
+title: "Data Processing and Plotting"
+subtitle: "Prolific event data: stimulus_wheel_display_event & orientation_response_event"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(here)
+```
+
+```{r load-data}
+data_path <- here("prolific_data_2026-03-10.csv")
+df <- read.csv(data_path, stringsAsFactors = FALSE)
+```
+
+```{r data-summary}
+cat("\n========== DATA SUMMARY ==========\n\n")
+cat("Total rows:", nrow(df), "\n")
+cat("Total columns:", ncol(df), "\n")
+cat("\nColumn names:\n")
+print(names(df))
+cat("\n--- First few rows ---\n")
+print(head(df[, c("prolific_id", "trial_event", "trial_number", "cue_type")], 5))
+cat("\n--- trial_event breakdown ---\n")
+print(table(df$trial_event))
+```
+
+# ```{r participant-breakdown}
+# cat("\n========== PARTICIPANT TRIAL BREAKDOWN ==========\n\n")
+# 
+# participant_trials <- df %>%
+#   group_by(prolific_id) %>%
+#   summarise(
+#     n_trials = n(),
+#     n_stimulus_wheel = sum(trial_event == "stimulus_wheel_display_event"),
+#     n_orientation_response = sum(trial_event == "orientation_response_event")
+#   ) %>%
+#   arrange(desc(n_trials))
+# 
+# cat("Unique participants:", nrow(participant_trials), "\n\n")
+# cat("Participant ID | n_trials | stimulus_wheel | orientation_response\n")
+# cat(strrep("-", 75), "\n")
+# 
+# for (i in seq_len(nrow(participant_trials))) {
+#   row <- participant_trials[i, ]
+#   cat(sprintf("%-14s | %8d | %14d | %21d\n",
+#               row$prolific_id, row$n_trials, row$n_stimulus_wheel, row$n_orientation_response))
+# }
+#```
+
+
+#```{r summary-stats}
+#cat("\n========== TRIAL COUNT SUMMARY ==========\n")
+#cat("Mean trials per participant:", round(mean(participant_trials$n_trials), 1), "\n")
+#cat("Min trials:", min(participant_trials$n_trials), "\n")
+#cat("Max trials:", max(participant_trials$n_trials), "\n")
+#```
+
+## Processing chunks (one thing at a time)
+
+```{r subset-setup, include=FALSE}
+key_cols <- c(
+  "subexperiment", "participant_id", "redundancy", "tab_away_count",
+  "target_orientation", "started_outof_center", "too_fast_trigger", "num_items",
+  "response_RT_from_start", "response_error_deg", "duration_ms",
+  "response_orientation_360", "response_RT", "leave_center_RT", "cue_type",
+  "too_slow_trigger", "trial_event", "trial_number"
+)
+
+subset_output_dir <- here("CSVresults", "subexperiment_keycols")
+dir.create(subset_output_dir, showWarnings = FALSE, recursive = TRUE)
+
+make_participant_id <- function(data) {
+  data %>%
+    mutate(
+      participant_id = dplyr::coalesce(
+        na_if(as.character(prolific_id), ""),
+        na_if(as.character(subject_id), ""),
+        na_if(as.character(uid), "")
+      )
+    )
+}
+
+reindex_participants <- function(data) {
+  unique_ids <- sort(unique(data$participant_id))
+  lookup <- tibble::tibble(
+    original_id = unique_ids,
+    participant_id_new = sprintf("%02d", seq_along(unique_ids))
+  )
+
+  data_reindexed <- data %>%
+    left_join(lookup, by = c("participant_id" = "original_id")) %>%
+    mutate(participant_id = dplyr::coalesce(participant_id_new, participant_id)) %>%
+    select(-participant_id_new)
+
+  list(
+    data = data_reindexed,
+    lookup = lookup %>% rename(participant_id = participant_id_new)
+  )
+}
+```
+
+```{r chunk1-extract-subsets}
+# sub1 = subexperiment 1 (practice_effect)
+# sub2 = subexperiment 2 (Context Effect Hypothesis)
+# sub3 = subexperiment 3 (Multiple Features Effect Hypothesis)
+
+sub1 <- df %>%
+  filter(subexperiment == 1, experiment_type == "practice_effect") %>%
+  make_participant_id() %>%
+  select(any_of(key_cols))
+sub2 <- df %>%
+  filter(subexperiment == 2, experiment_type == "Context Effect Hypothesis") %>%
+  make_participant_id() %>%
+  select(any_of(key_cols))
+sub3 <- df %>%
+  filter(subexperiment == 3, experiment_type == "Multiple Features Effect Hypothesis") %>%
+  make_participant_id() %>%
+  select(any_of(key_cols))
+
+sub1_reindexed <- reindex_participants(sub1)
+sub2_reindexed <- reindex_participants(sub2)
+sub3_reindexed <- reindex_participants(sub3)
+
+sub1 <- sub1_reindexed$data
+sub2 <- sub2_reindexed$data
+sub3 <- sub3_reindexed$data
+
+subset_paths <- list(
+  sub1 = file.path(subset_output_dir, "sub1_key_cols.csv"),
+  sub2 = file.path(subset_output_dir, "sub2_key_cols.csv"),
+  sub3 = file.path(subset_output_dir, "sub3_key_cols.csv")
+)
+
+participant_id_record <- bind_rows(
+  mutate(sub1_reindexed$lookup, subset = "sub1"),
+  mutate(sub2_reindexed$lookup, subset = "sub2"),
+  mutate(sub3_reindexed$lookup, subset = "sub3")
+)
+participant_lookup_path <- file.path(subset_output_dir, "participant_id_lookup.csv")
+
+cat("\n========== CHUNK 1: SUBSETS BY SUBEXPERIMENT ==========\n")
+cat("sub1 (practice_effect):            ", nrow(sub1), " rows, ", dplyr::n_distinct(sub1$participant_id), " participants\n", sep = "")
+cat("sub2 (Context Effect Hypothesis): ", nrow(sub2), " rows, ", dplyr::n_distinct(sub2$participant_id), " participants\n", sep = "")
+cat("sub3 (Multiple Features Effect):  ", nrow(sub3), " rows, ", dplyr::n_distinct(sub3$participant_id), " participants\n", sep = "")
+write.csv(sub1, subset_paths$sub1, row.names = FALSE)
+cat("Saved sub1 key columns subset to", subset_paths$sub1, "\n")
+write.csv(sub2, subset_paths$sub2, row.names = FALSE)
+cat("Saved sub2 key columns subset to", subset_paths$sub2, "\n")
+write.csv(sub3, subset_paths$sub3, row.names = FALSE)
+cat("Saved sub3 key columns subset to", subset_paths$sub3, "\n")
+write.csv(participant_id_record, participant_lookup_path, row.names = FALSE)
+cat("Saved participant ID mapping to", participant_lookup_path, "\n")
+```
+
+#Legacy plotting code for reference
+
+```{r chunk3-plot-rt-precision}
+# Shared position: R-cue slightly left, NR-cue (and Baseline) right at each duration
+pd <- position_dodge(width = 0.6)
+pj <- position_jitterdodge(dodge.width = 0.6, jitter.width = 0.15, seed = 42)
+
+# --- Sub1: Precision (absolute response error) ---
+p1_precision <- ggplot(sub1_resp, aes(x = duration_ms, y = abs(precision_deg), fill = cue_type, color = cue_type)) +
+  geom_boxplot(alpha = 0.5, position = pd, outlier.shape = NA) +
+  geom_jitter(alpha = 0.4, size = 0.8, position = pj) +
+  labs(title = "Sub1 (practice_effect): Abs Precision", subtitle = "Set-size [6]",
+       x = "Encoding duration (ms)", y = "Absolute response error (deg)", color = "Cue", fill = "Cue") +
+  theme_minimal() +
+  theme(legend.position = "top")
+print(p1_precision)
+
+# --- Sub1: RT (plot only RT < 3000 ms) ---
+p1_rt <- ggplot(dplyr::filter(sub1_resp, rt_ms < 3000), aes(x = duration_ms, y = rt_ms, fill = cue_type, color = cue_type)) +
+  geom_boxplot(alpha = 0.5, position = pd, outlier.shape = NA) +
+  geom_jitter(alpha = 0.4, size = 0.8, position = pj) +
+  labs(title = "Sub1 (practice_effect): RT", subtitle = "Set-size [6] (RT < 3000 ms)",
+       x = "Encoding duration (ms)", y = "RT from start (ms)", color = "Cue", fill = "Cue") +
+  theme_minimal() +
+  theme(legend.position = "top")
+print(p1_rt)
+
+# --- Sub2: Precision (absolute response error), panels by set-size ---
+p2_precision <- ggplot(sub2_resp, aes(x = duration_ms, y = abs(precision_deg), fill = cue_type, color = cue_type)) +
+  geom_boxplot(alpha = 0.5, position = pd, outlier.shape = NA) +
+  geom_jitter(alpha = 0.4, size = 1.5, position = pj) +
+  facet_wrap(~ num_items, labeller = as_labeller(function(x) paste("Set size:", x))) +
+  labs(title = "Sub2 (Context Effect): Precision",
+       x = "Encoding duration (ms)", y = "Absolute response error (deg)", color = "Cue", fill = "Cue") +
+  theme_minimal() +
+  theme(legend.position = "top")
+print(p2_precision)
+
+# --- Sub2: RT (plot only RT < 3000 ms), panels by set-size ---
+p2_rt <- ggplot(dplyr::filter(sub2_resp, rt_ms < 3000), aes(x = duration_ms, y = rt_ms, fill = cue_type, color = cue_type)) +
+  geom_boxplot(alpha = 0.5, position = pd, outlier.shape = NA) +
+  geom_jitter(alpha = 0.4, size = 1.5, position = pj) +
+  facet_wrap(~ num_items, labeller = as_labeller(function(x) paste("Set size:", x))) +
+  labs(title = "Sub2 (Context Effect): Response time", subtitle = "RT < 3000 ms",
+       x = "Encoding duration (ms)", y = "RT from start (ms)", color = "Cue", fill = "Cue") +
+  theme_minimal() +
+  theme(legend.position = "top")
+print(p2_rt)
+
+# --- Sub3: Precision (absolute response error), panels by set-size ---
+p3_precision <- ggplot(sub3_resp, aes(x = duration_ms, y = abs(precision_deg), fill = cue_type, color = cue_type)) +
+  geom_boxplot(alpha = 0.5, position = pd, outlier.shape = NA) +
+  geom_jitter(alpha = 0.4, size = 1.5, position = pj) +
+  facet_wrap(~ num_items, labeller = as_labeller(function(x) paste("Set size:", x))) +
+  labs(title = "Sub3 (Multiple Features Effect): Precision",
+       x = "Encoding duration (ms)", y = "Absolute response error (deg)", color = "Cue", fill = "Cue") +
+  theme_minimal() +
+  theme(legend.position = "top")
+print(p3_precision)
+
+# --- Sub3: RT (plot only RT < 3000 ms), panels by set-size ---
+p3_rt <- ggplot(dplyr::filter(sub3_resp, rt_ms < 3000), aes(x = duration_ms, y = rt_ms, fill = cue_type, color = cue_type)) +
+  geom_boxplot(alpha = 0.5, position = pd, outlier.shape = NA) +
+  geom_jitter(alpha = 0.4, size = 0.8, position = pj) +
+  facet_wrap(~ num_items, labeller = as_labeller(function(x) paste("Set size:", x))) +
+  labs(title = "Sub3 (Multiple Features Effect): Response time", subtitle = "RT < 3000 ms",
+       x = "Encoding duration (ms)", y = "RT from start (ms)", color = "Cue", fill = "Cue") +
+  theme_minimal() +
+  theme(legend.position = "top")
+print(p3_rt)
+```
+
+<!-- Next chunks: add further processing or plotting here -->

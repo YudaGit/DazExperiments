@@ -7,9 +7,10 @@
 #
 # POPCDM_R: besselFPT.R, popcode.R, popcdm300.R (Sys.setenv(POPCDM_R_DIR = "...") to override)
 #
-# Trial alpha: computed in redundancy_nll() as alphaEst * m (branch m from design).
+# Trial alpha: alpha_trial = alphaEst * m, with alphaEst = theoretical resource baseline B.
+# Down-scaling uses (ColorNi / color_count_ref)^(-beta); default color_count_ref = 2 (smallest set).
 # Full P uses a Jay-style P/Sel/Pvar/Pfix contract:
-#   P    = maximal named parameter vector (50 entries)
+#   P    = maximal named parameter vector (50 or 51 entries; depends on beta_variant)
 #   Sel  = TRUE/free, FALSE/fixed
 #   Pvar = P[Sel], passed to optim()
 #   Pfix = P[!Sel], held fixed
@@ -162,8 +163,73 @@ redundancy_cond_design_table <- function() {
   )
 }
 
+BASELINE_COND_LEVELS <- c(
+  "set2_baseline",
+  "set4_baseline",
+  "set6_baseline"
+)
+
+REDUNDANCY_BETA_VARIANTS <- c("down_up", "base_nr_r")
+
+#' Smallest ColorNi in the design; alphaEst is baseline B with m = 1 at this reference.
+DEFAULT_COLOR_COUNT_REF <- 2L
+
+#' Beta parameter names for a variant (`down_up`: 2; `base_nr_r`: 3).
+redundancy_beta_names <- function(variant = c("down_up", "base_nr_r")) {
+  variant <- match.arg(variant, REDUNDANCY_BETA_VARIANTS)
+  switch(variant,
+    down_up = c("beta_down", "beta_up"),
+    base_nr_r = c("beta_baseline", "beta_nr", "beta_r")
+  )
+}
+
+redundancy_resolve_beta_variant <- function(model_spec = redundancy_model_spec()) {
+  variant <- model_spec$beta_variant
+  if (is.null(variant) || !nzchar(variant)) {
+    return("down_up")
+  }
+  match.arg(variant, REDUNDANCY_BETA_VARIANTS)
+}
+
+redundancy_resolve_color_count_ref <- function(model_spec = redundancy_model_spec()) {
+  n_ref <- model_spec$color_count_ref
+  if (is.null(n_ref)) {
+    return(DEFAULT_COLOR_COUNT_REF)
+  }
+  n_ref <- as.integer(n_ref)
+  if (length(n_ref) != 1L || !is.finite(n_ref) || n_ref < 1L) {
+    stop("color_count_ref must be a positive integer scalar", call. = FALSE)
+  }
+  n_ref
+}
+
+redundancy_infer_beta_variant_from_names <- function(nm) {
+  if ("beta_baseline" %in% nm) {
+    return("base_nr_r")
+  }
+  if ("beta_down" %in% nm) {
+    return("down_up")
+  }
+  stop("cannot infer beta_variant from parameter names", call. = FALSE)
+}
+
+#' Classify trials for beta branching (baseline vs partial NR vs R).
+redundancy_trial_kind <- function(cond_label) {
+  if (!cond_label %in% COND_LEVELS) {
+    stop("unknown cond_label: ", cond_label, call. = FALSE)
+  }
+  if (cond_label %in% BASELINE_COND_LEVELS) {
+    "baseline"
+  } else if (grepl("_R_cue", cond_label, fixed = TRUE)) {
+    "R"
+  } else {
+    "NR"
+  }
+}
+
 cue_branch_from_cond <- function(cond_label) {
-  if (grepl("_R_cue", cond_label, fixed = TRUE)) {
+  kind <- redundancy_trial_kind(cond_label)
+  if (identical(kind, "R")) {
     "R"
   } else {
     "NR"
@@ -178,12 +244,13 @@ cue_branch_from_cond <- function(cond_label) {
 #' The full vector deliberately contains one condition-specific value for each
 #' parameter family that we may later want to constrain: vnorm, kappa, a, ter,
 #' and eta1. Simpler model versions are made by fixing/copying entries via `Sel`
-#' and `model_spec$equal_groups`.
-redundancy_param_names <- function() {
+#' and `model_spec$equal_groups`. Beta slots depend on `beta_variant`.
+redundancy_param_names <- function(beta_variant = c("down_up", "base_nr_r")) {
+  beta_variant <- match.arg(beta_variant, REDUNDANCY_BETA_VARIANTS)
   c(
     "alphaEst",
     paste0("vnorm_", COND_LEVELS),
-    "beta1", "beta2",
+    redundancy_beta_names(beta_variant),
     paste0("kappa_", COND_LEVELS),
     paste0("a_", COND_LEVELS),
     paste0("ter_", COND_LEVELS),
@@ -192,8 +259,6 @@ redundancy_param_names <- function() {
   )
 }
 
-REDUNDANCY_NP <- length(redundancy_param_names())
-
 redundancy_param_family_names <- function(family) {
   if (!family %in% c("vnorm", "kappa", "a", "ter", "eta1")) {
     stop("unknown condition-specific family: ", family, call. = FALSE)
@@ -201,23 +266,57 @@ redundancy_param_family_names <- function(family) {
   paste0(family, "_", COND_LEVELS)
 }
 
+#' Default interior bounds for beta exponents (avoids exact 0/1 under logit).
+redundancy_beta_bound_defaults <- function() {
+  list(lower = 0.02, upper = 0.98, start = 0.4)
+}
+
 #' Starting values for the maximal full vector.
 redundancy_default_P <- function(
+    beta_variant = c("down_up", "base_nr_r"),
     alphaEst = 5,
     vnorm = 2.5,
-    beta1 = 0.5,
-    beta2 = 0.5,
+    beta_down = NULL,
+    beta_up = NULL,
+    beta_baseline = NULL,
+    beta_nr = NULL,
+    beta_r = NULL,
     kappa = 5,
     a = 2,
     ter = 0.2,
     eta1 = 1,
     eta2 = 1e-6,
     st = 0.1) {
+  beta_variant <- match.arg(beta_variant, REDUNDANCY_BETA_VARIANTS)
+  bb <- redundancy_beta_bound_defaults()
+  if (is.null(beta_down)) {
+    beta_down <- bb$start
+  }
+  if (is.null(beta_up)) {
+    beta_up <- bb$start
+  }
+  if (is.null(beta_baseline)) {
+    beta_baseline <- bb$start
+  }
+  if (is.null(beta_nr)) {
+    beta_nr <- bb$start
+  }
+  if (is.null(beta_r)) {
+    beta_r <- bb$start
+  }
+  beta_block <- switch(
+    beta_variant,
+    down_up = c(beta_down = beta_down, beta_up = beta_up),
+    base_nr_r = c(
+      beta_baseline = beta_baseline,
+      beta_nr = beta_nr,
+      beta_r = beta_r
+    )
+  )
   P <- c(
     alphaEst = alphaEst,
     stats::setNames(rep(vnorm, length(COND_LEVELS)), redundancy_param_family_names("vnorm")),
-    beta1 = beta1,
-    beta2 = beta2,
+    beta_block,
     stats::setNames(rep(kappa, length(COND_LEVELS)), redundancy_param_family_names("kappa")),
     stats::setNames(rep(a, length(COND_LEVELS)), redundancy_param_family_names("a")),
     stats::setNames(rep(ter, length(COND_LEVELS)), redundancy_param_family_names("ter")),
@@ -225,16 +324,25 @@ redundancy_default_P <- function(
     eta2 = eta2,
     st = st
   )
-  P[redundancy_param_names()]
+  P[redundancy_param_names(beta_variant)]
 }
 
 #' Broad default bounds for the maximal full vector.
-redundancy_default_bounds <- function() {
+redundancy_default_bounds <- function(beta_variant = c("down_up", "base_nr_r")) {
+  beta_variant <- match.arg(beta_variant, REDUNDANCY_BETA_VARIANTS)
+  bb <- redundancy_beta_bound_defaults()
+  beta_lower <- stats::setNames(
+    rep(bb$lower, length(redundancy_beta_names(beta_variant))),
+    redundancy_beta_names(beta_variant)
+  )
+  beta_upper <- stats::setNames(
+    rep(bb$upper, length(redundancy_beta_names(beta_variant))),
+    redundancy_beta_names(beta_variant)
+  )
   lower <- c(
     alphaEst = 1.0,
     stats::setNames(rep(1.0, length(COND_LEVELS)), redundancy_param_family_names("vnorm")),
-    beta1 = 0.05,
-    beta2 = 0.05,
+    beta_lower,
     stats::setNames(rep(0.5, length(COND_LEVELS)), redundancy_param_family_names("kappa")),
     stats::setNames(rep(0.1, length(COND_LEVELS)), redundancy_param_family_names("a")),
     stats::setNames(rep(0.001, length(COND_LEVELS)), redundancy_param_family_names("ter")),
@@ -243,30 +351,49 @@ redundancy_default_bounds <- function() {
     st = 0
   )
   upper <- c(
-    alphaEst = 30.0,
-    stats::setNames(rep(20.0, length(COND_LEVELS)), redundancy_param_family_names("vnorm")),
-    beta1 = 1,
-    beta2 = 1,
-    stats::setNames(rep(25.0, length(COND_LEVELS)), redundancy_param_family_names("kappa")),
+    alphaEst = 10.0,
+    stats::setNames(rep(15.0, length(COND_LEVELS)), redundancy_param_family_names("vnorm")),
+    beta_upper,
+    stats::setNames(rep(15.0, length(COND_LEVELS)), redundancy_param_family_names("kappa")),
     stats::setNames(rep(15.0, length(COND_LEVELS)), redundancy_param_family_names("a")),
     stats::setNames(rep(0.8, length(COND_LEVELS)), redundancy_param_family_names("ter")),
     stats::setNames(rep(10.0, length(COND_LEVELS)), redundancy_param_family_names("eta1")),
     eta2 = 0.001,
     st = 0.4
   )
-  list(lower = lower[redundancy_param_names()], upper = upper[redundancy_param_names()])
+  nm <- redundancy_param_names(beta_variant)
+  list(lower = lower[nm], upper = upper[nm])
 }
 
 #' Default selector: all exploratory parameters free, eta2 and st fixed.
-redundancy_default_sel <- function(free_eta2 = FALSE, free_st = FALSE) {
-  Sel <- stats::setNames(rep(TRUE, REDUNDANCY_NP), redundancy_param_names())
+redundancy_default_sel <- function(
+    beta_variant = c("down_up", "base_nr_r"),
+    free_eta2 = FALSE,
+    free_st = FALSE) {
+  beta_variant <- match.arg(beta_variant, REDUNDANCY_BETA_VARIANTS)
+  nm <- redundancy_param_names(beta_variant)
+  Sel <- stats::setNames(rep(TRUE, length(nm)), nm)
   Sel["eta2"] <- isTRUE(free_eta2)
   Sel["st"] <- isTRUE(free_st)
   Sel
 }
 
-redundancy_model_spec <- function(equal_groups = list(), label = "full_condition") {
-  list(label = label, equal_groups = equal_groups)
+redundancy_model_spec <- function(
+    equal_groups = list(),
+    label = "full_condition",
+    beta_variant = c("down_up", "base_nr_r"),
+    color_count_ref = DEFAULT_COLOR_COUNT_REF) {
+  beta_variant <- match.arg(beta_variant, REDUNDANCY_BETA_VARIANTS)
+  color_count_ref <- as.integer(color_count_ref)
+  if (length(color_count_ref) != 1L || !is.finite(color_count_ref) || color_count_ref < 1L) {
+    stop("color_count_ref must be a positive integer scalar", call. = FALSE)
+  }
+  list(
+    label = label,
+    equal_groups = redundancy_normalize_equal_groups(equal_groups),
+    beta_variant = beta_variant,
+    color_count_ref = color_count_ref
+  )
 }
 
 #' Helper for readable equality constraints.
@@ -282,7 +409,21 @@ redundancy_equal_group <- function(family, cond_labels) {
   paste0(family, "_", cond_labels)
 }
 
+#' Drop NULL / empty entries (e.g. from a trailing comma in list(...)).
+redundancy_normalize_equal_groups <- function(equal_groups = list()) {
+  if (!length(equal_groups)) {
+    return(list())
+  }
+  Filter(
+    function(grp) {
+      !is.null(grp) && length(grp) >= 1L && nzchar(grp[[1L]])
+    },
+    equal_groups
+  )
+}
+
 redundancy_apply_equal_groups <- function(P, equal_groups = list()) {
+  equal_groups <- redundancy_normalize_equal_groups(equal_groups)
   if (!length(equal_groups)) {
     return(P)
   }
@@ -298,8 +439,12 @@ redundancy_apply_equal_groups <- function(P, equal_groups = list()) {
   P
 }
 
-redundancy_sel_for_equal_groups <- function(Sel, equal_groups = list()) {
-  Sel <- redundancy_check_named_full_vector(Sel, "Sel")
+redundancy_sel_for_equal_groups <- function(
+    Sel,
+    equal_groups = list(),
+    beta_variant = NULL) {
+  equal_groups <- redundancy_normalize_equal_groups(equal_groups)
+  Sel <- redundancy_check_named_full_vector(Sel, "Sel", beta_variant = beta_variant)
   Sel <- stats::setNames(as.logical(Sel), names(Sel))
   for (grp in equal_groups) {
     if (length(grp) >= 2L) {
@@ -309,17 +454,38 @@ redundancy_sel_for_equal_groups <- function(Sel, equal_groups = list()) {
   Sel
 }
 
-redundancy_check_named_full_vector <- function(x, arg_name = "P") {
-  nm <- redundancy_param_names()
+redundancy_check_named_full_vector <- function(
+    x,
+    arg_name = "P",
+    beta_variant = NULL) {
+  if (is.null(beta_variant)) {
+    if (is.null(names(x)) || !length(names(x))) {
+      stop(arg_name, " must be named to infer beta_variant", call. = FALSE)
+    }
+    beta_variant <- redundancy_infer_beta_variant_from_names(names(x))
+  } else {
+    beta_variant <- match.arg(beta_variant, REDUNDANCY_BETA_VARIANTS)
+  }
+  nm <- redundancy_param_names(beta_variant)
   if (is.null(names(x)) || !setequal(names(x), nm)) {
-    stop(arg_name, " must be a named vector with exactly the full redundancy parameter names", call. = FALSE)
+    extra <- setdiff(names(x), nm)
+    missing <- setdiff(nm, names(x))
+    stop(
+      arg_name,
+      " must be a named vector with exactly the full redundancy parameter names for beta_variant='",
+      beta_variant, "'.",
+      if (length(extra)) paste0(" Unexpected: ", paste(extra, collapse = ", "), ".") else "",
+      if (length(missing)) paste0(" Missing: ", paste(missing, collapse = ", "), ".") else "",
+      call. = FALSE
+    )
   }
   x[nm]
 }
 
 redundancy_split_P <- function(P, Sel) {
-  P <- redundancy_check_named_full_vector(P, "P")
-  Sel <- redundancy_check_named_full_vector(Sel, "Sel")
+  beta_variant <- redundancy_infer_beta_variant_from_names(names(P))
+  P <- redundancy_check_named_full_vector(P, "P", beta_variant = beta_variant)
+  Sel <- redundancy_check_named_full_vector(Sel, "Sel", beta_variant = beta_variant)
   Sel <- stats::setNames(as.logical(Sel), names(Sel))
   list(
     P_var = P[Sel],
@@ -333,7 +499,8 @@ redundancy_full_P_from_var <- function(
     P_fix,
     Sel,
     model_spec = redundancy_model_spec()) {
-  Sel <- redundancy_check_named_full_vector(Sel, "Sel")
+  beta_variant <- redundancy_resolve_beta_variant(model_spec)
+  Sel <- redundancy_check_named_full_vector(Sel, "Sel", beta_variant = beta_variant)
   Sel <- stats::setNames(as.logical(Sel), names(Sel))
   expected_var <- names(Sel)[Sel]
   expected_fix <- names(Sel)[!Sel]
@@ -355,24 +522,69 @@ redundancy_full_P_from_var <- function(
     }
     P_fix <- P_fix[expected_fix]
   }
-  P <- stats::setNames(rep(NA_real_, REDUNDANCY_NP), redundancy_param_names())
+  beta_variant <- redundancy_resolve_beta_variant(model_spec)
+  nm <- redundancy_param_names(beta_variant)
+  P <- stats::setNames(rep(NA_real_, length(nm)), nm)
   P[Sel] <- as.numeric(P_var)
   P[!Sel] <- as.numeric(P_fix)
-  P <- P[redundancy_param_names()]
+  P <- P[nm]
   redundancy_apply_equal_groups(P, model_spec$equal_groups)
 }
 
+redundancy_sync_beta_variant <- function(model_spec, P_start = NULL, Sel = NULL) {
+  beta_variant <- redundancy_resolve_beta_variant(model_spec)
+  inferred <- NULL
+  if (!is.null(P_start) && length(names(P_start))) {
+    inferred <- redundancy_infer_beta_variant_from_names(names(P_start))
+  } else if (!is.null(Sel) && length(names(Sel))) {
+    inferred <- redundancy_infer_beta_variant_from_names(names(Sel))
+  }
+  if (!is.null(inferred) && !identical(inferred, beta_variant)) {
+    warning(
+      "model_spec$beta_variant='", beta_variant,
+      "' does not match parameter names (inferred '", inferred,
+      "'). Using inferred variant.",
+      call. = FALSE
+    )
+    beta_variant <- inferred
+    model_spec$beta_variant <- inferred
+  }
+  list(model_spec = model_spec, beta_variant = beta_variant)
+}
+
 redundancy_fit_inputs <- function(
-    P_start = redundancy_default_P(),
-    lower = redundancy_default_bounds()$lower,
-    upper = redundancy_default_bounds()$upper,
-    Sel = redundancy_default_sel(),
+    P_start = NULL,
+    lower = NULL,
+    upper = NULL,
+    Sel = NULL,
     model_spec = redundancy_model_spec()) {
-  P_start <- redundancy_check_named_full_vector(P_start, "P_start")
-  lower <- redundancy_check_named_full_vector(lower, "lower")
-  upper <- redundancy_check_named_full_vector(upper, "upper")
-  Sel <- redundancy_check_named_full_vector(Sel, "Sel")
-  Sel <- redundancy_sel_for_equal_groups(Sel, model_spec$equal_groups)
+  synced <- redundancy_sync_beta_variant(model_spec, P_start = P_start, Sel = Sel)
+  model_spec <- synced$model_spec
+  beta_variant <- synced$beta_variant
+  if (is.null(P_start)) {
+    P_start <- redundancy_default_P(beta_variant = beta_variant)
+  }
+  if (is.null(lower) || is.null(upper)) {
+    bb <- redundancy_default_bounds(beta_variant = beta_variant)
+    if (is.null(lower)) {
+      lower <- bb$lower
+    }
+    if (is.null(upper)) {
+      upper <- bb$upper
+    }
+  }
+  if (is.null(Sel)) {
+    Sel <- redundancy_default_sel(beta_variant = beta_variant)
+  }
+  P_start <- redundancy_check_named_full_vector(P_start, "P_start", beta_variant = beta_variant)
+  lower <- redundancy_check_named_full_vector(lower, "lower", beta_variant = beta_variant)
+  upper <- redundancy_check_named_full_vector(upper, "upper", beta_variant = beta_variant)
+  Sel <- redundancy_check_named_full_vector(Sel, "Sel", beta_variant = beta_variant)
+  Sel <- redundancy_sel_for_equal_groups(
+    Sel,
+    model_spec$equal_groups,
+    beta_variant = beta_variant
+  )
   if (any(lower >= upper)) {
     stop("all lower bounds must be less than upper bounds", call. = FALSE)
   }
@@ -387,15 +599,24 @@ redundancy_fit_inputs <- function(
   )
 }
 
-redundancy_condition_params <- function(P, cond_label) {
+redundancy_condition_params <- function(
+    P,
+    cond_label,
+    model_spec = redundancy_model_spec()) {
   if (!cond_label %in% COND_LEVELS) {
     stop("unknown cond_label: ", cond_label, call. = FALSE)
   }
-  list(
+  beta_variant <- redundancy_resolve_beta_variant(model_spec)
+  beta_nm <- redundancy_beta_names(beta_variant)
+  betas <- stats::setNames(
+    as.numeric(P[beta_nm]),
+    beta_nm
+  )
+  out <- list(
     alphaEst = unname(P["alphaEst"]),
     vnorm = unname(P[paste0("vnorm_", cond_label)]),
-    beta1 = unname(P["beta1"]),
-    beta2 = unname(P["beta2"]),
+    betas = betas,
+    beta_variant = beta_variant,
     kappa = unname(P[paste0("kappa_", cond_label)]),
     a = unname(P[paste0("a_", cond_label)]),
     ter = unname(P[paste0("ter_", cond_label)]),
@@ -403,6 +624,57 @@ redundancy_condition_params <- function(P, cond_label) {
     eta2 = unname(P["eta2"]),
     st = unname(P["st"])
   )
+  for (bn in beta_nm) {
+    out[[bn]] <- unname(P[bn])
+  }
+  out
+}
+
+#' Report beta parameters on or near box bounds (physical scale).
+redundancy_beta_bound_report <- function(
+    P_var_hat,
+    lower,
+    upper,
+    model_spec = redundancy_model_spec(),
+    tol_frac = 0.02) {
+  if (is.null(names(P_var_hat))) {
+    stop("P_var_hat must be named", call. = FALSE)
+  }
+  beta_nm <- redundancy_beta_names(redundancy_resolve_beta_variant(model_spec))
+  beta_nm <- intersect(beta_nm, names(P_var_hat))
+  if (!length(beta_nm)) {
+    return(data.frame(parameter = character(), value = numeric(), bound = character(), stringsAsFactors = FALSE))
+  }
+  rows <- vector("list", length(beta_nm))
+  for (bn in beta_nm) {
+    v <- P_var_hat[bn]
+    lo <- lower[bn]
+    hi <- upper[bn]
+    span <- hi - lo
+    on_lo <- is.finite(v) && is.finite(lo) && v <= lo + tol_frac * span
+    on_hi <- is.finite(v) && is.finite(hi) && v >= hi - tol_frac * span
+    bound <- if (on_lo && on_hi) {
+      "both"
+    } else if (on_lo) {
+      "lower"
+    } else if (on_hi) {
+      "upper"
+    } else {
+      NA_character_
+    }
+    if (!is.na(bound)) {
+      rows[[bn]] <- data.frame(
+        parameter = bn,
+        value = v,
+        bound = bound,
+        stringsAsFactors = FALSE
+      )
+    }
+  }
+  if (!length(rows)) {
+    return(data.frame(parameter = character(), value = numeric(), bound = character(), stringsAsFactors = FALSE))
+  }
+  do.call(rbind, rows)
 }
 
 redundancy_popcdm_P8 <- function(pr, alpha) {
@@ -600,30 +872,205 @@ redundancy_thin_trials_by_cond <- function(fit_df, max_per_cond = 200L, seed = N
 }
 
 # --- NLL: redundancy branch multiplier m, alpha_trial = alphaEst * m, popcdm300 ---
+#
+# alphaEst = theoretical resource baseline B (set-size-1 equivalent).
+# Down-scaling: (ColorNi / color_count_ref)^(-beta), default color_count_ref = 2.
+# R trials: down term uses cued ColorNi; up term uses n_redundant^beta (variant-specific).
+#
+# down_up:    m = (ci/n_ref)^(-beta_down) * n_red^beta_up  [R only for up term]
+# base_nr_r:  baseline/NR/R betas on (ci/n_ref); R adds n_red^beta_r
+redundancy_branch_m_invalid_reason <- function(
+    m,
+    log_m = NA_real_,
+    cond_label = NA_character_,
+    betas = NULL) {
+  if (!is.null(betas) && any(!is.finite(betas))) {
+    bad <- names(betas)[!is.finite(betas)]
+    return(paste0("non-finite beta(s): ", paste(bad, collapse = ", ")))
+  }
+  if (!is.finite(log_m)) {
+    return("log(m) not finite (overflow/underflow in power law)")
+  }
+  if (!is.finite(m)) {
+    return("m not finite")
+  }
+  if (m <= 0) {
+    return("m <= 0 (underflow)")
+  }
+  paste0("invalid m for cond_label=", cond_label)
+}
 
-# NR / Non-Redundant Cued: m = ColorNi^(-beta1). R / Redundant Cued:
-#   m = ColorNi^(-beta2) * n_redundant^beta2,  n_redundant = num_itemsi - ColorNi + 1.
-redundancy_branch_m <- function(num_itemsi, ColorNi, redundancy, beta1, beta2) {
+redundancy_branch_m <- function(
+    cond_label,
+    num_itemsi,
+    ColorNi,
+    redundancy,
+    betas,
+    beta_variant = c("down_up", "base_nr_r"),
+    color_count_ref = DEFAULT_COLOR_COUNT_REF,
+    strict = FALSE) {
+  beta_variant <- match.arg(beta_variant, REDUNDANCY_BETA_VARIANTS)
   ni <- as.integer(num_itemsi)
   ci <- as.integer(ColorNi)
+  n_ref <- as.integer(color_count_ref)
   if (length(ni) != 1L || length(ci) != 1L || length(redundancy) != 1L) {
-    stop("scalar num_itemsi, ColorNi, redundancy only", call. = FALSE)
+    msg <- "scalar num_itemsi, ColorNi, redundancy only"
+    if (strict) stop(msg, call. = FALSE)
+    return(NA_real_)
   }
-  if (identical(redundancy, "Redundant Cued")) {
-    n_redundant <- as.integer(ni - ci + 1L)
-    if (!is.finite(n_redundant) || n_redundant < 1L) {
-      stop("n_redundant = num_itemsi - ColorNi + 1 must be >= 1", call. = FALSE)
+  if (length(n_ref) != 1L || !is.finite(n_ref) || n_ref < 1L) {
+    msg <- "color_count_ref must be a positive integer scalar"
+    if (strict) stop(msg, call. = FALSE)
+    return(NA_real_)
+  }
+  if (ci < 1L) {
+    msg <- "ColorNi must be >= 1"
+    if (strict) stop(msg, call. = FALSE)
+    return(NA_real_)
+  }
+  if (is.null(names(betas))) {
+    msg <- "betas must be a named vector"
+    if (strict) stop(msg, call. = FALSE)
+    return(NA_real_)
+  }
+  expected <- redundancy_beta_names(beta_variant)
+  if (!all(expected %in% names(betas))) {
+    msg <- paste0(
+      "betas missing names for beta_variant='", beta_variant, "': ",
+      paste(setdiff(expected, names(betas)), collapse = ", ")
+    )
+    if (strict) stop(msg, call. = FALSE)
+    return(NA_real_)
+  }
+  betas <- stats::setNames(as.numeric(betas[expected]), expected)
+  if (any(!is.finite(betas))) {
+    msg <- redundancy_branch_m_invalid_reason(NA, betas = betas)
+    if (strict) stop("alpha branch multiplier invalid: ", msg, call. = FALSE)
+    return(NA_real_)
+  }
+
+  log_ci_over_ref <- log(as.numeric(ci)) - log(as.numeric(n_ref))
+  log_m <- NA_real_
+
+  if (identical(beta_variant, "down_up")) {
+    beta_down <- betas["beta_down"]
+    beta_up <- betas["beta_up"]
+    log_m <- -beta_down * log_ci_over_ref
+    if (identical(redundancy, "Redundant Cued")) {
+      n_redundant <- as.integer(ni - ci + 1L)
+      if (!is.finite(n_redundant) || n_redundant < 1L) {
+        msg <- "n_redundant = num_itemsi - ColorNi + 1 must be >= 1"
+        if (strict) stop(msg, call. = FALSE)
+        return(NA_real_)
+      }
+      log_m <- log_m + beta_up * log(as.numeric(n_redundant))
+    } else if (!identical(redundancy, "Non-Redundant Cued")) {
+      msg <- "redundancy must be 'Redundant Cued' or 'Non-Redundant Cued'"
+      if (strict) stop(msg, call. = FALSE)
+      return(NA_real_)
     }
-    m <- as.numeric(ci)^(-as.numeric(beta2)) * as.numeric(n_redundant)^as.numeric(beta2)
-  } else if (identical(redundancy, "Non-Redundant Cued")) {
-    m <- as.numeric(ci)^(-as.numeric(beta1))
   } else {
-    stop("redundancy must be 'Redundant Cued' or 'Non-Redundant Cued'", call. = FALSE)
+    kind <- redundancy_trial_kind(cond_label)
+    if (identical(kind, "baseline")) {
+      log_m <- -betas["beta_baseline"] * log_ci_over_ref
+    } else if (identical(kind, "NR")) {
+      log_m <- -betas["beta_nr"] * log_ci_over_ref
+    } else if (identical(kind, "R")) {
+      n_redundant <- as.integer(ni - ci + 1L)
+      if (!is.finite(n_redundant) || n_redundant < 1L) {
+        msg <- "n_redundant = num_itemsi - ColorNi + 1 must be >= 1"
+        if (strict) stop(msg, call. = FALSE)
+        return(NA_real_)
+      }
+      beta_r <- betas["beta_r"]
+      log_m <- -beta_r * log_ci_over_ref + beta_r * log(as.numeric(n_redundant))
+    } else {
+      msg <- paste0("unknown trial kind for cond_label: ", cond_label)
+      if (strict) stop(msg, call. = FALSE)
+      return(NA_real_)
+    }
   }
+
+  if (!is.finite(log_m) || log_m > 700 || log_m < -700) {
+    msg <- redundancy_branch_m_invalid_reason(NA, log_m = log_m, cond_label = cond_label, betas = betas)
+    if (strict) stop("alpha branch multiplier invalid: ", msg, call. = FALSE)
+    return(NA_real_)
+  }
+  m <- exp(log_m)
   if (!is.finite(m) || m <= 0) {
-    stop("alpha branch multiplier invalid", call. = FALSE)
+    msg <- redundancy_branch_m_invalid_reason(m, log_m = log_m, cond_label = cond_label, betas = betas)
+    if (strict) stop("alpha branch multiplier invalid: ", msg, call. = FALSE)
+    return(NA_real_)
   }
   m
+}
+
+redundancy_branch_m_from_design <- function(
+    cond_label,
+    num_itemsi,
+    ColorNi,
+    redundancy,
+    P,
+    model_spec = redundancy_model_spec(),
+    strict = FALSE) {
+  pr <- tryCatch(
+    redundancy_condition_params(P, cond_label, model_spec = model_spec),
+    error = function(e) NULL
+  )
+  if (is.null(pr)) {
+    if (strict) {
+      stop("could not build condition params for ", cond_label, call. = FALSE)
+    }
+    return(NA_real_)
+  }
+  redundancy_branch_m(
+    cond_label,
+    num_itemsi,
+    ColorNi,
+    redundancy,
+    betas = pr$betas,
+    beta_variant = pr$beta_variant,
+    color_count_ref = redundancy_resolve_color_count_ref(model_spec),
+    strict = strict
+  )
+}
+
+#' Pre-fit check: evaluate m for every design condition at a parameter vector.
+redundancy_branch_m_audit <- function(
+    P,
+    model_spec = redundancy_model_spec()) {
+  beta_variant <- redundancy_resolve_beta_variant(model_spec)
+  P <- redundancy_check_named_full_vector(P, "P", beta_variant = beta_variant)
+  tab <- redundancy_cond_design_table()
+  rows <- vector("list", nrow(tab))
+  for (i in seq_len(nrow(tab))) {
+    cl <- tab$cond_label[i]
+    m <- redundancy_branch_m_from_design(
+      cl,
+      tab$num_itemsi[i],
+      tab$ColorNi[i],
+      tab$redundancy[i],
+      P,
+      model_spec = model_spec,
+      strict = FALSE
+    )
+    pr <- redundancy_condition_params(P, cl, model_spec = model_spec)
+    rows[[i]] <- data.frame(
+      cond_label = cl,
+      trial_kind = redundancy_trial_kind(cl),
+      ColorNi = tab$ColorNi[i],
+      num_itemsi = tab$num_itemsi[i],
+      color_count_ref = redundancy_resolve_color_count_ref(model_spec),
+      m = m,
+      ok = is.finite(m) && m > 0,
+      betas = paste(
+        sprintf("%s=%.4f", names(pr$betas), as.numeric(pr$betas)),
+        collapse = ", "
+      ),
+      stringsAsFactors = FALSE
+    )
+  }
+  do.call(rbind, rows)
 }
 
 #' Negative log-likelihood (minimise). One `popcdm300` surface per `cond_label`.
@@ -646,6 +1093,10 @@ redundancy_nll <- function(
   if (is.null(P_full) || any(!is.finite(P_full))) {
     return(penalty_nll)
   }
+  beta_nm <- redundancy_beta_names(redundancy_resolve_beta_variant(model_spec))
+  if (any(!is.finite(P_full[beta_nm]))) {
+    return(penalty_nll)
+  }
   if (trace) {
     print(P_full)
   }
@@ -664,15 +1115,26 @@ redundancy_nll <- function(
     if (nrow(row_design) != 1L) {
       stop("unknown cond_label in NLL: ", cl, call. = FALSE)
     }
-    pr <- redundancy_condition_params(P_full, cl)
-    m <- redundancy_branch_m(
-      row_design$num_itemsi,
-      row_design$ColorNi,
-      row_design$redundancy,
-      pr$beta1,
-      pr$beta2
+    m <- tryCatch(
+      redundancy_branch_m_from_design(
+        cl,
+        row_design$num_itemsi,
+        row_design$ColorNi,
+        row_design$redundancy,
+        P_full,
+        model_spec = model_spec,
+        strict = FALSE
+      ),
+      error = function(e) NA_real_
     )
+    if (!is.finite(m) || m <= 0) {
+      return(penalty_nll)
+    }
+    pr <- redundancy_condition_params(P_full, cl, model_spec = model_spec)
     alpha_trial <- pr$alphaEst * m
+    if (!is.finite(alpha_trial) || alpha_trial <= 0) {
+      return(penalty_nll)
+    }
     P8 <- redundancy_popcdm_P8(pr, alpha_trial)
     if (any(!is.finite(P8)) || any(P8 <= 0)) {
       return(penalty_nll)
@@ -739,15 +1201,23 @@ redundancy_mesh_hit_rates <- function(
     if (nrow(row_design) != 1L) {
       stop("unknown cond_label: ", cl, call. = FALSE)
     }
-    pr <- redundancy_condition_params(P_full, cl)
-    m <- redundancy_branch_m(
+    m <- redundancy_branch_m_from_design(
+      cl,
       row_design$num_itemsi,
       row_design$ColorNi,
       row_design$redundancy,
-      pr$beta1,
-      pr$beta2
+      P_full,
+      model_spec = model_spec,
+      strict = FALSE
     )
+    if (!is.finite(m) || m <= 0) {
+      next
+    }
+    pr <- redundancy_condition_params(P_full, cl, model_spec = model_spec)
     alpha_trial <- pr$alphaEst * m
+    if (!is.finite(alpha_trial) || alpha_trial <= 0) {
+      next
+    }
     P8 <- redundancy_popcdm_P8(pr, alpha_trial)
     out <- popcdm300(P8, nw = nw, h = h, tmax = tmax, return_components = FALSE)
     Th <- out$Theta
@@ -773,21 +1243,35 @@ redundancy_mesh_hit_rates <- function(
 
 # --- Prediction and plotting helpers ------------------------------------------
 
-redundancy_predict_condition <- function(P, cond_label, nw = 56L, h = 0.0025, tmax = 5.0) {
-  P <- redundancy_check_named_full_vector(P, "P")
+redundancy_predict_condition <- function(
+    P,
+    cond_label,
+    model_spec = NULL,
+    nw = 56L,
+    h = 0.0025,
+    tmax = 5.0) {
+  if (is.null(model_spec)) {
+    model_spec <- redundancy_model_spec(
+      beta_variant = redundancy_infer_beta_variant_from_names(names(P))
+    )
+  }
+  beta_variant <- redundancy_resolve_beta_variant(model_spec)
+  P <- redundancy_check_named_full_vector(P, "P", beta_variant = beta_variant)
   tab <- redundancy_cond_design_table()
   row_design <- tab[tab$cond_label == cond_label, , drop = FALSE]
   if (nrow(row_design) != 1L) {
     stop("unknown cond_label: ", cond_label, call. = FALSE)
   }
-  pr <- redundancy_condition_params(P, cond_label)
-  m <- redundancy_branch_m(
+  m <- redundancy_branch_m_from_design(
+    cond_label,
     row_design$num_itemsi,
     row_design$ColorNi,
     row_design$redundancy,
-    pr$beta1,
-    pr$beta2
+    P,
+    model_spec = model_spec,
+    strict = TRUE
   )
+  pr <- redundancy_condition_params(P, cond_label, model_spec = model_spec)
   alpha_trial <- pr$alphaEst * m
   P8 <- redundancy_popcdm_P8(pr, alpha_trial)
   out <- popcdm300(P8, nw = nw, h = h, tmax = tmax, return_components = FALSE)
@@ -822,6 +1306,7 @@ redundancy_rt_marginal_df <- function(pred) {
 plot_redundancy_error_marginals <- function(
     fit_df,
     P,
+    model_spec = NULL,
     cond_labels = COND_LEVELS,
     nw = 56L,
     h = 0.0025,
@@ -834,7 +1319,9 @@ plot_redundancy_error_marginals <- function(
   graphics::par(mfrow = c(3, 3), mar = c(3.2, 3.2, 2.2, 0.8), xaxs = "i", yaxs = "i")
   breaks <- seq(-pi, pi, length.out = as.integer(n_bins) + 1L)
   pred_list <- lapply(cond_labels, function(cl) {
-    redundancy_angle_marginal_df(redundancy_predict_condition(P, cl, nw = nw, h = h, tmax = tmax))
+    redundancy_angle_marginal_df(
+      redundancy_predict_condition(P, cl, model_spec = model_spec, nw = nw, h = h, tmax = tmax)
+    )
   })
   names(pred_list) <- cond_labels
   hist_list <- lapply(cond_labels, function(cl) {
@@ -869,6 +1356,7 @@ plot_redundancy_error_marginals <- function(
 plot_redundancy_rt_marginals <- function(
     fit_df,
     P,
+    model_spec = NULL,
     cond_labels = COND_LEVELS,
     nw = 56L,
     h = 0.0025,
@@ -880,7 +1368,9 @@ plot_redundancy_rt_marginals <- function(
   on.exit(graphics::par(oldpar), add = TRUE)
   graphics::par(mfrow = c(3, 3), mar = c(3.2, 3.2, 2.2, 0.8), xaxs = "i", yaxs = "i")
   pred_list <- lapply(cond_labels, function(cl) {
-    redundancy_rt_marginal_df(redundancy_predict_condition(P, cl, nw = nw, h = h, tmax = tmax))
+    redundancy_rt_marginal_df(
+      redundancy_predict_condition(P, cl, model_spec = model_spec, nw = nw, h = h, tmax = tmax)
+    )
   })
   names(pred_list) <- cond_labels
   if (is.null(xlim)) {
@@ -968,8 +1458,16 @@ fit_redundancy_popcdm_participant <- function(
   if (is.null(names(P_var_start))) {
     stop("P_var_start must be named", call. = FALSE)
   }
-  beta_idx <- match(c("beta1", "beta2"), names(P_var_start), nomatch = 0L)
+  beta_nm <- redundancy_beta_names(redundancy_resolve_beta_variant(model_spec))
+  beta_idx <- match(beta_nm, names(P_var_start), nomatch = 0L)
   beta_idx <- beta_idx[beta_idx > 0L]
+  if (length(beta_idx) != length(beta_nm)) {
+    stop(
+      "P_var_start missing beta parameters for variant '",
+      redundancy_resolve_beta_variant(model_spec), "'",
+      call. = FALSE
+    )
+  }
   lower_phys <- lower
   upper_phys <- upper
   bo <- redundancy_optim_bounds_from_phys(
@@ -1039,6 +1537,12 @@ fit_redundancy_popcdm_participant <- function(
   )
   names(P_var_hat) <- names(P_var_start)
   P_hat <- redundancy_full_P_from_var(P_var_hat, P_fix, Sel, model_spec = model_spec)
+  beta_bound_report <- redundancy_beta_bound_report(
+    P_var_hat,
+    lower_phys,
+    upper_phys,
+    model_spec = model_spec
+  )
   list(
     optim = fit,
     P_hat = P_hat,
@@ -1050,13 +1554,16 @@ fit_redundancy_popcdm_participant <- function(
     P_fix = P_fix,
     Sel = Sel,
     model_spec = model_spec,
+    beta_bound_report = beta_bound_report,
     fit_meta = list(
+      beta_variant = redundancy_resolve_beta_variant(model_spec),
+      color_count_ref = redundancy_resolve_color_count_ref(model_spec),
       beta_link = beta_link,
       beta_latent_limit = beta_latent_limit,
       lower_phys = lower_phys,
       upper_phys = upper_phys,
       note = if (identical(beta_link, "logit")) {
-        "optim$par is on the latent scale for beta1/beta2; use P_var_hat for physical betas."
+        "optim$par is on the latent scale for beta parameters; use P_var_hat for physical betas."
       } else {
         "optim$par matches P_var_hat (physical scale)."
       }
@@ -1097,8 +1604,16 @@ fit_redundancy_popcdm_multistart <- function(
   lower_phys <- lower
   upper_phys <- upper
   np <- length(P_var_start)
-  beta_idx <- match(c("beta1", "beta2"), names(P_var_start), nomatch = 0L)
+  beta_nm <- redundancy_beta_names(redundancy_resolve_beta_variant(model_spec))
+  beta_idx <- match(beta_nm, names(P_var_start), nomatch = 0L)
   beta_idx <- beta_idx[beta_idx > 0L]
+  if (length(beta_idx) != length(beta_nm)) {
+    stop(
+      "P_var_start missing beta parameters for variant '",
+      redundancy_resolve_beta_variant(model_spec), "'",
+      call. = FALSE
+    )
+  }
   eps <- 1e-5
 
   sample_start_phys <- function() {

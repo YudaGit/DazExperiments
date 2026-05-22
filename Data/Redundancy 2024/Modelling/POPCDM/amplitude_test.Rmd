@@ -1,0 +1,51 @@
+---
+title: "amplitude_test"
+output: html_document
+---
+
+```{r}
+amp <- 5
+c2 <- 2
+c4 <- 4
+c6 <- 6
+beta1 <- 0.3
+beta2 <-  0.7
+```
+
+```{r}
+print("amp as base")
+
+set2base1 <- amp*(c2^-beta1)
+set4base1 <- amp*(c4^-beta1)
+set6base1 <- amp*(c6^-beta1)
+
+set4c2R1 <- set4base1*(3^beta1)
+set6c2R1 <- set6base1*(5^beta1)
+set6c4R1 <- set6base1*(3^beta1)
+
+set2base1
+set4base1
+set6base1
+
+set4c2R1
+set6c2R1
+set6c4R1
+
+print("amp convert to base")
+
+set2base2 <- amp*c2^beta1*(c2^-beta1)
+set4base2 <- amp*c2^beta1*(c4^-beta1)
+set6base2 <- amp*c2^beta1*(c6^-beta1)
+
+set4c2R2 <- amp*c2^beta1*(c2^-beta1)*(3^beta1)
+set6c2R2 <- amp*c2^beta1*(c2^-beta1)*(5^beta1)
+set6c4R2 <- amp*c2^beta1*(c4^-beta1)*(3^beta1)
+
+set2base2
+set4base2
+set6base2
+
+set4c2R2
+set6c2R2
+set6c4R2
+```
