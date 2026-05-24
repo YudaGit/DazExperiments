@@ -10,6 +10,7 @@ library(dplyr)
 library(tidyr)
 library(ggplot2)
 library(here)
+library(stringr)
 ```
 
 ```{r load-data}
@@ -29,36 +30,151 @@ cat("\n--- trial_event breakdown ---\n")
 print(table(df$trial_event))
 ```
 
-# ```{r participant-breakdown}
-# cat("\n========== PARTICIPANT TRIAL BREAKDOWN ==========\n\n")
-# 
-# participant_trials <- df %>%
-#   group_by(prolific_id) %>%
-#   summarise(
-#     n_trials = n(),
-#     n_stimulus_wheel = sum(trial_event == "stimulus_wheel_display_event"),
-#     n_orientation_response = sum(trial_event == "orientation_response_event")
-#   ) %>%
-#   arrange(desc(n_trials))
-# 
-# cat("Unique participants:", nrow(participant_trials), "\n\n")
-# cat("Participant ID | n_trials | stimulus_wheel | orientation_response\n")
-# cat(strrep("-", 75), "\n")
-# 
-# for (i in seq_len(nrow(participant_trials))) {
-#   row <- participant_trials[i, ]
-#   cat(sprintf("%-14s | %8d | %14d | %21d\n",
-#               row$prolific_id, row$n_trials, row$n_stimulus_wheel, row$n_orientation_response))
-# }
-#```
+```{r participant-breakdown}
+cat("\n========== PARTICIPANT TRIAL BREAKDOWN ==========\n\n")
+
+participant_trials <- df %>%
+  group_by(prolific_id) %>%
+  summarise(
+    n_trials = n(),
+    n_stimulus_wheel = sum(trial_event == "stimulus_wheel_display_event"),
+    n_orientation_response = sum(trial_event == "orientation_response_event"),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(n_trials))
+
+cat("Unique participants:", nrow(participant_trials), "\n\n")
+cat("Participant ID | n_trials | stimulus_wheel | orientation_response\n")
+cat(strrep("-", 75), "\n")
+
+for (i in seq_len(nrow(participant_trials))) {
+  row <- participant_trials[i, ]
+  cat(sprintf("%-14s | %8d | %14d | %21d\n",
+              row$prolific_id, row$n_trials, row$n_stimulus_wheel, row$n_orientation_response))
+}
+
+# --- Demographics (age, gender) for manuscript ---
+# Survey rows use part = "age" / "gender" and response like {'age': '26'}.
+# The trial-event-filtered prolific_data CSV omits those rows; fall back to full export if needed.
+has_demo_rows <- "part" %in% names(df) &&
+  any(df$part %in% c("age", "gender"), na.rm = TRUE)
+
+resolve_demographics_data <- function() {
+  if (has_demo_rows) return(df)
+  candidates <- c(
+    here("prolific_data_full_2026-03-10.csv"),
+    here("CSVresults", "prolific_data_full_2026-03-10.csv"),
+    here("..", "..", "..", "Experiments", "JSON Extraction", "CSVresults", "CSVresults_2026-03-10_.csv")
+  )
+  for (path in candidates) {
+    if (file.exists(path)) {
+      cat("\n(Loading demographics from full export:", path, ")\n")
+      return(read.csv(path, stringsAsFactors = FALSE))
+    }
+  }
+  NULL
+}
+
+extract_participant_demographics <- function(data) {
+  if (is.null(data) || !"part" %in% names(data)) {
+    return(tibble::tibble())
+  }
+
+  data %>%
+    filter(part %in% c("age", "gender")) %>%
+    mutate(
+      value = str_extract(response, "(?<=': )['\"]?([^'\",}]+)"),
+      subexperiment = suppressWarnings(as.integer(subexperiment))
+    ) %>%
+    select(prolific_id, subexperiment, part, value) %>%
+    group_by(prolific_id, part) %>%
+    summarise(
+      value = dplyr::first(value),
+      subexperiment = dplyr::first(subexperiment),
+      .groups = "drop"
+    ) %>%
+    pivot_wider(names_from = part, values_from = value) %>%
+    mutate(age = as.numeric(age))
+}
+
+print_age_summary <- function(ages, label) {
+  ages <- ages[!is.na(ages)]
+  if (length(ages) == 0) {
+    cat(label, ": no age data\n")
+    return(invisible(list(n = 0L, mean_age = NA_real_, sd_age = NA_real_, min_age = NA_real_, max_age = NA_real_)))
+  }
+  stats <- list(
+    n = length(ages),
+    mean_age = mean(ages),
+    sd_age = stats::sd(ages),
+    min_age = min(ages),
+    max_age = max(ages)
+  )
+  cat(sprintf(
+    "%s: N = %d, mean age = %.1f years, SD = %.1f, range = %.0f–%.0f\n",
+    label, stats$n, stats$mean_age, stats$sd_age, stats$min_age, stats$max_age
+  ))
+  invisible(stats)
+}
+
+print_gender_table <- function(demo_df, label) {
+  if (nrow(demo_df) == 0 || !"gender" %in% names(demo_df)) {
+    cat(label, ": no gender data\n")
+    return(invisible(NULL))
+  }
+  cat("\n", label, ":\n", sep = "")
+  print(table(demo_df$gender, useNA = "ifany"))
+}
+
+demo_source <- resolve_demographics_data()
+participant_demographics <- extract_participant_demographics(demo_source)
+
+cat("\n========== PARTICIPANT DEMOGRAPHICS (MANUSCRIPT) ==========\n\n")
+
+if (nrow(participant_demographics) == 0) {
+  cat("No age/gender rows found. Use a full Prolific export (rows with part = age/gender),\n")
+  cat("or place prolific_data_full_2026-03-10.csv in this project folder.\n")
+} else {
+  age_stats_all <- print_age_summary(participant_demographics$age, "All participants")
+  print_gender_table(participant_demographics, "All participants — gender")
+
+  sub_labels <- c(
+    "1" = "Subexperiment 1 (practice_effect)",
+    "2" = "Subexperiment 2 (Context Effect Hypothesis)",
+    "3" = "Subexperiment 3 (Multiple Features Effect Hypothesis)"
+  )
+
+  age_stats_by_sub <- list()
+  for (sub in sort(unique(participant_demographics$subexperiment))) {
+    sub_demo <- participant_demographics %>%
+      filter(subexperiment == sub)
+    label <- sub_labels[as.character(sub)]
+    if (is.na(label)) label <- paste("Subexperiment", sub)
+    age_stats_by_sub[[as.character(sub)]] <- print_age_summary(sub_demo$age, label)
+    print_gender_table(sub_demo, paste0(label, " — gender"))
+  }
+
+  cat("\n--- Mean age at a glance (years) ---\n")
+  cat(sprintf("  All participants: %.1f\n", age_stats_all$mean_age))
+  for (sub in names(age_stats_by_sub)) {
+    cat(sprintf("  Subexperiment %s: %.1f\n", sub, age_stats_by_sub[[sub]]$mean_age))
+  }
+
+  missing_demo <- participant_trials %>%
+    anti_join(participant_demographics, by = "prolific_id")
+  if (nrow(missing_demo) > 0) {
+    cat("\nParticipants with trials but no age/gender row:", nrow(missing_demo), "\n")
+  }
+}
+```
 
 
-#```{r summary-stats}
-#cat("\n========== TRIAL COUNT SUMMARY ==========\n")
-#cat("Mean trials per participant:", round(mean(participant_trials$n_trials), 1), "\n")
-#cat("Min trials:", min(participant_trials$n_trials), "\n")
-#cat("Max trials:", max(participant_trials$n_trials), "\n")
-#```
+```{r summary-stats}
+cat("\n========== TRIAL COUNT SUMMARY ==========\n")
+cat("Mean trials per participant:", round(mean(participant_trials$n_trials), 1), "\n")
+cat("Min trials:", min(participant_trials$n_trials), "\n")
+cat("Max trials:", max(participant_trials$n_trials), "\n")
+```
 
 ## Processing chunks (one thing at a time)
 
@@ -156,77 +272,3 @@ cat("Saved sub3 key columns subset to", subset_paths$sub3, "\n")
 write.csv(participant_id_record, participant_lookup_path, row.names = FALSE)
 cat("Saved participant ID mapping to", participant_lookup_path, "\n")
 ```
-
-#Legacy plotting code for reference
-
-```{r chunk3-plot-rt-precision}
-# Shared position: R-cue slightly left, NR-cue (and Baseline) right at each duration
-pd <- position_dodge(width = 0.6)
-pj <- position_jitterdodge(dodge.width = 0.6, jitter.width = 0.15, seed = 42)
-
-# --- Sub1: Precision (absolute response error) ---
-p1_precision <- ggplot(sub1_resp, aes(x = duration_ms, y = abs(precision_deg), fill = cue_type, color = cue_type)) +
-  geom_boxplot(alpha = 0.5, position = pd, outlier.shape = NA) +
-  geom_jitter(alpha = 0.4, size = 0.8, position = pj) +
-  labs(title = "Sub1 (practice_effect): Abs Precision", subtitle = "Set-size [6]",
-       x = "Encoding duration (ms)", y = "Absolute response error (deg)", color = "Cue", fill = "Cue") +
-  theme_minimal() +
-  theme(legend.position = "top")
-print(p1_precision)
-
-# --- Sub1: RT (plot only RT < 3000 ms) ---
-p1_rt <- ggplot(dplyr::filter(sub1_resp, rt_ms < 3000), aes(x = duration_ms, y = rt_ms, fill = cue_type, color = cue_type)) +
-  geom_boxplot(alpha = 0.5, position = pd, outlier.shape = NA) +
-  geom_jitter(alpha = 0.4, size = 0.8, position = pj) +
-  labs(title = "Sub1 (practice_effect): RT", subtitle = "Set-size [6] (RT < 3000 ms)",
-       x = "Encoding duration (ms)", y = "RT from start (ms)", color = "Cue", fill = "Cue") +
-  theme_minimal() +
-  theme(legend.position = "top")
-print(p1_rt)
-
-# --- Sub2: Precision (absolute response error), panels by set-size ---
-p2_precision <- ggplot(sub2_resp, aes(x = duration_ms, y = abs(precision_deg), fill = cue_type, color = cue_type)) +
-  geom_boxplot(alpha = 0.5, position = pd, outlier.shape = NA) +
-  geom_jitter(alpha = 0.4, size = 1.5, position = pj) +
-  facet_wrap(~ num_items, labeller = as_labeller(function(x) paste("Set size:", x))) +
-  labs(title = "Sub2 (Context Effect): Precision",
-       x = "Encoding duration (ms)", y = "Absolute response error (deg)", color = "Cue", fill = "Cue") +
-  theme_minimal() +
-  theme(legend.position = "top")
-print(p2_precision)
-
-# --- Sub2: RT (plot only RT < 3000 ms), panels by set-size ---
-p2_rt <- ggplot(dplyr::filter(sub2_resp, rt_ms < 3000), aes(x = duration_ms, y = rt_ms, fill = cue_type, color = cue_type)) +
-  geom_boxplot(alpha = 0.5, position = pd, outlier.shape = NA) +
-  geom_jitter(alpha = 0.4, size = 1.5, position = pj) +
-  facet_wrap(~ num_items, labeller = as_labeller(function(x) paste("Set size:", x))) +
-  labs(title = "Sub2 (Context Effect): Response time", subtitle = "RT < 3000 ms",
-       x = "Encoding duration (ms)", y = "RT from start (ms)", color = "Cue", fill = "Cue") +
-  theme_minimal() +
-  theme(legend.position = "top")
-print(p2_rt)
-
-# --- Sub3: Precision (absolute response error), panels by set-size ---
-p3_precision <- ggplot(sub3_resp, aes(x = duration_ms, y = abs(precision_deg), fill = cue_type, color = cue_type)) +
-  geom_boxplot(alpha = 0.5, position = pd, outlier.shape = NA) +
-  geom_jitter(alpha = 0.4, size = 1.5, position = pj) +
-  facet_wrap(~ num_items, labeller = as_labeller(function(x) paste("Set size:", x))) +
-  labs(title = "Sub3 (Multiple Features Effect): Precision",
-       x = "Encoding duration (ms)", y = "Absolute response error (deg)", color = "Cue", fill = "Cue") +
-  theme_minimal() +
-  theme(legend.position = "top")
-print(p3_precision)
-
-# --- Sub3: RT (plot only RT < 3000 ms), panels by set-size ---
-p3_rt <- ggplot(dplyr::filter(sub3_resp, rt_ms < 3000), aes(x = duration_ms, y = rt_ms, fill = cue_type, color = cue_type)) +
-  geom_boxplot(alpha = 0.5, position = pd, outlier.shape = NA) +
-  geom_jitter(alpha = 0.4, size = 0.8, position = pj) +
-  facet_wrap(~ num_items, labeller = as_labeller(function(x) paste("Set size:", x))) +
-  labs(title = "Sub3 (Multiple Features Effect): Response time", subtitle = "RT < 3000 ms",
-       x = "Encoding duration (ms)", y = "RT from start (ms)", color = "Cue", fill = "Cue") +
-  theme_minimal() +
-  theme(legend.position = "top")
-print(p3_rt)
-```
-
-<!-- Next chunks: add further processing or plotting here -->
