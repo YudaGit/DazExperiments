@@ -274,19 +274,19 @@ redundancy_beta_bound_defaults <- function() {
 #' Starting values for the maximal full vector.
 redundancy_default_P <- function(
     beta_variant = c("down_up", "base_nr_r"),
-    alphaEst = 5,
-    vnorm = 2.5,
+    alphaEst = 2.5,
+    vnorm = 2.0,
     beta_down = NULL,
     beta_up = NULL,
     beta_baseline = NULL,
     beta_nr = NULL,
     beta_r = NULL,
-    kappa = 5,
-    a = 2,
+    kappa = 5.0,
+    a = 2.0,
     ter = 0.2,
     eta1 = 1,
     eta2 = 1e-6,
-    st = 0.1) {
+    st = 0.2) {
   beta_variant <- match.arg(beta_variant, REDUNDANCY_BETA_VARIANTS)
   bb <- redundancy_beta_bound_defaults()
   if (is.null(beta_down)) {
@@ -327,7 +327,7 @@ redundancy_default_P <- function(
   P[redundancy_param_names(beta_variant)]
 }
 
-#' Broad default bounds for the maximal full vector.
+# Broad default bounds for the maximal full vector.
 redundancy_default_bounds <- function(beta_variant = c("down_up", "base_nr_r")) {
   beta_variant <- match.arg(beta_variant, REDUNDANCY_BETA_VARIANTS)
   bb <- redundancy_beta_bound_defaults()
@@ -351,13 +351,13 @@ redundancy_default_bounds <- function(beta_variant = c("down_up", "base_nr_r")) 
     st = 0
   )
   upper <- c(
-    alphaEst = 10.0,
-    stats::setNames(rep(15.0, length(COND_LEVELS)), redundancy_param_family_names("vnorm")),
+    alphaEst = 20.0,
+    stats::setNames(rep(10.0, length(COND_LEVELS)), redundancy_param_family_names("vnorm")),
     beta_upper,
-    stats::setNames(rep(15.0, length(COND_LEVELS)), redundancy_param_family_names("kappa")),
-    stats::setNames(rep(15.0, length(COND_LEVELS)), redundancy_param_family_names("a")),
-    stats::setNames(rep(0.8, length(COND_LEVELS)), redundancy_param_family_names("ter")),
-    stats::setNames(rep(10.0, length(COND_LEVELS)), redundancy_param_family_names("eta1")),
+    stats::setNames(rep(20.0, length(COND_LEVELS)), redundancy_param_family_names("kappa")),
+    stats::setNames(rep(8.0, length(COND_LEVELS)), redundancy_param_family_names("a")),
+    stats::setNames(rep(1.0, length(COND_LEVELS)), redundancy_param_family_names("ter")),
+    stats::setNames(rep(4.0, length(COND_LEVELS)), redundancy_param_family_names("eta1")),
     eta2 = 0.001,
     st = 0.4
   )

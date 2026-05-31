@@ -25,7 +25,7 @@ helper_file <- "fit_popcdm_redundancy.R"
 
 POPCDM_R_DIR <- Sys.getenv(
   "POPCDM_R_DIR",
-  "C:/Users/Yuda/Documents/GitHub/DazExperiments/Models/CDM/POPCDM_R"
+  "/Users/prefabteam_ysl/Documents/GitHub/DazExperiments/Models/CDM/POPCDM_R"
 )
 
 load_popcdm_sources <- function(dir = POPCDM_R_DIR) {
@@ -58,15 +58,15 @@ load_popcdm_sources()
 beta_variant <- "base_nr_r"   # "down_up" | "base_nr_r"
 
 # Use NULL for all participants, or e.g. c("YL", "PG") for a subset.
-participant_ids <- "AQ"
+participant_ids <- "YL"
 
-trial_cap_per_condition <- 200L
+trial_cap_per_condition <- 450L
 random_seed <- 1L
 
 grid <- list(
   nw = 50L,
-  h = 3.4 / 200,
-  tmax = 3.4
+  h = 3.1 / 200,
+  tmax = 3.1
 )
 
 optim_settings <- list(
@@ -76,7 +76,7 @@ optim_settings <- list(
   beta_latent_limit = 15,
   progress = TRUE,
   progress_every = 5L,
-  control = list(maxit = 200L, factr = 1e7)
+  control = list(maxit = 300L, factr = 1e10)
 )
 
 parallel_settings <- list(
@@ -91,8 +91,8 @@ parallel_settings <- list(
 P_start <- redundancy_default_P(
   beta_variant = beta_variant,
   alphaEst = 2.0,
-  vnorm = 2.5,
-  kappa = 5.0,
+  vnorm = 2.0,
+  kappa = 3.0,
   a = 2.0,
   ter = 0.2,
   eta1 = 1.0,
@@ -105,7 +105,7 @@ bounds <- redundancy_default_bounds(beta_variant = beta_variant)
 Sel <- redundancy_default_sel(
   beta_variant = beta_variant,
   free_eta2 = FALSE,
-  free_st = TRUE
+  free_st = FALSE
 )
 
 ci2_conditions <- c(
@@ -121,13 +121,14 @@ ci4_conditions <- c(
   "set6_NR_cue_ci4"
 )
 
-m_ci_t <- redundancy_model_spec(
+m_ci_vt_3b <- redundancy_model_spec(
   label = paste0("ci_vet_", beta_variant),
   beta_variant = beta_variant,
   color_count_ref = 2L,
   equal_groups = list(
     redundancy_equal_group("a", COND_LEVELS),
-    redundancy_equal_group("kappa", COND_LEVELS),
+    redundancy_equal_group("kappa", ci2_conditions),
+    redundancy_equal_group("kappa", ci4_conditions),
     redundancy_equal_group("vnorm", COND_LEVELS),
     redundancy_equal_group("ter", ci2_conditions),
     redundancy_equal_group("ter", ci4_conditions),
@@ -140,7 +141,7 @@ fit_inputs <- redundancy_fit_inputs(
   lower = bounds$lower,
   upper = bounds$upper,
   Sel = Sel,
-  model_spec = m_ci_t
+  model_spec = m_ci_vt_3b
 )
 
 length(P_start)
@@ -153,7 +154,7 @@ stopifnot(
 )
 
 # Pre-fit: every condition must get a valid alpha multiplier m at starting values
-branch_m_audit <- redundancy_branch_m_audit(P_start, model_spec = m_ci_t)
+branch_m_audit <- redundancy_branch_m_audit(P_start, model_spec = m_ci_vt_3b)
 branch_m_audit
 if (!all(branch_m_audit$ok)) {
   stop(
@@ -259,6 +260,7 @@ fit_summary <- do.call(
       np_free = f$np_free,
       nll = f$nll,
       AIC = 2 * f$np_free + 2 * f$nll,
+      BIC = log(f$n_trials) * f$np_free + 2 * f$nll,
       convergence = f$optim$convergence,
       stringsAsFactors = FALSE
     )
