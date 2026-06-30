@@ -14,8 +14,56 @@ library(stringr)
 ```
 
 ```{r load-data}
-data_path <- here("prolific_data_2026-03-10.csv")
-df <- read.csv(data_path, stringsAsFactors = FALSE)
+data_path <- here("prolific_data_2026-06-03.csv")
+
+ensure_column <- function(data, column_name) {
+  if (!column_name %in% names(data)) {
+    data[[column_name]] <- NA_character_
+  }
+  data
+}
+
+coalesce_nonempty <- function(...) {
+  values <- lapply(list(...), function(x) {
+    x <- trimws(as.character(x))
+    dplyr::na_if(x, "")
+  })
+  out <- rep(NA_character_, length(values[[1]]))
+  for (value in values) {
+    out <- ifelse(is.na(out) & !is.na(value), value, out)
+  }
+  out
+}
+
+add_participant_fields <- function(data) {
+  for (column_name in c("prolific_id", "participant_id", "subject_id", "uid")) {
+    data <- ensure_column(data, column_name)
+  }
+
+  data %>%
+    mutate(
+      prolific_id = dplyr::na_if(trimws(as.character(prolific_id)), ""),
+      platform_participant_id = dplyr::na_if(trimws(as.character(participant_id)), ""),
+      subject_id = dplyr::na_if(trimws(as.character(subject_id)), ""),
+      uid = dplyr::na_if(trimws(as.character(uid)), ""),
+      original_participant_id = coalesce_nonempty(
+        prolific_id,
+        platform_participant_id,
+        subject_id,
+        uid
+      ),
+      participant_source = dplyr::case_when(
+        !is.na(prolific_id) ~ "prolific",
+        !is.na(platform_participant_id) ~ "new_platform",
+        !is.na(subject_id) ~ "subject_id",
+        !is.na(uid) ~ "uid",
+        TRUE ~ "missing"
+      )
+    )
+}
+
+df <- read.csv(data_path, stringsAsFactors = FALSE) %>%
+  add_participant_fields()
 ```
 
 ```{r data-summary}
@@ -25,7 +73,7 @@ cat("Total columns:", ncol(df), "\n")
 cat("\nColumn names:\n")
 print(names(df))
 cat("\n--- First few rows ---\n")
-print(head(df[, c("prolific_id", "trial_event", "trial_number", "cue_type")], 5))
+print(head(df[, c("original_participant_id", "participant_source", "trial_event", "trial_number", "cue_type")], 5))
 cat("\n--- trial_event breakdown ---\n")
 print(table(df$trial_event))
 ```
@@ -34,7 +82,7 @@ print(table(df$trial_event))
 cat("\n========== PARTICIPANT TRIAL BREAKDOWN ==========\n\n")
 
 participant_trials <- df %>%
-  group_by(prolific_id) %>%
+  group_by(original_participant_id, participant_source) %>%
   summarise(
     n_trials = n(),
     n_stimulus_wheel = sum(trial_event == "stimulus_wheel_display_event"),
@@ -49,8 +97,8 @@ cat(strrep("-", 75), "\n")
 
 for (i in seq_len(nrow(participant_trials))) {
   row <- participant_trials[i, ]
-  cat(sprintf("%-14s | %8d | %14d | %21d\n",
-              row$prolific_id, row$n_trials, row$n_stimulus_wheel, row$n_orientation_response))
+  cat(sprintf("%-24s | %-12s | %8d | %14d | %21d\n",
+              row$original_participant_id, row$participant_source, row$n_trials, row$n_stimulus_wheel, row$n_orientation_response))
 }
 
 # --- Demographics (age, gender) for manuscript ---
@@ -81,13 +129,14 @@ extract_participant_demographics <- function(data) {
   }
 
   data %>%
+    add_participant_fields() %>%
     filter(part %in% c("age", "gender")) %>%
     mutate(
-      value = str_extract(response, "(?<=': )['\"]?([^'\",}]+)"),
+      value = stringr::str_match(response, "['\\\"][^'\\\"]+['\\\"]:\\s*['\\\"]?([^'\\\",}]+)")[, 2],
       subexperiment = suppressWarnings(as.integer(subexperiment))
     ) %>%
-    select(prolific_id, subexperiment, part, value) %>%
-    group_by(prolific_id, part) %>%
+    select(original_participant_id, subexperiment, part, value) %>%
+    group_by(original_participant_id, part) %>%
     summarise(
       value = dplyr::first(value),
       subexperiment = dplyr::first(subexperiment),
@@ -161,7 +210,7 @@ if (nrow(participant_demographics) == 0) {
   }
 
   missing_demo <- participant_trials %>%
-    anti_join(participant_demographics, by = "prolific_id")
+    anti_join(participant_demographics, by = "original_participant_id")
   if (nrow(missing_demo) > 0) {
     cat("\nParticipants with trials but no age/gender row:", nrow(missing_demo), "\n")
   }
@@ -180,7 +229,8 @@ cat("Max trials:", max(participant_trials$n_trials), "\n")
 
 ```{r subset-setup, include=FALSE}
 key_cols <- c(
-  "subexperiment", "participant_id", "redundancy", "tab_away_count",
+  "subexperiment", "participant_id", "age", "gender",
+  "redundancy", "tab_away_count",
   "target_orientation", "started_outof_center", "too_fast_trigger", "num_items",
   "response_RT_from_start", "response_error_deg", "duration_ms",
   "response_orientation_360", "response_RT", "leave_center_RT", "cue_type",
@@ -190,28 +240,113 @@ key_cols <- c(
 subset_output_dir <- here("CSVresults", "subexperiment_keycols")
 dir.create(subset_output_dir, showWarnings = FALSE, recursive = TRUE)
 
-make_participant_id <- function(data) {
+canonical_trial_rows <- function(data, sub_n, exp_type) {
+  canonical_event <- if (sub_n == 3) {
+    "orientation_response_event"
+  } else {
+    "stimulus_wheel_display_event"
+  }
+
   data %>%
-    mutate(
-      participant_id = dplyr::coalesce(
-        na_if(as.character(prolific_id), ""),
-        na_if(as.character(subject_id), ""),
-        na_if(as.character(uid), "")
-      )
+    filter(
+      suppressWarnings(as.integer(subexperiment)) == sub_n,
+      experiment_type == exp_type,
+      trial_event == canonical_event
     )
 }
 
-reindex_participants <- function(data) {
-  unique_ids <- sort(unique(data$participant_id))
-  lookup <- tibble::tibble(
-    original_id = unique_ids,
-    participant_id_new = sprintf("%02d", seq_along(unique_ids))
-  )
+make_participant_id <- function(data) {
+  data %>%
+    mutate(
+      participant_id = original_participant_id
+    )
+}
+
+add_demographics_to_subset <- function(data, demographics) {
+  if (nrow(demographics) == 0) {
+    return(
+      data %>%
+        mutate(
+          age = NA_real_,
+          gender = NA_character_
+        )
+    )
+  }
+
+  data %>%
+    left_join(
+      demographics %>%
+        select(original_participant_id, age, gender),
+      by = "original_participant_id"
+    )
+}
+
+build_prior_lookup <- function(path) {
+  if (!file.exists(path)) return(NULL)
+
+  prior_data <- read.csv(path, stringsAsFactors = FALSE) %>%
+    add_participant_fields()
+
+  bind_rows(
+    canonical_trial_rows(prior_data, 1, "practice_effect") %>% mutate(subset = "sub1"),
+    canonical_trial_rows(prior_data, 2, "Context Effect Hypothesis") %>% mutate(subset = "sub2"),
+    canonical_trial_rows(prior_data, 3, "Multiple Features Effect Hypothesis") %>% mutate(subset = "sub3")
+  ) %>%
+    distinct(subset, original_participant_id, participant_source) %>%
+    group_by(subset) %>%
+    arrange(original_participant_id, .by_group = TRUE) %>%
+    mutate(participant_id = sprintf("%02d", dplyr::row_number())) %>%
+    ungroup() %>%
+    select(subset, original_participant_id, participant_id)
+}
+
+prior_lookup <- build_prior_lookup(here("prolific_data_2026-03-10.csv"))
+
+reindex_participants <- function(data, subset_label, prior_lookup = NULL) {
+  unique_participants <- data %>%
+    distinct(original_participant_id, participant_source) %>%
+    filter(!is.na(original_participant_id)) %>%
+    arrange(original_participant_id)
+
+  prior_subset <- if (!is.null(prior_lookup)) {
+    prior_lookup %>% filter(subset == subset_label)
+  } else {
+    tibble::tibble(
+      original_participant_id = character(),
+      participant_id = character()
+    )
+  }
+
+  prior_rows <- unique_participants %>%
+    inner_join(prior_subset, by = "original_participant_id") %>%
+    transmute(
+      original_id = original_participant_id,
+      participant_source,
+      participant_id_new = participant_id,
+      participant_cohort = "prior_2026-03-10"
+    )
+
+  next_id <- nrow(prior_subset) + 1L
+  new_rows <- unique_participants %>%
+    anti_join(prior_subset, by = "original_participant_id") %>%
+    arrange(original_participant_id) %>%
+    mutate(
+      participant_id_new = sprintf("%02d", seq_len(dplyr::n()) + next_id - 1L),
+      participant_cohort = "new_2026-06-03"
+    ) %>%
+    transmute(
+      original_id = original_participant_id,
+      participant_source,
+      participant_id_new,
+      participant_cohort
+    )
+
+  lookup <- bind_rows(prior_rows, new_rows)
 
   data_reindexed <- data %>%
     left_join(lookup, by = c("participant_id" = "original_id")) %>%
     mutate(participant_id = dplyr::coalesce(participant_id_new, participant_id)) %>%
-    select(-participant_id_new)
+    select(-participant_id_new, -participant_cohort)
 
   list(
     data = data_reindexed,
@@ -226,25 +361,28 @@ reindex_participants <- function(data) {
 # sub3 = subexperiment 3 (Multiple Features Effect Hypothesis)
 
 sub1 <- df %>%
-  filter(subexperiment == 1, experiment_type == "practice_effect") %>%
-  make_participant_id() %>%
-  select(any_of(key_cols))
+  canonical_trial_rows(1, "practice_effect") %>%
+  make_participant_id()
 sub2 <- df %>%
-  filter(subexperiment == 2, experiment_type == "Context Effect Hypothesis") %>%
-  make_participant_id() %>%
-  select(any_of(key_cols))
+  canonical_trial_rows(2, "Context Effect Hypothesis") %>%
+  make_participant_id()
 sub3 <- df %>%
-  filter(subexperiment == 3, experiment_type == "Multiple Features Effect Hypothesis") %>%
-  make_participant_id() %>%
+  canonical_trial_rows(3, "Multiple Features Effect Hypothesis") %>%
+  make_participant_id()
+
+sub1_reindexed <- reindex_participants(sub1, "sub1", prior_lookup)
+sub2_reindexed <- reindex_participants(sub2, "sub2", prior_lookup)
+sub3_reindexed <- reindex_participants(sub3, "sub3", prior_lookup)
+
+sub1 <- sub1_reindexed$data %>%
+  add_demographics_to_subset(participant_demographics) %>%
   select(any_of(key_cols))
-
-sub1_reindexed <- reindex_participants(sub1)
-sub2_reindexed <- reindex_participants(sub2)
-sub3_reindexed <- reindex_participants(sub3)
-
-sub1 <- sub1_reindexed$data
-sub2 <- sub2_reindexed$data
-sub3 <- sub3_reindexed$data
+sub2 <- sub2_reindexed$data %>%
+  add_demographics_to_subset(participant_demographics) %>%
+  select(any_of(key_cols))
+sub3 <- sub3_reindexed$data %>%
+  add_demographics_to_subset(participant_demographics) %>%
+  select(any_of(key_cols))
 
 subset_paths <- list(
   sub1 = file.path(subset_output_dir, "sub1_key_cols.csv"),
@@ -263,6 +401,7 @@ cat("\n========== CHUNK 1: SUBSETS BY SUBEXPERIMENT ==========\n")
 cat("sub1 (practice_effect):            ", nrow(sub1), " rows, ", dplyr::n_distinct(sub1$participant_id), " participants\n", sep = "")
 cat("sub2 (Context Effect Hypothesis): ", nrow(sub2), " rows, ", dplyr::n_distinct(sub2$participant_id), " participants\n", sep = "")
 cat("sub3 (Multiple Features Effect):  ", nrow(sub3), " rows, ", dplyr::n_distinct(sub3$participant_id), " participants\n", sep = "")
+cat("Demographics columns included: age, gender\n")
 write.csv(sub1, subset_paths$sub1, row.names = FALSE)
 cat("Saved sub1 key columns subset to", subset_paths$sub1, "\n")
 write.csv(sub2, subset_paths$sub2, row.names = FALSE)

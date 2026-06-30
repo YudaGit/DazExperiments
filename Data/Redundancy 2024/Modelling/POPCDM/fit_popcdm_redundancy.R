@@ -1435,6 +1435,13 @@ redundancy_curve_nll_1d <- function(
   data.frame(value = vals, nll = nlls, par_index = ni, stringsAsFactors = FALSE)
 }
 
+redundancy_optim_beta_names <- function(model_spec = redundancy_model_spec()) {
+  if (!is.null(model_spec$scaling_mode) && identical(model_spec$scaling_mode, "none")) {
+    return(character(0))
+  }
+  redundancy_beta_names(redundancy_resolve_beta_variant(model_spec))
+}
+
 fit_redundancy_popcdm_participant <- function(
     fit_df,
     P_var_start,
@@ -1458,7 +1465,7 @@ fit_redundancy_popcdm_participant <- function(
   if (is.null(names(P_var_start))) {
     stop("P_var_start must be named", call. = FALSE)
   }
-  beta_nm <- redundancy_beta_names(redundancy_resolve_beta_variant(model_spec))
+  beta_nm <- redundancy_optim_beta_names(model_spec)
   beta_idx <- match(beta_nm, names(P_var_start), nomatch = 0L)
   beta_idx <- beta_idx[beta_idx > 0L]
   if (length(beta_idx) != length(beta_nm)) {
@@ -1604,7 +1611,7 @@ fit_redundancy_popcdm_multistart <- function(
   lower_phys <- lower
   upper_phys <- upper
   np <- length(P_var_start)
-  beta_nm <- redundancy_beta_names(redundancy_resolve_beta_variant(model_spec))
+  beta_nm <- redundancy_optim_beta_names(model_spec)
   beta_idx <- match(beta_nm, names(P_var_start), nomatch = 0L)
   beta_idx <- beta_idx[beta_idx > 0L]
   if (length(beta_idx) != length(beta_nm)) {

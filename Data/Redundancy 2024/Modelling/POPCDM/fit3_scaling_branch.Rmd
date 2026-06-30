@@ -1,0 +1,467 @@
+---
+title: "fit3_scaling_branch"
+output: html_document
+---
+
+# Alpha/Kappa Scaling Branch
+
+Work note with full vector:
+
+- `alpha_*` x 9 condition values
+- `kappa_*` x 9 condition values
+- `eta2_*` x 9 condition values
+
+Use `scaling_mode` to decide whether beta scaling applies to `alpha`, to
+`kappa`, or to neither:
+
+- `alpha_beta`: `alpha_trial = alpha_condition * m(beta)`, `kappa` unscaled
+- `kappa_beta`: `kappa_trial = kappa_condition * m(beta)`, `alpha` unscaled
+- `none`: no beta scaling; both `alpha` and `kappa` are direct condition values
+
+```{r setup}
+rm(list = ls())
+
+library(beepr)
+
+data_csv <- "data2_final.csv"
+base_helper_file <- "fit_popcdm_redundancy.R"
+branch_helper_file <- "fit_popcdm_redundancy_scaling_branch.R"
+
+POPCDM_R_DIR <- Sys.getenv(
+  "POPCDM_R_DIR",
+  "/Users/prefabteam_ysl/Documents/GitHub/DazExperiments/Models/CDM/POPCDM_R"
+)
+
+load_popcdm_sources <- function(dir = POPCDM_R_DIR) {
+  if (!dir.exists(dir)) {
+    stop("POPCDM_R_DIR not found: ", dir, call. = FALSE)
+  }
+  owd <- getwd()
+  on.exit(setwd(owd), add = TRUE)
+  setwd(dir)
+  source("popcode.R", local = FALSE)
+  source("besselFPT.R", local = FALSE)
+  source("popcdm300.R", local = FALSE)
+}
+
+stopifnot(file.exists(data_csv), file.exists(base_helper_file), file.exists(branch_helper_file))
+source(base_helper_file)
+source(branch_helper_file)
+load_popcdm_sources()
+```
+
+# User-editable settings
+
+```{r config}
+beta_variant <- "base_nr_r"  # "down_up" | "base_nr_r"
+scaling_mode <- "alpha_beta"      # "alpha_beta" | "kappa_beta" | "none"
+
+# NULL fits all participants.
+participant_ids <- "PG"
+trial_cap_per_condition <- 450L
+random_seed <- 1L
+
+grid <- list(
+  nw = 50L,
+  h = 3.3 / 300,
+  tmax = 3.3
+)
+
+optim_settings <- list(
+  n_starts = 1L,
+  beta_link = "logit",
+  beta_latent_limit = 15,
+  progress = TRUE,
+  progress_every = 5L,
+  control = list(maxit = 500L, factr = 1e9)
+)
+
+parallel_settings <- list(
+  use_parallel = FALSE,
+  n_cores = min(parallel::detectCores(logical = FALSE), 5L, na.rm = TRUE)
+)
+
+plot_settings <- list(
+  error_n_bins = 180L,
+  rt_n_bins = 200L
+)
+```
+
+# Build model inputs
+
+```{r model-spec}
+P_start <- redundancy_default_P(
+  beta_variant = beta_variant,
+  alpha = 50.0,
+  vnorm = 2.0,
+  kappa = 5.0,
+  a = 2.0,
+  ter = 0.2,
+  eta1 = 1.0,
+  eta2 = 1.0,
+  st = 0.2
+)
+
+bounds <- redundancy_default_bounds(beta_variant = beta_variant)
+
+Sel <- redundancy_default_sel(
+  beta_variant = beta_variant,
+  free_eta2 = TRUE,
+  free_st = FALSE
+)
+
+ci2_conditions <- c(
+  "set2_baseline",
+  "set4_R_cue",
+  "set4_NR_cue",
+  "set6_R_cue_ci2",
+  "set6_NR_cue_ci2"
+)
+ci4_conditions <- c(
+  "set4_baseline",
+  "set6_R_cue_ci4",
+  "set6_NR_cue_ci4"
+)
+
+# Current example: alpha-beta scaling with one shared base alpha,
+# grouped eta2s, and one shared kappa.
+m_scaling_branch <- redundancy_model_spec(
+  label = paste0("scaling_branch_", scaling_mode, "_", beta_variant),
+  beta_variant = beta_variant,
+  scaling_mode = scaling_mode,
+  color_count_ref = 2L,
+  equal_groups = list(
+    redundancy_equal_group("alpha", COND_LEVELS),
+    redundancy_equal_group("kappa", COND_LEVELS),
+    redundancy_equal_group("a", COND_LEVELS),
+    redundancy_equal_group("eta1", COND_LEVELS),
+    redundancy_equal_group("eta2", ci2_conditions),
+    redundancy_equal_group("eta2", ci4_conditions),
+    redundancy_equal_group("vnorm", ci2_conditions),
+    redundancy_equal_group("vnorm", ci4_conditions),
+    redundancy_equal_group("ter", ci2_conditions),
+    redundancy_equal_group("ter", ci4_conditions)
+  )
+)
+
+fit_inputs <- redundancy_fit_inputs(
+  P_start = P_start,
+  lower = bounds$lower,
+  upper = bounds$upper,
+  Sel = Sel,
+  model_spec = m_scaling_branch
+)
+
+length(P_start)
+length(fit_inputs$P_var_start)
+names(fit_inputs$P_var_start)
+names(fit_inputs$P_fix)
+```
+
+# Prepare and audit data
+
+```{r data-audit} 
+raw_ids <- sort(unique(utils::read.csv(data_csv, stringsAsFactors = FALSE)$uid))
+uids_to_fit <- if (is.null(participant_ids)) raw_ids else participant_ids
+uids_to_fit
+
+fit_df_all <- prepare_redundancy_fit_frame(
+  data_csv,
+  uid_filter = uids_to_fit,
+  drop_na_cond = TRUE
+)
+
+table(fit_df_all$uid, fit_df_all$cond_label)
+
+redundancy_rt_grid_audit(
+  fit_df_all,
+  tmax = grid$tmax,
+  h = grid$h,
+  nw = grid$nw
+)
+```
+
+# Fit selected participants
+
+```{r fit, message=TRUE, warning=TRUE}
+fit_one_participant <- function(uid) {
+  message("Fitting participant: ", uid)
+  fit_df_full <- prepare_redundancy_fit_frame(
+    data_csv,
+    uid_filter = uid,
+    drop_na_cond = TRUE
+  )
+  fit_df <- if (is.null(trial_cap_per_condition)) {
+    fit_df_full
+  } else {
+    redundancy_thin_trials_by_cond(
+      fit_df_full,
+      max_per_cond = trial_cap_per_condition,
+      seed = random_seed
+    )
+  }
+
+  fit_redundancy_popcdm_multistart(
+    fit_df,
+    P_var_start = fit_inputs$P_var_start,
+    lower = fit_inputs$lower,
+    upper = fit_inputs$upper,
+    P_fix = fit_inputs$P_fix,
+    Sel = fit_inputs$Sel,
+    model_spec = fit_inputs$model_spec,
+    n_starts = optim_settings$n_starts,
+    seed = random_seed + match(uid, uids_to_fit),
+    beta_link = optim_settings$beta_link,
+    beta_latent_limit = optim_settings$beta_latent_limit,
+    progress = optim_settings$progress,
+    progress_every = optim_settings$progress_every,
+    nw = grid$nw,
+    h = grid$h,
+    tmax = grid$tmax,
+    control = optim_settings$control
+  )
+}
+
+if (isTRUE(parallel_settings$use_parallel) && length(uids_to_fit) > 1L) {
+  n_cores <- min(parallel_settings$n_cores, length(uids_to_fit))
+  message("Fitting ", length(uids_to_fit), " participants using ", n_cores, " cores.")
+  fits <- parallel::mclapply(
+    uids_to_fit,
+    fit_one_participant,
+    mc.cores = n_cores,
+    mc.set.seed = TRUE
+  )
+  names(fits) <- uids_to_fit
+} else {
+  fits <- lapply(uids_to_fit, fit_one_participant)
+  names(fits) <- uids_to_fit
+}
+
+beep(4)
+```
+
+# Summaries
+
+```{r summary}  
+fit_summary <- do.call(
+  rbind,
+  lapply(uids_to_fit, function(uid) {
+    f <- fits[[uid]]
+    data.frame(
+      uid = uid,
+      model = f$model_spec$label,
+      n_trials = f$n_trials,
+      np_free = f$np_free,
+      nll = f$nll,
+      AIC = 2 * f$nll + 2 * f$np_free,
+      BIC = 2 * f$nll + f$np_free * log(f$n_trials),
+      convergence = f$optim$convergence,
+      stringsAsFactors = FALSE
+    )
+  })
+)
+fit_summary
+
+P_hats <- lapply(fits, `[[`, "P_hat")
+P_hats[[uids_to_fit[1]]]
+```
+
+```{r full-parameter-table}
+full_parameter_table <- do.call(
+  rbind,
+  lapply(uids_to_fit, function(uid) {
+    P_hat <- P_hats[[uid]]
+    data.frame(
+      uid = uid,
+      parameter = names(P_hat),
+      estimate = as.numeric(P_hat),
+      is_free = as.logical(fits[[uid]]$Sel[names(P_hat)]),
+      stringsAsFactors = FALSE,
+      row.names = NULL
+    )
+  })
+)
+full_parameter_table$estimate <- round(full_parameter_table$estimate, 4)
+print(full_parameter_table)
+```
+
+```{r condition-parameter-table}
+beta_cols <- if (identical(scaling_mode, "none")) {
+  character(0)
+} else {
+  redundancy_beta_names(beta_variant)
+}
+
+condition_parameter_table <- do.call(
+  rbind,
+  lapply(uids_to_fit, function(uid) {
+    P_hat <- P_hats[[uid]]
+    do.call(
+      rbind,
+      lapply(COND_LEVELS, function(cl) {
+        pred <- redundancy_predict_condition(
+          P_hat,
+          cl,
+          nw = grid$nw,
+          h = grid$h,
+          tmax = grid$tmax,
+          model_spec = fit_inputs$model_spec
+        )
+        row <- data.frame(
+          uid = uid,
+          cond_label = cl,
+          alpha = P_hat[paste0("alpha_", cl)],
+          kappa = P_hat[paste0("kappa_", cl)],
+          alpha_trial = pred$alpha_trial,
+          kappa_trial = pred$kappa_trial,
+          vnorm = P_hat[paste0("vnorm_", cl)],
+          a = P_hat[paste0("a_", cl)],
+          ter = P_hat[paste0("ter_", cl)],
+          eta1 = P_hat[paste0("eta1_", cl)],
+          eta2 = P_hat[paste0("eta2_", cl)],
+          stringsAsFactors = FALSE,
+          row.names = NULL
+        )
+        for (bn in beta_cols) {
+          row[[bn]] <- P_hat[bn]
+        }
+        row
+      })
+    )
+  })
+)
+numeric_cols <- vapply(condition_parameter_table, is.numeric, logical(1))
+condition_parameter_table[numeric_cols] <- lapply(
+  condition_parameter_table[numeric_cols],
+  round,
+  digits = 2
+)
+condition_parameter_table
+```
+
+```{r diagnostic-helper-source}
+source(base_helper_file)
+source(branch_helper_file)
+```
+
+# Alpha-kappa curves against final model error marginals
+
+These checks use fitted `alpha_trial` and `kappa_trial` to reconstruct the
+population-code input layer for each condition, and compare it with the final
+model-predicted error-angle marginal. The red curve is
+`popcode(c(alpha_trial, kappa_trial))`; the blue dotted curve is the raw von
+Mises density from `vm(kappa_trial)`; the black dashed curve is the final
+response-error density from `popcdm300()` after the CDM layer and other
+variability sources. The red/blue curves are therefore input-layer curves, while
+the black curve is the model output that was previously plotted against data.
+
+```{r plot-population-layers, fig.width=10, fig.height=8, results='asis'}
+for (plot_uid in uids_to_fit) {
+  cat("\n\n### Population Layer: ", plot_uid, "\n\n", sep = "")
+  plot_redundancy_population_layers(
+    P_hats[[plot_uid]],
+    model_spec = fit_inputs$model_spec,
+    nw = 360L,
+    h = grid$h,
+    tmax = grid$tmax
+  )
+}
+```
+
+```{r population-layer-cirsd-table}
+population_cirsd_table <- do.call(
+  rbind,
+  lapply(uids_to_fit, function(uid) {
+    tab <- redundancy_population_cirsd_table(
+      P_hats[[uid]],
+      model_spec = fit_inputs$model_spec,
+      nw = 360L
+    )
+    tab$uid <- uid
+    tab[, c("uid", setdiff(names(tab), "uid"))]
+  })
+)
+
+numeric_cols <- vapply(population_cirsd_table, is.numeric, logical(1))
+population_cirsd_table[numeric_cols] <- lapply(
+  population_cirsd_table[numeric_cols],
+  round,
+  digits = 2
+)
+population_cirsd_table
+```
+
+```{r equivalent-vm-from-pang-table}
+equivalent_vm_from_pang_table <- do.call(
+  rbind,
+  lapply(uids_to_fit, function(uid) {
+    tab <- redundancy_population_equiv_vm_table(
+      P_hats[[uid]],
+      model_spec = fit_inputs$model_spec,
+      nw = 360L
+    )
+    tab$uid <- uid
+    tab[, c("uid", setdiff(names(tab), "uid"))]
+  })
+)
+
+numeric_cols <- vapply(equivalent_vm_from_pang_table, is.numeric, logical(1))
+equivalent_vm_from_pang_table[numeric_cols] <- lapply(
+  equivalent_vm_from_pang_table[numeric_cols],
+  round,
+  digits = 4
+)
+equivalent_vm_from_pang_table
+```
+
+# Plot predictions against data
+
+```{r plot-data-source}
+# Helpers are sourced in `diagnostic-helper-source` above.
+if (!exists("plot_settings")) {
+  plot_settings <- list(
+    error_n_bins = 360L,
+    rt_n_bins = 100L
+  )
+}
+```
+
+```{r plot-error-marginals, fig.width=10, fig.height=8, results='asis'}
+for (plot_uid in uids_to_fit) {
+  cat("\n\n### Error Marginals: ", plot_uid, "\n\n", sep = "")
+  plot_df <- prepare_redundancy_fit_frame(
+    data_csv,
+    uid_filter = plot_uid,
+    drop_na_cond = TRUE
+  )
+  plot_redundancy_error_marginals(
+    plot_df,
+    P_hats[[plot_uid]],
+    nw = grid$nw,
+    h = grid$h,
+    tmax = grid$tmax,
+    n_bins = plot_settings$error_n_bins,
+    model_spec = fit_inputs$model_spec
+  )
+}
+```
+
+```{r plot-rt-marginals, fig.width=10, fig.height=8, results='asis'}
+for (plot_uid in uids_to_fit) {
+  cat("\n\n### RT Marginals: ", plot_uid, "\n\n", sep = "")
+  plot_df <- prepare_redundancy_fit_frame(
+    data_csv,
+    uid_filter = plot_uid,
+    drop_na_cond = TRUE
+  )
+  plot_redundancy_rt_marginals(
+    plot_df,
+    P_hats[[plot_uid]],
+    nw = grid$nw,
+    h = grid$h,
+    tmax = grid$tmax,
+    n_bins = plot_settings$rt_n_bins,
+    model_spec = fit_inputs$model_spec
+  )
+}
+```

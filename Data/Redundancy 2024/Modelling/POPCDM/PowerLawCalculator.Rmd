@@ -1,0 +1,25 @@
+---
+title: "PowerLawCalculator"
+output: html_document
+---
+
+```{r}
+set2amp <- 29.36
+
+set1t <- set2csd*2^0.98
+
+set2amp <- set1t/2^0.98
+set4amp <- set1t/4^0.98
+set6amp <- set1t/6^0.98
+
+s4r3 <- set2csd*3^0.98
+s6r3 <- set4csd*3^0.98
+s6r5 <- set2csd*5^0.98
+
+set2amp
+set4amp
+set6amp
+s4r3
+s6r3
+s6r5
+```

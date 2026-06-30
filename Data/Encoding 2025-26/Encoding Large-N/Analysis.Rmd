@@ -17,21 +17,167 @@ subset_dir <- here("CSVresults", "subexperiment_keycols")
 sub1_path <- file.path(subset_dir, "sub1_key_cols.csv")
 sub2_path <- file.path(subset_dir, "sub2_key_cols.csv")
 sub3_path <- file.path(subset_dir, "sub3_key_cols.csv")
+participant_lookup_path <- file.path(subset_dir, "participant_id_lookup.csv")
 
-# Force participant_id as character (column 2) so IDs match across subs and exclusion_map
+# Force participant_id as character so IDs match across subs and exclusion_map
 # (read.csv otherwise coerces numeric-looking IDs and drops leading zeros).
-colclasses_keycols <- c(NA, "character", rep(NA, 16))
+colclasses_keycols <- c(participant_id = "character")
 
-sub1raw <- read.csv(sub1_path, stringsAsFactors = FALSE, colClasses = colclasses_keycols)
-sub2raw <- read.csv(sub2_path, stringsAsFactors = FALSE, colClasses = colclasses_keycols)
-sub3raw <- read.csv(sub3_path, stringsAsFactors = FALSE, colClasses = colclasses_keycols)
+participant_lookup <- read.csv(
+  participant_lookup_path,
+  stringsAsFactors = FALSE,
+  colClasses = c(
+    original_id = "character",
+    participant_source = "character",
+    participant_id = "character",
+    participant_cohort = "character",
+    subset = "character"
+  )
+) %>%
+  dplyr::group_by(subset, participant_source) %>%
+  dplyr::arrange(as.integer(participant_id), .by_group = TRUE) %>%
+  dplyr::mutate(
+    participant_source = dplyr::recode(
+      participant_source,
+      prolific = "Prolific",
+      new_platform = "REP",
+      .default = participant_source
+    ),
+    source_index = dplyr::row_number(),
+    participant_code = paste0(
+      dplyr::case_when(
+        participant_source == "Prolific" ~ "P",
+        participant_source == "REP" ~ "R",
+        TRUE ~ "U"
+      ),
+      sprintf("%02d", source_index)
+    )
+  ) %>%
+  dplyr::ungroup() %>%
+  dplyr::select(
+    subset,
+    participant_id,
+    participant_code,
+    participant_source,
+    participant_cohort,
+    original_participant_id = original_id
+  )
+
+load_subset_keycols <- function(path, subset_label) {
+  read.csv(path, stringsAsFactors = FALSE, colClasses = colclasses_keycols) %>%
+    dplyr::mutate(subset = subset_label) %>%
+    dplyr::left_join(participant_lookup, by = c("subset", "participant_id")) %>%
+    dplyr::relocate(
+      subset,
+      participant_id,
+      participant_code,
+      participant_source,
+      participant_cohort,
+      original_participant_id
+    )
+}
+
+sub1raw <- load_subset_keycols(sub1_path, "sub1")
+sub2raw <- load_subset_keycols(sub2_path, "sub2")
+sub3raw <- load_subset_keycols(sub3_path, "sub3")
 
 cat("Loaded", nrow(sub1raw), "rows for sub1,", nrow(sub2raw), "for sub2,", nrow(sub3raw), "for sub3.\n")
+
+dplyr::bind_rows(sub1raw, sub2raw, sub3raw) %>%
+  dplyr::distinct(subset, participant_id, participant_code, participant_source) %>%
+  dplyr::count(subset, participant_source, name = "participants") %>%
+  print()
+```
+
+```{r demographics-summary}
+participant_demographics <- dplyr::bind_rows(sub1raw, sub2raw, sub3raw) %>%
+  dplyr::distinct(
+    subset,
+    participant_id,
+    participant_code,
+    participant_source,
+    age,
+    gender
+  )
+
+summarise_age_for_manuscript <- function(data, label) {
+  ages <- data$age[!is.na(data$age)]
+
+  if (length(ages) == 0) {
+    cat(label, ": no age data available\n", sep = "")
+    return(invisible(NULL))
+  }
+
+  cat(
+    sprintf(
+      "%s: N = %d, mean age = %.1f years, SD = %.1f, range = %.0f-%.0f\n",
+      label,
+      length(ages),
+      mean(ages),
+      stats::sd(ages),
+      min(ages),
+      max(ages)
+    )
+  )
+}
+
+print_gender_for_manuscript <- function(data, label) {
+  cat("\n", label, " gender:\n", sep = "")
+  print(table(data$gender, useNA = "ifany"))
+}
+
+print_demographics_block <- function(data, label) {
+  cat("\n---", label, "---\n")
+  summarise_age_for_manuscript(data, paste(label, "participants"))
+  print_gender_for_manuscript(data, paste(label, "participants"))
+
+  cat("\nBy subexperiment:\n")
+  data %>%
+    dplyr::arrange(subset, participant_code) %>%
+    dplyr::group_split(subset) %>%
+    purrr::walk(function(sub_data) {
+      subset_label <- unique(sub_data$subset)
+      summarise_age_for_manuscript(sub_data, paste(label, subset_label))
+      print_gender_for_manuscript(sub_data, paste(label, subset_label))
+    })
+}
+
+cat("\n========== DEMOGRAPHICS FOR MANUSCRIPT ==========\n")
+
+demographic_groups <- list(
+  ALL = participant_demographics,
+  Prolific = participant_demographics %>%
+    dplyr::filter(participant_source == "Prolific"),
+  REP = participant_demographics %>%
+    dplyr::filter(participant_source == "REP")
+)
+
+purrr::iwalk(demographic_groups, function(data, label) {
+  print_demographics_block(data, label)
+})
+```
+
+
+```{r participant-source-toggle}
+# Options: "all", "Prolific", or "REP".
+# This affects preparation, QC summaries, diagnostic plots, and downstream analysis.
+participant_source_view <- "all"
+
+filter_participant_source <- function(data, source_view = participant_source_view) {
+  if (identical(source_view, "all")) return(data)
+
+  allowed_sources <- c("Prolific", "REP")
+  if (!source_view %in% allowed_sources) {
+    stop("participant_source_view must be 'all', 'Prolific', or 'REP'")
+  }
+
+  data %>% dplyr::filter(participant_source == source_view)
+}
 ```
 
 
 ```{r prepare-plot-data}
-rt_bounds <- c(300, 3000)
+rt_bounds <- c(200, 3000)
 
 # Strips jsPsych-style brackets from numeric strings, e.g. "[12.3]" -> 12.3.
 # Non-numeric sentinels (e.g. "[None]" -> "None") yield NA from as.numeric;
@@ -167,7 +313,7 @@ prepare_subset_for_plots <- function(data, subset_type, rt_bounds) {
     dplyr::filter(retain_row)
 
   filtered_trials <- mutated %>%
-    dplyr::group_by(participant_id) %>%
+    dplyr::group_by(participant_id, participant_code, participant_source) %>%
     dplyr::summarise(
       subset = subset_type,
       n_trials_before = dplyr::n(),
@@ -184,6 +330,8 @@ prepare_subset_for_plots <- function(data, subset_type, rt_bounds) {
     dplyr::select(
       subset,
       participant_id,
+      participant_code,
+      participant_source,
       n_trials_before,
       n_trials_after,
       n_filtered_total,
@@ -217,7 +365,7 @@ prepare_subset_for_plots <- function(data, subset_type, rt_bounds) {
 }
 
 print_filtered_trials_summary <- function(filtered_trials_df) {
-  summary_df <- filtered_trials_df %>%
+  summary_overall <- filtered_trials_df %>%
     dplyr::group_by(subset) %>%
     dplyr::summarise(
       participants = dplyr::n_distinct(participant_id, na.rm = TRUE),
@@ -231,18 +379,88 @@ print_filtered_trials_summary <- function(filtered_trials_df) {
       n_missing_precision = sum(n_missing_precision, na.rm = TRUE),
       n_missing_pid_rows = sum(n_missing_pid_rows, na.rm = TRUE),
       .groups = "drop"
+    ) %>%
+    dplyr::mutate(
+      pct_filtered = round(100 * n_filtered_total / n_trials_before, 2)
+    ) %>%
+    dplyr::select(
+      subset,
+      participants,
+      n_trials_before,
+      n_trials_after,
+      n_filtered_total,
+      pct_filtered,
+      n_started_outof_center,
+      n_rt_below,
+      n_rt_above,
+      n_missing_rt,
+      n_missing_precision,
+      n_missing_pid_rows
     )
 
-  print(summary_df)
+  summary_by_source <- filtered_trials_df %>%
+    dplyr::group_by(subset, participant_source) %>%
+    dplyr::summarise(
+      participants = dplyr::n_distinct(participant_id, na.rm = TRUE),
+      n_trials_before = sum(n_trials_before, na.rm = TRUE),
+      n_trials_after = sum(n_trials_after, na.rm = TRUE),
+      n_filtered_total = sum(n_filtered_total, na.rm = TRUE),
+      n_started_outof_center = sum(n_started_outof_center, na.rm = TRUE),
+      n_rt_below = sum(n_rt_below, na.rm = TRUE),
+      n_rt_above = sum(n_rt_above, na.rm = TRUE),
+      n_missing_rt = sum(n_missing_rt, na.rm = TRUE),
+      n_missing_precision = sum(n_missing_precision, na.rm = TRUE),
+      n_missing_pid_rows = sum(n_missing_pid_rows, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    dplyr::mutate(
+      pct_filtered = round(100 * n_filtered_total / n_trials_before, 2)
+    ) %>%
+    dplyr::select(
+      subset,
+      participant_source,
+      participants,
+      n_trials_before,
+      n_trials_after,
+      n_filtered_total,
+      pct_filtered,
+      n_started_outof_center,
+      n_rt_below,
+      n_rt_above,
+      n_missing_rt,
+      n_missing_precision,
+      n_missing_pid_rows
+    )
+
+  cat("\nTrial-level QC removal summary (overall):\n")
+  print(as.data.frame(summary_overall), row.names = FALSE)
+  cat("\nTrial-level QC removal summary by participant source:\n")
+  print(as.data.frame(summary_by_source), row.names = FALSE)
 }
 
-sub1_result <- prepare_subset_for_plots(sub1raw, "sub1", rt_bounds)
-sub2_result <- prepare_subset_for_plots(sub2raw, "sub2", rt_bounds)
-sub3_result <- prepare_subset_for_plots(sub3raw, "sub3", rt_bounds)
+sub1input <- filter_participant_source(sub1raw)
+sub2input <- filter_participant_source(sub2raw)
+sub3input <- filter_participant_source(sub3raw)
+
+cat("\nParticipant source view:", participant_source_view, "\n")
+cat(
+  "Rows entering preparation:",
+  "sub1 =", nrow(sub1input),
+  "sub2 =", nrow(sub2input),
+  "sub3 =", nrow(sub3input), "\n"
+)
+
+sub1_result <- prepare_subset_for_plots(sub1input, "sub1", rt_bounds)
+sub2_result <- prepare_subset_for_plots(sub2input, "sub2", rt_bounds)
+sub3_result <- prepare_subset_for_plots(sub3input, "sub3", rt_bounds)
 
 sub1prepared <- sub1_result$prepared_data
 sub2prepared <- sub2_result$prepared_data
 sub3prepared <- sub3_result$prepared_data
+
+sub1diagnostic <- sub1prepared
+sub2diagnostic <- sub2prepared
+sub3diagnostic <- sub3prepared
 
 filtered_trials <- dplyr::bind_rows(
   sub1_result$filtered_trials,
@@ -255,6 +473,9 @@ print_filtered_trials_summary(filtered_trials)
 attr(sub1prepared, "subset_key") <- "sub1"
 attr(sub2prepared, "subset_key") <- "sub2"
 attr(sub3prepared, "subset_key") <- "sub3"
+attr(sub1diagnostic, "subset_key") <- "sub1"
+attr(sub2diagnostic, "subset_key") <- "sub2"
+attr(sub3diagnostic, "subset_key") <- "sub3"
 ```
 
 
@@ -279,17 +500,17 @@ max_bin_per_subset <- function(data, field, breaks) {
 precision_breaks <- seq(0, 180, by = 5)
 precision_xlim <- c(0, 180)
 precision_ylim_map <- list(
-  sub1 = c(0, max(1, max_bin_per_subset(sub1prepared, "abs_precision_deg", precision_breaks), na.rm = TRUE)),
-  sub2 = c(0, max(1, max_bin_per_subset(sub2prepared, "abs_precision_deg", precision_breaks), na.rm = TRUE)),
-  sub3 = c(0, max(1, max_bin_per_subset(sub3prepared, "abs_precision_deg", precision_breaks), na.rm = TRUE))
+  sub1 = c(0, max(1, max_bin_per_subset(sub1diagnostic, "abs_precision_deg", precision_breaks), na.rm = TRUE)),
+  sub2 = c(0, max(1, max_bin_per_subset(sub2diagnostic, "abs_precision_deg", precision_breaks), na.rm = TRUE)),
+  sub3 = c(0, max(1, max_bin_per_subset(sub3diagnostic, "abs_precision_deg", precision_breaks), na.rm = TRUE))
 )
 
 rt_breaks <- seq(rt_bounds[1], rt_bounds[2], by = 50)
 rt_xlim <- rt_bounds
 rt_ylim_map <- list(
-  sub1 = c(0, max(1, max_bin_per_subset(sub1prepared, "rt_ms", rt_breaks), na.rm = TRUE)),
-  sub2 = c(0, max(1, max_bin_per_subset(sub2prepared, "rt_ms", rt_breaks), na.rm = TRUE)),
-  sub3 = c(0, max(1, max_bin_per_subset(sub3prepared, "rt_ms", rt_breaks), na.rm = TRUE))
+  sub1 = c(0, max(1, max_bin_per_subset(sub1diagnostic, "rt_ms", rt_breaks), na.rm = TRUE)),
+  sub2 = c(0, max(1, max_bin_per_subset(sub2diagnostic, "rt_ms", rt_breaks), na.rm = TRUE)),
+  sub3 = c(0, max(1, max_bin_per_subset(sub3diagnostic, "rt_ms", rt_breaks), na.rm = TRUE))
 )
 
 precision_limits_for <- function(data) {
@@ -309,7 +530,20 @@ rt_limits_for <- function(data) {
 }
 ```
 
+
+
+
 ```{r plotting-utils, include=FALSE}
+participant_label <- function(participant_data, fallback_id) {
+  code <- participant_data$participant_code[!is.na(participant_data$participant_code)]
+  source <- participant_data$participant_source[!is.na(participant_data$participant_source)]
+
+  if (length(code) == 0) return(fallback_id)
+  if (length(source) == 0) return(code[1])
+
+  paste0(code[1], " (", source[1], ")")
+}
+
 plot_precision_dist <- function(data, sub_label, pid) {
   participant_data <- data %>% filter(participant_id == pid)
   if (nrow(participant_data) == 0) return(NULL)
@@ -323,7 +557,7 @@ plot_precision_dist <- function(data, sub_label, pid) {
   ggplot(participant_data, aes(x = abs_precision_deg)) +
     geom_histogram(breaks = precision_breaks, fill = "steelblue3", color = "white", alpha = 0.8) +
     labs(
-      title = paste(sub_label, "-", pid),
+      title = paste(sub_label, "-", participant_label(participant_data, pid)),
       subtitle = sprintf("circSD = %.2f° | Abs Mean = %.2f°", circ_sd, abs_mean),
       x = "Absolute precision (deg)",
       y = "Trial count"
@@ -346,7 +580,7 @@ plot_RT_dist <- function(data, sub_label, pid) {
     geom_vline(xintercept = mean_rt, linetype = "dashed", color = "navy") +
     geom_vline(xintercept = median_rt, linetype = "dotted", color = "darkgreen") +
     labs(
-      title = paste(sub_label, "-", pid),
+      title = paste(sub_label, "-", participant_label(participant_data, pid)),
       subtitle = sprintf("RT distribution (mean %.0f ms / median %.0f ms)",
                          ifelse(is.na(mean_rt), NA_real_, mean_rt),
                          ifelse(is.na(median_rt), NA_real_, median_rt)),
@@ -374,13 +608,18 @@ walk_participant_histograms <- function(data, sub_label, axial = FALSE) {
 }
 ```
 
+
+
+
 ```{r participant-diagnostic-plots, fig.height=3, fig.width=5, fig.align='center'}
-walk_participant_histograms(sub1prepared, "Sub1e1", axial = FALSE)
-walk_participant_histograms(sub2prepared, "Sub2e1", axial = FALSE)
-walk_participant_histograms(sub3prepared, "Sub3e1", axial = TRUE)
+walk_participant_histograms(sub1diagnostic, "Sub1 QC-retained", axial = FALSE)
+walk_participant_histograms(sub2diagnostic, "Sub2 QC-retained", axial = FALSE)
+walk_participant_histograms(sub3diagnostic, "Sub3 QC-retained", axial = TRUE)
 ```
 
-```{r mixture-uniform-vm-fit, include=FALSE}
+
+Participant level exclusion using a mixture model (VM+uniform) to estimate proportion of guessing-like behaviour.
+```{r mixture-uniform-vm-fit, echo=FALSE}
 # Per participant trial-level mixture model fitting: 
 # per duration, alpha * Uniform + (1 - alpha) * von Mises(mu = 0, kappa fixed). 
 # Uses sub*prepared (post trial-level filtering).
@@ -393,6 +632,14 @@ mixture_duration_ms <- c(50L, 150L, 250L)
 mixture_kappa_fixed <- 1
 mixture_set_size <- 6L
 mixture_n_starts <- 40L
+
+# Participant-level exclusion settings based on mixture-model fit quality.
+# alpha is the estimated uniform/noise mixture weight; higher values indicate
+# less target-centered responding under this simple diagnostic model.
+mixture_min_trials_per_duration <- 10L
+mixture_alpha_mean_threshold <- 0.50
+mixture_alpha_max_threshold <- 0.75
+show_detailed_alpha_diagnostics <- FALSE
 
 von_mises_pdf <- function(x, mu, kappa) {
   exp(kappa * cos(x - mu)) / (2 * pi * besselI(kappa, nu = 0))
@@ -438,14 +685,40 @@ fit_mixture_one_participant <- function(d_sub, pid, subset_key,
       .data$duration_ms %in% duration_levels
     )
   if (nrow(d) == 0) {
-    return(NULL)
+    return(
+      tibble::tibble(
+        participant_id = pid,
+        alpha_ms50 = NA_real_,
+        alpha_ms150 = NA_real_,
+        alpha_ms250 = NA_real_,
+        kappa_fixed = kappa,
+        neg_loglik = NA_real_,
+        optim_convergence = NA_integer_,
+        n_alpha_params = 0L,
+        fit_status = "no_fit_trials",
+        subset = subset_key
+      )
+    )
   }
 
   d$x_circ <- circ_error_rad_for_mixture(d$precision_deg, subset_key)
 
   active_idx <- which(vapply(duration_levels, function(dd) sum(d$duration_ms == dd) > 0L, logical(1)))
   if (length(active_idx) == 0) {
-    return(NULL)
+    return(
+      tibble::tibble(
+        participant_id = pid,
+        alpha_ms50 = NA_real_,
+        alpha_ms150 = NA_real_,
+        alpha_ms250 = NA_real_,
+        kappa_fixed = kappa,
+        neg_loglik = NA_real_,
+        optim_convergence = NA_integer_,
+        n_alpha_params = 0L,
+        fit_status = "no_active_duration",
+        subset = subset_key
+      )
+    )
   }
   active_durs <- duration_levels[active_idx]
   angle_lists <- lapply(active_durs, function(dd) d$x_circ[d$duration_ms == dd])
@@ -475,14 +748,28 @@ fit_mixture_one_participant <- function(d_sub, pid, subset_key,
     }
   }
 
+  if (!is.finite(best$value)) {
+    return(
+      tibble::tibble(
+        participant_id = pid,
+        alpha_ms50 = NA_real_,
+        alpha_ms150 = NA_real_,
+        alpha_ms250 = NA_real_,
+        kappa_fixed = kappa,
+        neg_loglik = NA_real_,
+        optim_convergence = NA_integer_,
+        n_alpha_params = n_par,
+        fit_status = "optim_failed",
+        subset = subset_key
+      )
+    )
+  }
+
   alpha_full <- rep(NA_real_, length(duration_levels))
   names(alpha_full) <- as.character(duration_levels)
-  n_trials <- rep(0L, length(duration_levels))
-  names(n_trials) <- as.character(duration_levels)
   for (j in seq_along(active_durs)) {
     dd <- active_durs[j]
     alpha_full[as.character(dd)] <- best$par[j]
-    n_trials[as.character(dd)] <- sum(d$duration_ms == dd)
   }
 
   tibble::tibble(
@@ -490,15 +777,69 @@ fit_mixture_one_participant <- function(d_sub, pid, subset_key,
     alpha_ms50 = alpha_full[["50"]],
     alpha_ms150 = alpha_full[["150"]],
     alpha_ms250 = alpha_full[["250"]],
-    n_trials_50 = n_trials[["50"]],
-    n_trials_150 = n_trials[["150"]],
-    n_trials_250 = n_trials[["250"]],
     kappa_fixed = kappa,
     neg_loglik = best$value,
     optim_convergence = best$convergence,
     n_alpha_params = n_par,
+    fit_status = ifelse(best$convergence == 0L, "ok", "optim_nonconvergence"),
     subset = subset_key
   )
+}
+
+participant_fit_counts <- function(prepared_df, subset_key,
+                                   duration_levels = mixture_duration_ms,
+                                   set_size = mixture_set_size) {
+  participants <- prepared_df %>%
+    dplyr::distinct(
+      participant_id,
+      participant_code,
+      participant_source,
+      participant_cohort
+    ) %>%
+    dplyr::mutate(subset = subset_key)
+
+  counts <- prepared_df %>%
+    dplyr::filter(
+      .data$num_items == set_size,
+      .data$duration_ms %in% duration_levels
+    ) %>%
+    dplyr::count(participant_id, duration_ms, name = "n_trials") %>%
+    tidyr::pivot_wider(
+      names_from = duration_ms,
+      values_from = n_trials,
+      names_prefix = "n_trials_",
+      values_fill = 0
+    )
+
+  participants %>%
+    dplyr::left_join(counts, by = "participant_id") %>%
+    dplyr::mutate(
+      n_trials_50 = dplyr::coalesce(.data$n_trials_50, 0L),
+      n_trials_150 = dplyr::coalesce(.data$n_trials_150, 0L),
+      n_trials_250 = dplyr::coalesce(.data$n_trials_250, 0L),
+      n_trials_fit = n_trials_50 + n_trials_150 + n_trials_250,
+      n_duration_cells_below_min =
+        (n_trials_50 < mixture_min_trials_per_duration) +
+        (n_trials_150 < mixture_min_trials_per_duration) +
+        (n_trials_250 < mixture_min_trials_per_duration)
+    )
+}
+
+fit_exclusion_reason <- function(fit_status, low_trials, high_mean_alpha, high_max_alpha) {
+  reasons <- character()
+  if (!identical(fit_status, "ok")) {
+    reasons <- c(reasons, paste0("fit status: ", fit_status))
+  }
+  if (isTRUE(low_trials)) {
+    reasons <- c(reasons, "too few fit trials in at least one duration")
+  }
+  if (isTRUE(high_mean_alpha)) {
+    reasons <- c(reasons, paste0("mean alpha >= ", mixture_alpha_mean_threshold))
+  }
+  if (isTRUE(high_max_alpha)) {
+    reasons <- c(reasons, paste0("any alpha >= ", mixture_alpha_max_threshold))
+  }
+  if (length(reasons) == 0) "retain" else paste(reasons, collapse = "; ")
 }
 
 mixture_fit_report <- function(prepared_df, subset_key) {
@@ -506,30 +847,183 @@ mixture_fit_report <- function(prepared_df, subset_key) {
   out <- purrr::map(pids, function(pid) {
     fit_mixture_one_participant(prepared_df, pid, subset_key)
   })
-  dplyr::bind_rows(purrr::compact(out))
+  fit_rows <- dplyr::bind_rows(purrr::compact(out))
+  fit_counts <- participant_fit_counts(prepared_df, subset_key)
+
+  fit_counts %>%
+    dplyr::left_join(fit_rows, by = c("subset", "participant_id")) %>%
+    dplyr::mutate(
+      fit_status = dplyr::coalesce(fit_status, "not_fit"),
+      alpha_mean = rowMeans(
+        dplyr::pick(alpha_ms50, alpha_ms150, alpha_ms250),
+        na.rm = TRUE
+      ),
+      alpha_max = apply(
+        dplyr::pick(alpha_ms50, alpha_ms150, alpha_ms250),
+        1,
+        max,
+        na.rm = TRUE
+      ),
+      alpha_mean = ifelse(is.nan(alpha_mean), NA_real_, alpha_mean),
+      alpha_max = ifelse(is.infinite(alpha_max), NA_real_, alpha_max),
+      exclude_fit_status = fit_status != "ok",
+      exclude_low_trials = n_duration_cells_below_min > 0,
+      exclude_high_mean_alpha = !is.na(alpha_mean) & alpha_mean >= mixture_alpha_mean_threshold,
+      exclude_high_max_alpha = !is.na(alpha_max) & alpha_max >= mixture_alpha_max_threshold,
+      recommended_exclude = exclude_fit_status |
+        exclude_low_trials |
+        exclude_high_mean_alpha |
+        exclude_high_max_alpha,
+      exclusion_reason = purrr::pmap_chr(
+        list(
+          fit_status,
+          exclude_low_trials,
+          exclude_high_mean_alpha,
+          exclude_high_max_alpha
+        ),
+        fit_exclusion_reason
+      )
+    ) %>%
+    dplyr::arrange(subset, participant_source, participant_code)
+}
+
+print_mixture_fit_report <- function(fit_report) {
+  cat(
+    "\nMixture-fit diagnostic model:\n",
+    "  set size =", mixture_set_size,
+    "| durations =", paste(mixture_duration_ms, collapse = "/"), "ms",
+    "| kappa =", mixture_kappa_fixed,
+    "| starts =", mixture_n_starts, "\n",
+    "Exclusion criteria:\n",
+    "  fit_status != ok OR any duration has <", mixture_min_trials_per_duration,
+    "fit trials OR mean alpha >=", mixture_alpha_mean_threshold,
+    "OR any alpha >=", mixture_alpha_max_threshold, "\n",
+    sep = " "
+  )
+
+  summary <- fit_report %>%
+    dplyr::group_by(subset, participant_source) %>%
+    dplyr::summarise(
+      participants = dplyr::n(),
+      recommended_exclusions = sum(recommended_exclude, na.rm = TRUE),
+      median_alpha_mean = round(stats::median(alpha_mean, na.rm = TRUE), 3),
+      max_alpha_mean = round(max(alpha_mean, na.rm = TRUE), 3),
+      .groups = "drop"
+    )
+
+  participant_exclusion_summary <- fit_report %>%
+    dplyr::mutate(
+      exclusion_tag = ifelse(recommended_exclude, "Exclude", "Retain"),
+      alpha_mean = round(alpha_mean, 3),
+      alpha_max = round(alpha_max, 3)
+    ) %>%
+    dplyr::select(
+      subset,
+      participant_code,
+      participant_source,
+      participant_id,
+      exclusion_tag,
+      exclusion_reason,
+      n_trials_fit,
+      alpha_mean,
+      alpha_max,
+      fit_status
+    ) %>%
+    dplyr::arrange(subset, participant_source, participant_code)
+
+  excluded_detail <- fit_report %>%
+    dplyr::filter(recommended_exclude) %>%
+    dplyr::select(
+      subset,
+      participant_code,
+      participant_source,
+      participant_id,
+      exclusion_tag = recommended_exclude,
+      exclusion_reason,
+      n_trials_fit,
+      n_trials_50,
+      n_trials_150,
+      n_trials_250,
+      alpha_ms50,
+      alpha_ms150,
+      alpha_ms250,
+      alpha_mean,
+      alpha_max,
+      fit_status
+    ) %>%
+    dplyr::mutate(
+      exclusion_tag = ifelse(exclusion_tag, "Exclude", "Retain"),
+      dplyr::across(
+        dplyr::starts_with("alpha"),
+        ~ round(.x, 3)
+      )
+    ) %>%
+    dplyr::arrange(subset, participant_source, participant_code)
+
+  cat("\nMixture-fit participant summary:\n")
+  print(as.data.frame(summary), row.names = FALSE)
+
+  cat("\nParticipant-level exclusion table:\n")
+  if (requireNamespace("knitr", quietly = TRUE)) {
+    print(knitr::kable(as.data.frame(participant_exclusion_summary)))
+  } else {
+    print(as.data.frame(participant_exclusion_summary), row.names = FALSE)
+  }
+
+  if (show_detailed_alpha_diagnostics) {
+    cat("\nDetailed alpha diagnostics for excluded participants:\n")
+    if (nrow(excluded_detail) == 0) {
+      cat("None\n")
+    } else {
+      print(as.data.frame(excluded_detail), row.names = FALSE)
+    }
+  } else {
+    cat("\nDetailed alpha diagnostics are stored in mixture_fit_all; set show_detailed_alpha_diagnostics <- TRUE to print them.\n")
+  }
+
+  invisible(participant_exclusion_summary)
 }
 
 set.seed(42)
 mixture_fit_sub1 <- mixture_fit_report(sub1prepared, "sub1")
 mixture_fit_sub2 <- mixture_fit_report(sub2prepared, "sub2")
 mixture_fit_sub3 <- mixture_fit_report(sub3prepared, "sub3")
-
-cat(
-  "Mixture fit (set size", mixture_set_size, ", durations 50/150/250 ms, kappa =",
-  mixture_kappa_fixed, "): sub1 rows =", nrow(mixture_fit_sub1),
-  "| sub2 =", nrow(mixture_fit_sub2),
-  "| sub3 =", nrow(mixture_fit_sub3), "\n"
+mixture_fit_all <- dplyr::bind_rows(
+  mixture_fit_sub1,
+  mixture_fit_sub2,
+  mixture_fit_sub3
 )
+
+participant_exclusion_summary <- print_mixture_fit_report(mixture_fit_all)
 ```
 
-```{r apply-prelim-exclusions}
-exclusion_map <- list(
+
+
+```{r apply-participant-exclusions}
+participant_exclusion_mode <- "fit_recommendation" # options: "fit_recommendation", "manual", "none"
+
+manual_exclusion_map <- list(
   #sub1 = c("08", "18", "24", "25", "29", "30"),
   sub1 = c("08", "14", "18", "21", "24", "25", "29","30","32"),
   #sub2 = c("01", "10", "12", "22", "29", "30", "31"),
   sub2 = c("01", "09", "10","12","15","17","18","22","23","24","26","27","28","29","30","31"),
   #sub3 = c("14", "20", "21", "28", "31")
   sub3 = c("01","14","20","21","23","24","25","26","27","28","29","30","31")
+)
+
+fit_exclusion_map <- mixture_fit_all %>%
+  dplyr::filter(recommended_exclude) %>%
+  dplyr::group_by(subset) %>%
+  dplyr::summarise(ids = list(participant_id), .groups = "drop") %>%
+  { stats::setNames(.$ids, .$subset) }
+
+empty_exclusion_map <- list(sub1 = character(), sub2 = character(), sub3 = character())
+exclusion_map <- switch(
+  participant_exclusion_mode,
+  fit_recommendation = utils::modifyList(empty_exclusion_map, fit_exclusion_map),
+  manual = manual_exclusion_map,
+  none = empty_exclusion_map,
+  stop("participant_exclusion_mode must be 'fit_recommendation', 'manual', or 'none'")
 )
 
 sub1_analysis <- sub1prepared %>% filter(!participant_id %in% exclusion_map$sub1)
@@ -540,7 +1034,14 @@ attr(sub1_analysis, "subset_key") <- "sub1"
 attr(sub2_analysis, "subset_key") <- "sub2"
 attr(sub3_analysis, "subset_key") <- "sub3"
 
-cat("Applied preliminary exclusions; new counts:",
+cat("\nApplied participant exclusions using mode:", participant_exclusion_mode, "\n")
+print(as.data.frame(tibble::tibble(
+  subset = names(exclusion_map),
+  excluded_participant_ids = vapply(exclusion_map, paste, collapse = ", ", FUN.VALUE = character(1)),
+  n_excluded = vapply(exclusion_map, length, FUN.VALUE = integer(1))
+)), row.names = FALSE)
+
+cat("Post-exclusion analysis row counts:",
     "sub1_analysis =", nrow(sub1_analysis),
     "sub2_analysis =", nrow(sub2_analysis),
     "sub3_analysis =", nrow(sub3_analysis), "\n")
@@ -711,25 +1212,37 @@ plot_group_precision_participant_circsd <- function(data, label, include_set_siz
         color = cue_type
       ),
       position = pj_circsd,
-      alpha = 0.4,
+      alpha = 0.3,
       size = 1.1
     ) +
-    ggplot2::geom_pointrange(
+    ggplot2::geom_errorbar(
+      data = sdat,
+      ggplot2::aes(
+        x = factor(duration_ms),
+        ymin = ci_low,
+        ymax = ci_high,
+        group = cue_type
+      ),
+      position = pd,
+      width = 0.18,
+      linewidth = 0.9,
+      color = "black"
+    ) +
+    ggplot2::geom_point(
       data = sdat,
       ggplot2::aes(
         x = factor(duration_ms),
         y = mean_circsd,
-        ymin = ci_low,
-        ymax = ci_high,
         color = cue_type
       ),
       position = pd,
-      size = 0.25,
-      linewidth = 0.9,
-      fatten = 3
+      shape = 23,
+      fill = "white",
+      size = 3.0,
+      stroke = 1.1
     ) +
     ggplot2::labs(
-      title = paste(label, "precision — participant CirSD"),
+      title = paste(label, "precision - participant CirSD"),
       subtitle = if (axial) {
         "Per-participant axial CirSD (jitter); mean and 95% CI across participants"
       } else {
@@ -742,7 +1255,7 @@ plot_group_precision_participant_circsd <- function(data, label, include_set_siz
     ggplot2::theme_minimal() +
     ggplot2::theme(legend.position = "top")
 
-  plot <- add_cue_type_scales(plot)
+  plot <- plot + ggplot2::scale_color_manual(values = cue_type_colors)
 
   if (include_set_size) {
     plot <- plot + ggplot2::facet_wrap(~ num_items, labeller = ggplot2::label_both)
