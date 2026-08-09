@@ -1,0 +1,2179 @@
+---
+title: "Study 1 Bayesian Hierarchical Regression"
+author: "Yu Liu"
+date: "11th May 2026"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+---
+
+# Overview
+
+Analysis order (small-N, each participant = one replication):
+
+1. Load and prepare trial data
+2. Simple descriptive plots (placeholder for manuscript figures)
+3. Bayesian AbsErr primary models + theory contrasts
+4. Bayesian cirSD primary (same design formula; bootstrap cell replicates)
+5. Pre-mixture learning: AbsErr Session 1 vs 10 by duration
+6. Pre-mixture learning: cirSD Session 1 vs 10 (nonparametric bootstrap companion)
+7. Circular mixture: independent ML fit per cue × duration cell
+   (signed-error distribution; no separate cirSD mixture step)
+
+Appendix (below): frequentist sensitivity and older exploratory Bayes code.
+
+Style note: code is written out step by step with comments. We avoid custom
+helper functions so every scientific step is visible. Short `for` loops are used
+only to repeat the same steps for AQ, HC, and YILIU.
+
+Maps to `s1_smallN_analysis_discrete.Rmd` (SessionF instead of Session_z).
+
+# Setup
+
+```{r setup, message=FALSE, warning=FALSE}
+# Core packages for this pipeline.
+library(tidyverse)   # data wrangling + ggplot2
+library(nlme)        # frequentist mixed models (Appendix)
+library(brms)        # Bayesian regression
+library(bayesplot)   # posterior predictive checks
+library(tidybayes)   # gather posterior draws from emmeans
+library(emmeans)     # estimated marginal means / contrasts
+library(patchwork)   # combine ggplot panels
+library(loo)         # Appendix model comparison only
+library(circular)    # circular SD for signed colour errors
+
+theme_set(theme_bw())
+options(mc.cores = parallel::detectCores())
+set.seed(1234)  # reproducible bootstrap / Stan seeds where used
+```
+
+# 1. Load and prepare data
+
+```{r load-data}
+# Model-ready trial table from MATLAB preprocessing.
+d <- read_csv("S1_smallN_model_ready.csv", show_col_types = FALSE)
+
+# Quick sanity checks: expected columns and no empty file.
+stopifnot(nrow(d) > 0)
+stopifnot(all(c("ID", "CueType", "Duration", "Session", "Session_z",
+                "AbsErr", "SignedErr") %in% names(d)))
+
+glimpse(d)
+```
+
+```{r prepare-factors}
+# Set factor levels explicitly so contrasts and plots keep a fixed order.
+d <- d %>%
+  mutate(
+    ID = factor(ID),
+    CueType = factor(CueType, levels = c("NR", "R")),
+    DurationF = factor(
+      Duration,
+      levels = c("50ms", "100ms", "150ms", "200ms", "250ms", "300ms", "350ms")
+    ),
+    Grouping = factor(Grouping),
+    SessionF = factor(Session),
+    SessionPhase = factor(SessionPhase, levels = c("Early", "Middle", "Late")),
+    logRT = log(RT)
+  )
+
+# One data frame per currently complete participant.
+# droplevels() drops unused ID levels so random-effect formulas stay clean.
+d_AQ <- droplevels(filter(d, ID == "AQ"))
+d_HC <- droplevels(filter(d, ID == "HC"))
+d_YILIU <- droplevels(filter(d, ID == "YILIU"))
+
+# Confirm design levels.
+levels(d$CueType)
+levels(d$DurationF)
+levels(d$SessionF)
+```
+
+# 2. Descriptive figures (placeholder)
+
+These plots are for exploration only. Manuscript figures will be updated later.
+
+```{r descriptives-cirsd}
+# Circular SD of signed errors by participant × cue × duration.
+# sd.circular returns radians when units="degrees"; convert to degrees.
+circ_summary <- d %>%
+  group_by(ID, CueType, DurationF) %>%
+  summarise(
+    circSD = as.numeric(sd.circular(circular(SignedErr, units = "degrees"))) * (180 / pi),
+    meanAbs = mean(AbsErr),
+    .groups = "drop"
+  )
+
+ggplot(circ_summary, aes(DurationF, circSD, colour = CueType, group = CueType)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  facet_wrap(~ID) +
+  labs(y = "Circular SD (deg)", x = "Encoding duration")
+
+# Same summary pooled across participants (descriptive only; not primary inference).
+group_circ <- d %>%
+  group_by(CueType, DurationF) %>%
+  summarise(
+    circSD = as.numeric(sd.circular(circular(SignedErr, units = "degrees"))) * (180 / pi),
+    .groups = "drop"
+  )
+
+ggplot(group_circ, aes(DurationF, circSD, colour = CueType, group = CueType)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  labs(y = "Circular SD (deg)", x = "Encoding duration")
+```
+
+
+# 3. Bayesian primary analysis: AbsErr
+
+One Student-t model per participant:
+
+`AbsErr ~ CueType * DurationF * Session_z + (1 | SessionF)`
+
+- Cue and duration are categorical (cell means).
+- Session_z is continuous practice (z-scored session index).
+- Random intercept by SessionF absorbs leftover session bumps.
+- ROPE for AbsErr differences: ±3 degrees (substantive “near zero”).
+
+## 3.1 Fit / load models
+
+```{r bayes-fit, message=FALSE, warning=FALSE}
+# Region of practical equivalence for AbsErr contrasts (degrees).
+rope_abs <- 3
+
+# Session_z landmarks used later in contrasts.
+# Early = mean of sessions 1–2; late = mean of sessions 9–10; average = 0.
+early_z <- mean(unique(d$Session_z[d$Session %in% c(1, 2)]))
+late_z  <- mean(unique(d$Session_z[d$Session %in% c(9, 10)]))
+s1_z    <- unique(d$Session_z[d$Session == 1])
+s10_z   <- unique(d$Session_z[d$Session == 10])
+stopifnot(length(s1_z) == 1, length(s10_z) == 1)
+
+# Ordered-duration linear contrast weights (7 levels: 50 ... 350 ms).
+# Negative AbsErr contrast = error falls as duration increases.
+w_linear <- c(-3, -2, -1, 0, 1, 2, 3)
+w_350_minus_50 <- c(-1, 0, 0, 0, 0, 0, 1)
+
+# Mildly regularising priors (AbsErr is typically tens of degrees).
+bayes_priors <- c(
+  prior(normal(30, 20), class = "Intercept"),
+  prior(normal(0, 15), class = "b"),
+  prior(exponential(1), class = "sigma"),
+  prior(exponential(1), class = "sd"),
+  prior(gamma(2, 0.1), class = "nu")
+)
+
+dir.create("bayes_primary", showWarnings = FALSE, recursive = TRUE)
+
+# Fit each participant explicitly. brms `file=` caches the Stan fit on disk,
+# so re-knitting loads the saved model unless the formula/data change.
+m_AQ <- brm(
+  AbsErr ~ CueType * DurationF * Session_z + (1 | SessionF),
+  data = d_AQ,
+  family = student(),
+  prior = bayes_priors,
+  chains = 4, cores = 4, iter = 4000, warmup = 2000,
+  control = list(adapt_delta = 0.95, max_treedepth = 12),
+  seed = 1234,
+  file = "bayes_primary/m_AQ_abserr",
+  file_refit = "on_change"
+)
+
+m_HC <- brm(
+  AbsErr ~ CueType * DurationF * Session_z + (1 | SessionF),
+  data = d_HC,
+  family = student(),
+  prior = bayes_priors,
+  chains = 4, cores = 4, iter = 4000, warmup = 2000,
+  control = list(adapt_delta = 0.95, max_treedepth = 12),
+  seed = 1234,
+  file = "bayes_primary/m_HC_abserr",
+  file_refit = "on_change"
+)
+
+m_YILIU <- brm(
+  AbsErr ~ CueType * DurationF * Session_z + (1 | SessionF),
+  data = d_YILIU,
+  family = student(),
+  prior = bayes_priors,
+  chains = 4, cores = 4, iter = 4000, warmup = 2000,
+  control = list(adapt_delta = 0.95, max_treedepth = 12),
+  seed = 1234,
+  file = "bayes_primary/m_YILIU_abserr",
+  file_refit = "on_change"
+)
+
+summary(m_AQ)
+summary(m_HC)
+summary(m_YILIU)
+```
+
+## 3.2 Theory contrasts (written out)
+
+Scientific questions:
+
+1. Redundancy gain at 50 ms: AbsErr(NR) − AbsErr(R)  (positive = R better)
+2. Duration change by cue: 350−50 and linear trend at average session
+3. Catch-up: does NR improve more than R from 50→350?  Defined as (R−NR) of that change so positive = NR improved more
+4. Practice: late−early change in the 50→350 duration effect (not change in redundancy gain)
+
+```{r bayes-contrasts, message=FALSE, warning=FALSE}
+# Store one summary row per effect × participant.
+# Columns: ID, effect, median, lower, upper, p_lt_0, p_gt_0, p_in_rope
+contrast_rows <- list()
+row_i <- 0
+
+# Repeat the same contrast workflow for each saved model.
+models <- list(AQ = m_AQ, HC = m_HC, YILIU = m_YILIU)
+
+for (pid in names(models)) {
+  model <- models[[pid]]
+
+  # ---- 1) Redundancy gain by duration at average session (Session_z = 0) ----
+  emm_gain <- emmeans(model, ~ CueType | DurationF, at = list(Session_z = 0))
+  ct_gain <- contrast(emm_gain, method = list("NR - R" = c(1, -1)), by = "DurationF")
+  draws_gain <- gather_emmeans_draws(ct_gain)
+
+  for (dur in levels(d$DurationF)) {
+    v <- draws_gain$.value[draws_gain$DurationF == dur]
+    v <- v[is.finite(v)]
+    stopifnot(length(v) > 0)
+    row_i <- row_i + 1
+    contrast_rows[[row_i]] <- tibble(
+      ID = pid,
+      effect = paste0("gain_", dur),
+      median = median(v),
+      lower = as.numeric(quantile(v, 0.025)),
+      upper = as.numeric(quantile(v, 0.975)),
+      p_lt_0 = mean(v < 0),
+      p_gt_0 = mean(v > 0),
+      p_in_rope = mean(abs(v) < rope_abs)
+    )
+  }
+
+  # Also keep the focal 50 ms gain under a short name.
+  v <- draws_gain$.value[draws_gain$DurationF == "50ms"]
+  v <- v[is.finite(v)]
+  row_i <- row_i + 1
+  contrast_rows[[row_i]] <- tibble(
+    ID = pid,
+    effect = "gain_at_50ms",
+    median = median(v),
+    lower = as.numeric(quantile(v, 0.025)),
+    upper = as.numeric(quantile(v, 0.975)),
+    p_lt_0 = mean(v < 0),
+    p_gt_0 = mean(v > 0),
+    p_in_rope = mean(abs(v) < rope_abs)
+  )
+
+  # ---- 2) Duration effects by cue at average session ----
+  emm_dur <- emmeans(model, ~ DurationF | CueType, at = list(Session_z = 0))
+  ct_dur <- contrast(
+    emm_dur,
+    method = list(
+      "linear_trend" = w_linear,
+      "350ms - 50ms" = w_350_minus_50
+    ),
+    by = "CueType"
+  )
+  draws_dur <- gather_emmeans_draws(ct_dur)
+
+  for (cue in c("NR", "R")) {
+    for (cname in c("linear_trend", "350ms - 50ms")) {
+      v <- draws_dur$.value[draws_dur$CueType == cue & draws_dur$contrast == cname]
+      v <- v[is.finite(v)]
+      stopifnot(length(v) > 0)
+      row_i <- row_i + 1
+      contrast_rows[[row_i]] <- tibble(
+        ID = pid,
+        effect = paste0(cue, ": ", cname),
+        median = median(v),
+        lower = as.numeric(quantile(v, 0.025)),
+        upper = as.numeric(quantile(v, 0.975)),
+        p_lt_0 = mean(v < 0),
+        p_gt_0 = mean(v > 0),
+        p_in_rope = mean(abs(v) < rope_abs)
+      )
+    }
+  }
+
+  # ---- 3) Catch-up at early / average / late session slices ----
+  # First get 350-50 change for each cue at each Session_z slice.
+  emm_dur_sess <- emmeans(
+    model,
+    ~ DurationF | CueType * Session_z,
+    at = list(Session_z = c(early_z, 0, late_z))
+  )
+  ct_dur_sess <- contrast(
+    emm_dur_sess,
+    method = list("350ms - 50ms" = w_350_minus_50),
+    by = c("CueType", "Session_z")
+  )
+  # ungroup(): tidybayes keeps contrast/CueType/Session_z groups; leaving them
+  # in place makes pivot_wider keep Session_z as a key so early/late never
+  # share a row and late - early becomes all NA (length(v) > 0 fails).
+  draws_ds <- gather_emmeans_draws(ct_dur_sess) %>%
+    ungroup() %>%
+    select(.draw, CueType, Session_z, .value)
+
+  # Label Session_z values as early / average / late (sorted numerically).
+  sz_levels <- sort(unique(draws_ds$Session_z))
+  stopifnot(length(sz_levels) == 3)
+  draws_ds <- draws_ds %>%
+    mutate(SessionSlice = c("early", "average", "late")[match(Session_z, sz_levels)])
+
+  # Catch-up draw = duration_change_R - duration_change_NR
+  # Positive => NR AbsErr fell more from 50 to 350 than R did.
+  for (slice in c("early", "average", "late")) {
+    wide <- draws_ds %>%
+      filter(SessionSlice == slice) %>%
+      select(.draw, CueType, .value) %>%
+      pivot_wider(names_from = CueType, values_from = .value)
+    v <- wide$R - wide$NR
+    v <- v[is.finite(v)]
+    stopifnot(length(v) > 0)
+    row_i <- row_i + 1
+    contrast_rows[[row_i]] <- tibble(
+      ID = pid,
+      effect = paste0("catchup_", slice),
+      median = median(v),
+      lower = as.numeric(quantile(v, 0.025)),
+      upper = as.numeric(quantile(v, 0.975)),
+      p_lt_0 = mean(v < 0),
+      p_gt_0 = mean(v > 0),
+      p_in_rope = mean(abs(v) < rope_abs)
+    )
+  }
+
+  # Catch-up change with practice: late catch-up minus early catch-up.
+  wide_e <- draws_ds %>%
+    filter(SessionSlice == "early") %>%
+    select(.draw, CueType, .value) %>%
+    pivot_wider(names_from = CueType, values_from = .value) %>%
+    mutate(catchup = R - NR)
+  wide_l <- draws_ds %>%
+    filter(SessionSlice == "late") %>%
+    select(.draw, CueType, .value) %>%
+    pivot_wider(names_from = CueType, values_from = .value) %>%
+    mutate(catchup = R - NR)
+  v <- wide_l$catchup[match(wide_e$.draw, wide_l$.draw)] - wide_e$catchup
+  v <- v[is.finite(v)]
+  stopifnot(length(v) > 0)
+  row_i <- row_i + 1
+  contrast_rows[[row_i]] <- tibble(
+    ID = pid,
+    effect = "catchup_late_minus_early",
+    median = median(v),
+    lower = as.numeric(quantile(v, 0.025)),
+    upper = as.numeric(quantile(v, 0.975)),
+    p_lt_0 = mean(v < 0),
+    p_gt_0 = mean(v > 0),
+    p_in_rope = mean(abs(v) < rope_abs)
+  )
+
+  # ---- 4) Practice: late - early change in 50→350 duration effect, by cue ----
+  for (cue in c("NR", "R")) {
+    wide_cue <- draws_ds %>%
+      filter(CueType == cue, SessionSlice %in% c("early", "late")) %>%
+      select(.draw, SessionSlice, .value) %>%
+      pivot_wider(names_from = SessionSlice, values_from = .value)
+    v <- wide_cue$late - wide_cue$early
+    v <- v[is.finite(v)]
+    stopifnot(length(v) > 0)
+    row_i <- row_i + 1
+    contrast_rows[[row_i]] <- tibble(
+      ID = pid,
+      effect = paste0(cue, ": duration_effect_late_minus_early"),
+      median = median(v),
+      lower = as.numeric(quantile(v, 0.025)),
+      upper = as.numeric(quantile(v, 0.975)),
+      p_lt_0 = mean(v < 0),
+      p_gt_0 = mean(v > 0),
+      p_in_rope = mean(abs(v) < rope_abs)
+    )
+  }
+}
+
+primary_summary <- bind_rows(contrast_rows) %>%
+  arrange(effect, ID)
+
+primary_summary
+
+# Compact table of the main theory questions only.
+theory_focus <- primary_summary %>%
+  filter(
+    effect %in% c(
+      "gain_at_50ms",
+      "NR: linear_trend", "R: linear_trend",
+      "NR: 350ms - 50ms", "R: 350ms - 50ms",
+      "catchup_early", "catchup_average", "catchup_late",
+      "catchup_late_minus_early",
+      "NR: duration_effect_late_minus_early",
+      "R: duration_effect_late_minus_early"
+    )
+  ) %>%
+  mutate(
+    question = case_when(
+      effect == "gain_at_50ms" ~ "1. redundancy advantage",
+      grepl("linear_trend|350ms - 50ms", effect) ~ "2. duration change by cue",
+      grepl("^catchup_", effect) ~ "3. NR catch-up vs R",
+      grepl("duration_effect_late_minus_early", effect) ~ "4. practice change of duration slope",
+      TRUE ~ "other"
+    )
+  ) %>%
+  arrange(question, effect, ID)
+
+theory_focus
+
+# Persist AbsErr contrast tables (mirrors discrete script outputs).
+dir.create("bayes_primary", showWarnings = FALSE, recursive = TRUE)
+write_csv(theory_focus, "bayes_primary/theory_focus.csv")
+write_csv(primary_summary, "bayes_primary/primary_summary.csv")
+
+# Reading guide:
+# - duration p_lt_0: P(AbsErr decreases with longer encoding)
+# - catch-up p_gt_0: P(NR improves more than R)
+# - practice p_in_rope: P(duration slope change within ±3 deg)
+```
+
+## 3.3 Posterior predictive checks
+
+Student-t on AbsErr is for robust mean contrasts. Predictions can be <0 or >180,
+so density overlays are often misleading. Use ECDF + clipped histograms.
+
+```{r bayes-ppc, fig.width=10, fig.height=7}
+# ECDF overlays (robust to extreme predictive draws).
+p_ecdf_AQ <- pp_check(m_AQ, ndraws = 50, type = "ecdf_overlay") +
+  coord_cartesian(xlim = c(0, 180)) +
+  labs(title = "AQ: ECDF", x = "AbsErr (deg)")
+p_ecdf_HC <- pp_check(m_HC, ndraws = 50, type = "ecdf_overlay") +
+  coord_cartesian(xlim = c(0, 180)) +
+  labs(title = "HC: ECDF", x = "AbsErr (deg)")
+p_ecdf_YILIU <- pp_check(m_YILIU, ndraws = 50, type = "ecdf_overlay") +
+  coord_cartesian(xlim = c(0, 180)) +
+  labs(title = "YILIU: ECDF", x = "AbsErr (deg)")
+
+# Histograms: clip yrep to [0, 180] for display only (bayesplot forbids NAs).
+yrep_AQ <- pmin(pmax(posterior_predict(m_AQ, ndraws = 8), 0), 180)
+yrep_HC <- pmin(pmax(posterior_predict(m_HC, ndraws = 8), 0), 180)
+yrep_YILIU <- pmin(pmax(posterior_predict(m_YILIU, ndraws = 8), 0), 180)
+
+p_hist_AQ <- bayesplot::ppc_hist(get_y(m_AQ), yrep_AQ, binwidth = 5) +
+  coord_cartesian(xlim = c(0, 180)) +
+  labs(title = "AQ: hist", x = "AbsErr (deg)")
+p_hist_HC <- bayesplot::ppc_hist(get_y(m_HC), yrep_HC, binwidth = 5) +
+  coord_cartesian(xlim = c(0, 180)) +
+  labs(title = "HC: hist", x = "AbsErr (deg)")
+p_hist_YILIU <- bayesplot::ppc_hist(get_y(m_YILIU), yrep_YILIU, binwidth = 5) +
+  coord_cartesian(xlim = c(0, 180)) +
+  labs(title = "YILIU: hist", x = "AbsErr (deg)")
+
+(p_ecdf_AQ | p_ecdf_HC | p_ecdf_YILIU) /
+  (p_hist_AQ | p_hist_HC | p_hist_YILIU)
+```
+
+## 3.4 Contrast plots
+
+```{r bayes-contrast-plots, fig.width=10, fig.height=8}
+# Pull the three plot-ready subsets from the summary table.
+plot_duration <- primary_summary %>%
+  filter(effect %in% c("NR: 350ms - 50ms", "R: 350ms - 50ms")) %>%
+  mutate(CueType = if_else(grepl("^NR", effect), "NR", "R"))
+
+plot_catch <- primary_summary %>%
+  filter(effect %in% c("catchup_early", "catchup_average", "catchup_late")) %>%
+  mutate(
+    SessionSlice = factor(
+      gsub("catchup_", "", effect),
+      levels = c("early", "average", "late")
+    )
+  )
+
+plot_practice <- primary_summary %>%
+  filter(grepl("duration_effect_late_minus_early", effect)) %>%
+  mutate(CueType = if_else(grepl("^NR", effect), "NR", "R"))
+
+p1 <- ggplot(plot_duration, aes(CueType, median, ymin = lower, ymax = upper)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_hline(yintercept = c(-rope_abs, rope_abs), linetype = "dotted", colour = "grey40") +
+  geom_pointrange() +
+  facet_wrap(~ID) +
+  labs(
+    title = "50→350 ms AbsErr change by cue",
+    subtitle = "Negative = lower error at 350 ms; dotted = ±3° ROPE",
+    y = "Posterior median (deg)", x = "Cue"
+  )
+
+p2 <- ggplot(plot_catch, aes(SessionSlice, median, ymin = lower, ymax = upper, group = 1)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_hline(yintercept = c(-rope_abs, rope_abs), linetype = "dotted", colour = "grey40") +
+  geom_line() +
+  geom_pointrange() +
+  facet_wrap(~ID) +
+  labs(
+    title = "NR catch-up across session slices",
+    subtitle = "Positive = NR improved more than R (50→350)",
+    y = "Posterior median (deg)", x = "Session slice"
+  )
+
+p3 <- ggplot(plot_practice, aes(CueType, median, ymin = lower, ymax = upper)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_hline(yintercept = c(-rope_abs, rope_abs), linetype = "dotted", colour = "grey40") +
+  geom_pointrange() +
+  facet_wrap(~ID) +
+  labs(
+    title = "Practice change in 50→350 duration effect",
+    subtitle = "Late − early; near 0 / in ROPE = slope stable",
+    y = "Posterior median (deg)", x = "Cue"
+  )
+
+p1 / p2 / p3
+```
+
+# 4. Bayesian primary analysis: cirSD (continuous session)
+
+Parallel to AbsErr, but the outcome is **circular SD** of signed errors.
+cirSD is a cell summary (one value per Cue × Duration × Session). To keep the
+**same design formula** as AbsErr and identify residual variance, we use
+**B bootstrap cirSD replicates per cell** (resample trials within the cell).
+
+Model (same fixed + random structure as AbsErr continuous):
+
+`cirSD_deg ~ CueType * DurationF * Session_z + (1 | SessionF)`
+
+Mixture modelling is **not** repeated here: the mixture already targets the
+signed-error distribution directly (finer than AbsErr or cirSD summaries).
+
+## Build bootstrap cirSD dataset and fit / load models
+
+```{r cirsd-bayes-data, message=FALSE, warning=FALSE}
+rope_cir <- rope_abs
+
+B_cir <- 40
+set.seed(1234)
+
+circ_sd_deg <- function(x) {
+  x <- x[is.finite(x)]
+  if (length(x) < 5) return(NA_real_)
+  as.numeric(sd.circular(circular(x, units = "degrees"))) * (180 / pi)
+}
+
+build_cirsd_boot <- function(d_sub, B = B_cir) {
+  rows <- list()
+  i <- 0
+  cues <- levels(d_sub$CueType)
+  durs <- levels(d_sub$DurationF)
+  sess <- levels(d_sub$SessionF)
+  for (cue in cues) {
+    for (dur in durs) {
+      for (sess_i in sess) {
+        idx <- which(
+          d_sub$CueType == cue &
+            d_sub$DurationF == dur &
+            d_sub$SessionF == sess_i
+        )
+        x <- d_sub$SignedErr[idx]
+        x <- x[is.finite(x)]
+        stopifnot(length(x) >= 10)
+        sz <- unique(d_sub$Session_z[idx])
+        stopifnot(length(sz) == 1)
+        for (b in seq_len(B)) {
+          xb <- sample(x, replace = TRUE)
+          i <- i + 1
+          rows[[i]] <- tibble(
+            CueType = cue,
+            DurationF = dur,
+            SessionF = sess_i,
+            Session_z = sz,
+            boot_id = b,
+            cirSD_deg = circ_sd_deg(xb)
+          )
+        }
+      }
+    }
+  }
+  bind_rows(rows) %>%
+    mutate(
+      CueType = factor(CueType, levels = levels(d_sub$CueType)),
+      DurationF = factor(DurationF, levels = levels(d_sub$DurationF)),
+      SessionF = factor(SessionF, levels = levels(d_sub$SessionF))
+    )
+}
+
+dir.create("bayes_primary", showWarnings = FALSE, recursive = TRUE)
+
+cir_boot_files <- c(
+  AQ = "bayes_primary/cirsd_boot_AQ.rds",
+  HC = "bayes_primary/cirsd_boot_HC.rds",
+  YILIU = "bayes_primary/cirsd_boot_YILIU.rds"
+)
+d_cir_AQ <- if (file.exists(cir_boot_files[["AQ"]])) {
+  readRDS(cir_boot_files[["AQ"]])
+} else {
+  tmp <- build_cirsd_boot(d_AQ)
+  saveRDS(tmp, cir_boot_files[["AQ"]])
+  tmp
+}
+d_cir_HC <- if (file.exists(cir_boot_files[["HC"]])) {
+  readRDS(cir_boot_files[["HC"]])
+} else {
+  tmp <- build_cirsd_boot(d_HC)
+  saveRDS(tmp, cir_boot_files[["HC"]])
+  tmp
+}
+d_cir_YILIU <- if (file.exists(cir_boot_files[["YILIU"]])) {
+  readRDS(cir_boot_files[["YILIU"]])
+} else {
+  tmp <- build_cirsd_boot(d_YILIU)
+  saveRDS(tmp, cir_boot_files[["YILIU"]])
+  tmp
+}
+
+stopifnot(nrow(d_cir_AQ) == 2 * 7 * 10 * B_cir)
+
+bayes_priors_cir <- c(
+  prior(normal(40, 20), class = "Intercept"),
+  prior(normal(0, 15), class = "b"),
+  prior(exponential(1), class = "sigma"),
+  prior(exponential(1), class = "sd"),
+  prior(gamma(2, 0.1), class = "nu")
+)
+
+m_cir_AQ <- brm(
+  cirSD_deg ~ CueType * DurationF * Session_z + (1 | SessionF),
+  data = d_cir_AQ,
+  family = student(),
+  prior = bayes_priors_cir,
+  chains = 4, cores = 4, iter = 4000, warmup = 2000,
+  control = list(adapt_delta = 0.95, max_treedepth = 12),
+  seed = 1234,
+  file = "bayes_primary/m_AQ_cirsd",
+  file_refit = "on_change"
+)
+
+m_cir_HC <- brm(
+  cirSD_deg ~ CueType * DurationF * Session_z + (1 | SessionF),
+  data = d_cir_HC,
+  family = student(),
+  prior = bayes_priors_cir,
+  chains = 4, cores = 4, iter = 4000, warmup = 2000,
+  control = list(adapt_delta = 0.95, max_treedepth = 12),
+  seed = 1234,
+  file = "bayes_primary/m_HC_cirsd",
+  file_refit = "on_change"
+)
+
+m_cir_YILIU <- brm(
+  cirSD_deg ~ CueType * DurationF * Session_z + (1 | SessionF),
+  data = d_cir_YILIU,
+  family = student(),
+  prior = bayes_priors_cir,
+  chains = 4, cores = 4, iter = 4000, warmup = 2000,
+  control = list(adapt_delta = 0.95, max_treedepth = 12),
+  seed = 1234,
+  file = "bayes_primary/m_YILIU_cirsd",
+  file_refit = "on_change"
+)
+
+summary(m_cir_AQ)
+summary(m_cir_HC)
+summary(m_cir_YILIU)
+```
+
+## 4.2 Theory contrasts (cirSD; same questions as AbsErr)
+
+```{r cirsd-bayes-contrasts, message=FALSE, warning=FALSE}
+contrast_rows_cir <- list()
+row_i <- 0
+models_cir <- list(AQ = m_cir_AQ, HC = m_cir_HC, YILIU = m_cir_YILIU)
+
+for (pid in names(models_cir)) {
+  model <- models_cir[[pid]]
+
+  emm_gain <- emmeans(model, ~ CueType | DurationF, at = list(Session_z = 0))
+  ct_gain <- contrast(emm_gain, method = list("NR - R" = c(1, -1)), by = "DurationF")
+  draws_gain <- gather_emmeans_draws(ct_gain)
+
+  for (dur in levels(d$DurationF)) {
+    v <- draws_gain$.value[draws_gain$DurationF == dur]
+    v <- v[is.finite(v)]
+    stopifnot(length(v) > 0)
+    row_i <- row_i + 1
+    contrast_rows_cir[[row_i]] <- tibble(
+      ID = pid, effect = paste0("gain_", dur),
+      median = median(v),
+      lower = as.numeric(quantile(v, 0.025)),
+      upper = as.numeric(quantile(v, 0.975)),
+      p_lt_0 = mean(v < 0), p_gt_0 = mean(v > 0),
+      p_in_rope = mean(abs(v) < rope_cir)
+    )
+  }
+  v <- draws_gain$.value[draws_gain$DurationF == "50ms"]
+  v <- v[is.finite(v)]
+  row_i <- row_i + 1
+  contrast_rows_cir[[row_i]] <- tibble(
+    ID = pid, effect = "gain_at_50ms",
+    median = median(v),
+    lower = as.numeric(quantile(v, 0.025)),
+    upper = as.numeric(quantile(v, 0.975)),
+    p_lt_0 = mean(v < 0), p_gt_0 = mean(v > 0),
+    p_in_rope = mean(abs(v) < rope_cir)
+  )
+
+  emm_dur <- emmeans(model, ~ DurationF | CueType, at = list(Session_z = 0))
+  ct_dur <- contrast(
+    emm_dur,
+    method = list("linear_trend" = w_linear, "350ms - 50ms" = w_350_minus_50),
+    by = "CueType"
+  )
+  draws_dur <- gather_emmeans_draws(ct_dur)
+  for (cue in c("NR", "R")) {
+    for (cname in c("linear_trend", "350ms - 50ms")) {
+      v <- draws_dur$.value[draws_dur$CueType == cue & draws_dur$contrast == cname]
+      v <- v[is.finite(v)]
+      stopifnot(length(v) > 0)
+      row_i <- row_i + 1
+      contrast_rows_cir[[row_i]] <- tibble(
+        ID = pid, effect = paste0(cue, ": ", cname),
+        median = median(v),
+        lower = as.numeric(quantile(v, 0.025)),
+        upper = as.numeric(quantile(v, 0.975)),
+        p_lt_0 = mean(v < 0), p_gt_0 = mean(v > 0),
+        p_in_rope = mean(abs(v) < rope_cir)
+      )
+    }
+  }
+
+  emm_dur_sess <- emmeans(
+    model,
+    ~ DurationF | CueType * Session_z,
+    at = list(Session_z = c(early_z, 0, late_z))
+  )
+  ct_dur_sess <- contrast(
+    emm_dur_sess,
+    method = list("350ms - 50ms" = w_350_minus_50),
+    by = c("CueType", "Session_z")
+  )
+  draws_ds <- gather_emmeans_draws(ct_dur_sess) %>% ungroup()
+  sz_levels <- sort(unique(draws_ds$Session_z))
+  stopifnot(length(sz_levels) == 3)
+  draws_ds <- draws_ds %>%
+    mutate(SessionSlice = c("early", "average", "late")[match(Session_z, sz_levels)]) %>%
+    select(.draw, CueType, SessionSlice, .value)
+
+  for (slice in c("early", "average", "late")) {
+    wide <- draws_ds %>%
+      filter(SessionSlice == slice) %>%
+      pivot_wider(names_from = CueType, values_from = .value)
+    v <- wide$R - wide$NR
+    v <- v[is.finite(v)]
+    stopifnot(length(v) > 0)
+    row_i <- row_i + 1
+    contrast_rows_cir[[row_i]] <- tibble(
+      ID = pid, effect = paste0("catchup_", slice),
+      median = median(v),
+      lower = as.numeric(quantile(v, 0.025)),
+      upper = as.numeric(quantile(v, 0.975)),
+      p_lt_0 = mean(v < 0), p_gt_0 = mean(v > 0),
+      p_in_rope = mean(abs(v) < rope_cir)
+    )
+  }
+
+  wide_e <- draws_ds %>%
+    filter(SessionSlice == "early") %>%
+    pivot_wider(names_from = CueType, values_from = .value) %>%
+    mutate(catchup = R - NR)
+  wide_l <- draws_ds %>%
+    filter(SessionSlice == "late") %>%
+    pivot_wider(names_from = CueType, values_from = .value) %>%
+    mutate(catchup = R - NR)
+  v <- wide_l$catchup[match(wide_e$.draw, wide_l$.draw)] - wide_e$catchup
+  v <- v[is.finite(v)]
+  row_i <- row_i + 1
+  contrast_rows_cir[[row_i]] <- tibble(
+    ID = pid, effect = "catchup_late_minus_early",
+    median = median(v),
+    lower = as.numeric(quantile(v, 0.025)),
+    upper = as.numeric(quantile(v, 0.975)),
+    p_lt_0 = mean(v < 0), p_gt_0 = mean(v > 0),
+    p_in_rope = mean(abs(v) < rope_cir)
+  )
+
+  for (cue in c("NR", "R")) {
+    wc <- draws_ds %>%
+      filter(CueType == cue, SessionSlice %in% c("early", "late")) %>%
+      select(.draw, SessionSlice, .value) %>%
+      pivot_wider(names_from = SessionSlice, values_from = .value)
+    v <- wc$late - wc$early
+    v <- v[is.finite(v)]
+    stopifnot(length(v) > 0)
+    row_i <- row_i + 1
+    contrast_rows_cir[[row_i]] <- tibble(
+      ID = pid,
+      effect = paste0(cue, ": duration_effect_late_minus_early"),
+      median = median(v),
+      lower = as.numeric(quantile(v, 0.025)),
+      upper = as.numeric(quantile(v, 0.975)),
+      p_lt_0 = mean(v < 0), p_gt_0 = mean(v > 0),
+      p_in_rope = mean(abs(v) < rope_cir)
+    )
+  }
+}
+
+primary_summary_cir <- bind_rows(contrast_rows_cir) %>% arrange(effect, ID)
+primary_summary_cir
+
+theory_focus_cir <- primary_summary_cir %>%
+  filter(
+    effect %in% c(
+      "gain_at_50ms",
+      "NR: linear_trend", "R: linear_trend",
+      "NR: 350ms - 50ms", "R: 350ms - 50ms",
+      "catchup_early", "catchup_average", "catchup_late",
+      "catchup_late_minus_early",
+      "NR: duration_effect_late_minus_early",
+      "R: duration_effect_late_minus_early"
+    )
+  ) %>%
+  mutate(
+    question = case_when(
+      effect == "gain_at_50ms" ~ "1. redundancy advantage",
+      grepl("linear_trend|350ms - 50ms", effect) ~ "2. duration change by cue",
+      grepl("^catchup_", effect) ~ "3. NR catch-up vs R",
+      grepl("duration_effect_late_minus_early", effect) ~ "4. practice change of duration slope",
+      TRUE ~ "other"
+    )
+  ) %>%
+  arrange(question, effect, ID)
+
+theory_focus_cir
+
+write_csv(theory_focus_cir, "bayes_primary/theory_focus_cirsd.csv")
+write_csv(primary_summary_cir, "bayes_primary/primary_summary_cirsd.csv")
+```
+
+## 4.3 Posterior predictive checks (cirSD)
+
+```{r cirsd-bayes-ppc, fig.width=10, fig.height=4}
+p_ecdf_cir_AQ <- pp_check(m_cir_AQ, ndraws = 50, type = "ecdf_overlay") +
+  labs(title = "AQ: cirSD ECDF", x = "cirSD (deg)")
+p_ecdf_cir_HC <- pp_check(m_cir_HC, ndraws = 50, type = "ecdf_overlay") +
+  labs(title = "HC: cirSD ECDF", x = "cirSD (deg)")
+p_ecdf_cir_YILIU <- pp_check(m_cir_YILIU, ndraws = 50, type = "ecdf_overlay") +
+  labs(title = "YILIU: cirSD ECDF", x = "cirSD (deg)")
+
+p_ecdf_cir_AQ | p_ecdf_cir_HC | p_ecdf_cir_YILIU
+```
+
+## 4.4 Contrast plots (cirSD)
+
+```{r cirsd-bayes-plots, fig.width=10, fig.height=8}
+plot_duration_cir <- primary_summary_cir %>%
+  filter(effect %in% c("NR: 350ms - 50ms", "R: 350ms - 50ms")) %>%
+  mutate(CueType = if_else(grepl("^NR", effect), "NR", "R"))
+
+plot_catch_cir <- primary_summary_cir %>%
+  filter(effect %in% c("catchup_early", "catchup_average", "catchup_late")) %>%
+  mutate(
+    SessionSlice = factor(
+      gsub("catchup_", "", effect),
+      levels = c("early", "average", "late")
+    )
+  )
+
+plot_practice_cir <- primary_summary_cir %>%
+  filter(grepl("duration_effect_late_minus_early", effect)) %>%
+  mutate(CueType = if_else(grepl("^NR", effect), "NR", "R"))
+
+p1c <- ggplot(plot_duration_cir, aes(CueType, median, ymin = lower, ymax = upper)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_hline(yintercept = c(-rope_cir, rope_cir), linetype = "dotted", colour = "grey40") +
+  geom_pointrange() +
+  facet_wrap(~ID) +
+  labs(
+    title = "50→350 ms cirSD change by cue",
+    subtitle = "Negative = lower cirSD at 350 ms; dotted = ±ROPE",
+    y = "Posterior median (deg)", x = "Cue"
+  )
+
+p2c <- ggplot(plot_catch_cir, aes(SessionSlice, median, ymin = lower, ymax = upper, group = 1)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_hline(yintercept = c(-rope_cir, rope_cir), linetype = "dotted", colour = "grey40") +
+  geom_line() +
+  geom_pointrange() +
+  facet_wrap(~ID) +
+  labs(
+    title = "NR catch-up in cirSD across session slices",
+    subtitle = "Positive = NR cirSD fell more than R (50→350)",
+    y = "Posterior median (deg)", x = "Session slice"
+  )
+
+p3c <- ggplot(plot_practice_cir, aes(CueType, median, ymin = lower, ymax = upper)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_hline(yintercept = c(-rope_cir, rope_cir), linetype = "dotted", colour = "grey40") +
+  geom_pointrange() +
+  facet_wrap(~ID) +
+  labs(
+    title = "Practice change in 50→350 cirSD duration effect",
+    subtitle = "Late − early",
+    y = "Posterior median (deg)", x = "Cue"
+  )
+
+p1c / p2c / p3c
+```
+
+# 5. Pre-mixture 1: AbsErr Session 1 vs Session 10 by duration
+
+Question: at fixed cue and duration, is AbsErr higher in Session 1 than Session 10?
+Positive = worse (larger AbsErr) in Session 1. Focus on short durations (≤150 ms).
+
+```{r abserr-s1-s10, message=FALSE, warning=FALSE}
+s1s10_rows <- list()
+row_i <- 0
+
+for (pid in names(models)) {
+  model <- models[[pid]]
+
+  # Model-estimated AbsErr at S1 and S10 for every cue × duration cell.
+  # Session_z order in `at` is s1 then s10; contrast c(1, -1) = S1 − S10.
+  emm <- emmeans(
+    model,
+    ~ Session_z | CueType * DurationF,
+    at = list(Session_z = c(s1_z, s10_z))
+  )
+  ct <- contrast(emm, method = list("S1 - S10" = c(1, -1)), by = c("CueType", "DurationF"))
+  draws <- gather_emmeans_draws(ct)
+
+  for (cue in c("NR", "R")) {
+    for (dur in levels(d$DurationF)) {
+      v <- draws$.value[draws$CueType == cue & draws$DurationF == dur]
+      v <- v[is.finite(v)]
+      stopifnot(length(v) > 0)
+      dur_ms <- as.numeric(gsub("ms", "", dur))
+      row_i <- row_i + 1
+      s1s10_rows[[row_i]] <- tibble(
+        ID = pid,
+        CueType = cue,
+        DurationF = dur,
+        Duration_ms = dur_ms,
+        short_duration = dur_ms <= 150,
+        median = median(v),
+        lower = as.numeric(quantile(v, 0.025)),
+        upper = as.numeric(quantile(v, 0.975)),
+        p_gt_0 = mean(v > 0),
+        p_lt_0 = mean(v < 0),
+        p_in_rope = mean(abs(v) < rope_abs)
+      )
+    }
+
+    # Short-duration average (50/100/150): mean of the three cell contrasts per draw.
+    short <- draws %>%
+      filter(CueType == cue, DurationF %in% c("50ms", "100ms", "150ms")) %>%
+      group_by(.draw) %>%
+      summarise(.value = mean(.value), .groups = "drop")
+    v <- short$.value[is.finite(short$.value)]
+    row_i <- row_i + 1
+    s1s10_rows[[row_i]] <- tibble(
+      ID = pid,
+      CueType = cue,
+      DurationF = "short_mean",
+      Duration_ms = NA_real_,
+      short_duration = TRUE,
+      median = median(v),
+      lower = as.numeric(quantile(v, 0.025)),
+      upper = as.numeric(quantile(v, 0.975)),
+      p_gt_0 = mean(v > 0),
+      p_lt_0 = mean(v < 0),
+      p_in_rope = mean(abs(v) < rope_abs)
+    )
+  }
+}
+
+abserr_s1_s10 <- bind_rows(s1s10_rows)
+abserr_s1_s10_cell <- abserr_s1_s10 %>%
+  filter(DurationF != "short_mean") %>%
+  arrange(ID, CueType, Duration_ms)
+abserr_s1_s10_short <- abserr_s1_s10 %>%
+  filter(DurationF == "short_mean") %>%
+  arrange(ID, CueType)
+
+abserr_s1_s10_cell
+abserr_s1_s10_short
+
+write_csv(abserr_s1_s10_cell, "bayes_primary/abserr_s1_vs_s10_by_duration.csv")
+write_csv(abserr_s1_s10_short, "bayes_primary/abserr_s1_vs_s10_short.csv")
+```
+
+```{r abserr-s1-s10-plot, fig.width=10, fig.height=5}
+ggplot(
+  abserr_s1_s10_cell,
+  aes(Duration_ms, median, ymin = lower, ymax = upper, colour = CueType, group = CueType)
+) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_hline(yintercept = c(-rope_abs, rope_abs), linetype = "dotted", colour = "grey40") +
+  geom_line() +
+  geom_pointrange() +
+  facet_wrap(~ID) +
+  labs(
+    title = "AbsErr Session 1 − Session 10 by duration",
+    subtitle = "Positive = higher AbsErr in Session 1; dotted = ±3° ROPE",
+    x = "Encoding duration (ms)",
+    y = "Posterior median difference (deg)"
+  )
+```
+
+# 6. Pre-mixture 2: cirSD Session 1 vs Session 10 (bootstrap)
+
+Companion in circular-SD units. For each participant × cue × duration:
+compute cirSD in Session 1 and Session 10, then bootstrap S1 − S10.
+
+```{r cirsd-s1-s10, message=FALSE, warning=FALSE}
+B <- 1000  # bootstrap replicates
+set.seed(1234)
+
+ids <- c("AQ", "HC", "YILIU")
+cues <- c("NR", "R")
+durs <- levels(d$DurationF)
+
+cirsd_rows <- list()
+row_i <- 0
+
+for (pid in ids) {
+  for (cue in cues) {
+    for (dur in durs) {
+      # Trials in this cell for Session 1 and Session 10.
+      x1 <- d$SignedErr[d$ID == pid & d$CueType == cue & d$DurationF == dur & d$Session == 1]
+      x10 <- d$SignedErr[d$ID == pid & d$CueType == cue & d$DurationF == dur & d$Session == 10]
+      x1 <- x1[is.finite(x1)]
+      x10 <- x10[is.finite(x10)]
+
+      # Need enough trials for a stable circular SD.
+      if (length(x1) < 5 || length(x10) < 5) {
+        row_i <- row_i + 1
+        cirsd_rows[[row_i]] <- tibble(
+          ID = pid, CueType = cue, DurationF = dur,
+          Duration_ms = as.numeric(gsub("ms", "", dur)),
+          estimate = NA_real_, lower = NA_real_, upper = NA_real_,
+          boot_se = NA_real_, n1 = length(x1), n10 = length(x10),
+          excludes_0 = NA
+        )
+        next
+      }
+
+      # Observed cirSD difference (degrees).
+      sd1 <- as.numeric(sd.circular(circular(x1, units = "degrees"))) * (180 / pi)
+      sd10 <- as.numeric(sd.circular(circular(x10, units = "degrees"))) * (180 / pi)
+      obs <- sd1 - sd10
+
+      # Bootstrap: resample each session's trials with replacement.
+      boot_vals <- numeric(B)
+      for (b in seq_len(B)) {
+        s1_b <- sample(x1, replace = TRUE)
+        s10_b <- sample(x10, replace = TRUE)
+        sd1_b <- as.numeric(sd.circular(circular(s1_b, units = "degrees"))) * (180 / pi)
+        sd10_b <- as.numeric(sd.circular(circular(s10_b, units = "degrees"))) * (180 / pi)
+        boot_vals[b] <- sd1_b - sd10_b
+      }
+      boot_vals <- boot_vals[is.finite(boot_vals)]
+
+      lo <- as.numeric(quantile(boot_vals, 0.025))
+      hi <- as.numeric(quantile(boot_vals, 0.975))
+
+      row_i <- row_i + 1
+      cirsd_rows[[row_i]] <- tibble(
+        ID = pid, CueType = cue, DurationF = dur,
+        Duration_ms = as.numeric(gsub("ms", "", dur)),
+        estimate = obs,
+        lower = lo,
+        upper = hi,
+        boot_se = sd(boot_vals),
+        n1 = length(x1),
+        n10 = length(x10),
+        excludes_0 = (lo > 0 & hi > 0) | (lo < 0 & hi < 0)
+      )
+    }
+  }
+}
+
+cirsd_s1_s10 <- bind_rows(cirsd_rows) %>%
+  arrange(ID, CueType, Duration_ms)
+
+cirsd_s1_s10
+write_csv(cirsd_s1_s10, "bayes_primary/cirsd_s1_vs_s10_bootstrap.csv")
+```
+
+```{r cirsd-s1-s10-short, message=FALSE, warning=FALSE}
+# Short-duration companion: mean of cirSD(50/100/150) in S1 minus same mean in S10.
+# Bootstrap resamples trials within each duration × session cell, then re-averages.
+cirsd_short_rows <- list()
+row_i <- 0
+short_durs <- c("50ms", "100ms", "150ms")
+
+for (pid in ids) {
+  for (cue in cues) {
+    # Observed mean cirSD across the three short durations.
+    sd1_vec <- numeric(3)
+    sd10_vec <- numeric(3)
+    ok <- TRUE
+    for (j in seq_along(short_durs)) {
+      dur <- short_durs[j]
+      x1 <- d$SignedErr[d$ID == pid & d$CueType == cue & d$DurationF == dur & d$Session == 1]
+      x10 <- d$SignedErr[d$ID == pid & d$CueType == cue & d$DurationF == dur & d$Session == 10]
+      x1 <- x1[is.finite(x1)]
+      x10 <- x10[is.finite(x10)]
+      if (length(x1) < 5 || length(x10) < 5) {
+        ok <- FALSE
+        break
+      }
+      sd1_vec[j] <- as.numeric(sd.circular(circular(x1, units = "degrees"))) * (180 / pi)
+      sd10_vec[j] <- as.numeric(sd.circular(circular(x10, units = "degrees"))) * (180 / pi)
+    }
+
+    if (!ok) {
+      row_i <- row_i + 1
+      cirsd_short_rows[[row_i]] <- tibble(
+        ID = pid, CueType = cue,
+        estimate = NA_real_, lower = NA_real_, upper = NA_real_,
+        boot_se = NA_real_, excludes_0 = NA
+      )
+      next
+    }
+
+    obs <- mean(sd1_vec) - mean(sd10_vec)
+
+    boot_vals <- numeric(B)
+    for (b in seq_len(B)) {
+      sd1_b <- numeric(3)
+      sd10_b <- numeric(3)
+      for (j in seq_along(short_durs)) {
+        dur <- short_durs[j]
+        x1 <- d$SignedErr[d$ID == pid & d$CueType == cue & d$DurationF == dur & d$Session == 1]
+        x10 <- d$SignedErr[d$ID == pid & d$CueType == cue & d$DurationF == dur & d$Session == 10]
+        x1 <- x1[is.finite(x1)]
+        x10 <- x10[is.finite(x10)]
+        s1_b <- sample(x1, replace = TRUE)
+        s10_b <- sample(x10, replace = TRUE)
+        sd1_b[j] <- as.numeric(sd.circular(circular(s1_b, units = "degrees"))) * (180 / pi)
+        sd10_b[j] <- as.numeric(sd.circular(circular(s10_b, units = "degrees"))) * (180 / pi)
+      }
+      boot_vals[b] <- mean(sd1_b) - mean(sd10_b)
+    }
+    boot_vals <- boot_vals[is.finite(boot_vals)]
+    lo <- as.numeric(quantile(boot_vals, 0.025))
+    hi <- as.numeric(quantile(boot_vals, 0.975))
+
+    row_i <- row_i + 1
+    cirsd_short_rows[[row_i]] <- tibble(
+      ID = pid, CueType = cue,
+      estimate = obs, lower = lo, upper = hi,
+      boot_se = sd(boot_vals),
+      excludes_0 = (lo > 0 & hi > 0) | (lo < 0 & hi < 0)
+    )
+  }
+}
+
+cirsd_short <- bind_rows(cirsd_short_rows) %>% arrange(ID, CueType)
+cirsd_short
+write_csv(cirsd_short, "bayes_primary/cirsd_s1_vs_s10_short_bootstrap.csv")
+```
+
+```{r cirsd-s1-s10-plot, fig.width=10, fig.height=5}
+ggplot(
+  cirsd_s1_s10,
+  aes(Duration_ms, estimate, ymin = lower, ymax = upper, colour = CueType, group = CueType)
+) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_line() +
+  geom_pointrange() +
+  facet_wrap(~ID) +
+  labs(
+    title = "cirSD Session 1 − Session 10 by duration",
+    subtitle = "Bootstrap 95% CI; positive = higher circular variability in Session 1",
+    x = "Encoding duration (ms)",
+    y = "cirSD difference (deg)"
+  )
+```
+
+# 7. Circular mixture: per-cell ML (target + guess + swap)
+
+Bays-style mixture on signed errors, one independent ML fit per cue × duration
+cell (14 cells × participant; sessions pooled). Always 3 unique non-target
+colours, so the swap term is three equal von Mises bumps:
+
+`p(θ) = p_target · VM(0, κ) + (β/3) Σ_{j=1..3} VM(μ_j, κ) + γ · Uniform`
+
+- Shared κ for target and colour-swap
+- Stick-break order: estimate β (swap) first, then γ from the leftover
+  (pure guesses expected rare); p_target = 1 − β − γ
+- Fits from `Rscript s1_mixture_cells.R` → `mixture_cells/all_cell_params.csv`
+  (Part B of that script is a single worked example; Part C loops all cells)
+
+```{r mixture-load}
+mix_file <- "mixture_cells/all_cell_params.csv"
+stopifnot(file.exists(mix_file))
+
+mix_cells <- read_csv(mix_file, show_col_types = FALSE) %>%
+  mutate(
+    CueType = factor(CueType, levels = c("NR", "R")),
+    DurationF = factor(
+      DurationF,
+      levels = c("50ms", "100ms", "150ms", "200ms", "250ms", "300ms", "350ms")
+    ),
+    Duration_ms = as.numeric(gsub("ms", "", as.character(DurationF)))
+  )
+
+# Basic safety checks.
+stopifnot(all(c("AQ", "HC", "YILIU") %in% mix_cells$ID))
+stopifnot(all(mix_cells$convergence == 0 | is.na(mix_cells$convergence)))
+stopifnot(all(mix_cells$p_target + mix_cells$gamma + mix_cells$beta > 0.99))
+stopifnot(all(mix_cells$p_target + mix_cells$gamma + mix_cells$beta < 1.01))
+
+mix_cells %>%
+  select(ID, CueType, DurationF, n_trials, kappa, circSD_deg,
+         p_target, gamma, beta, nll, convergence) %>%
+  mutate(across(c(kappa, circSD_deg, p_target, gamma, beta, nll), ~ round(.x, 3))) %>%
+  arrange(ID, CueType, DurationF)
+```
+
+```{r mixture-proportion-plot, fig.width=10, fig.height=6}
+# Stacked response proportions (target / swap / guess) — must sum to 1.
+prop_long <- mix_cells %>%
+  select(ID, CueType, Duration_ms, p_target, gamma, beta) %>%
+  pivot_longer(
+    c(p_target, gamma, beta),
+    names_to = "component",
+    values_to = "proportion"
+  ) %>%
+  mutate(
+    component = factor(
+      component,
+      levels = c("p_target", "beta", "gamma"),
+      labels = c("Target", "Colour swap", "Guess")
+    )
+  )
+
+ggplot(prop_long, aes(Duration_ms, proportion, fill = component)) +
+  geom_col(width = 35, colour = "grey20", linewidth = 0.2) +
+  facet_grid(CueType ~ ID) +
+  scale_x_continuous(breaks = seq(50, 350, by = 50)) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, 1)) +
+  labs(
+    title = "Mixture response proportions by cue and duration",
+    subtitle = "Independent ML fits per cell; sessions pooled",
+    x = "Encoding duration (ms)",
+    y = "Response proportion",
+    fill = "Component"
+  ) +
+  theme(legend.position = "bottom")
+```
+
+```{r mixture-kappa-plot, fig.width=10, fig.height=4}
+# κ is precision, not a proportion — plot separately.
+ggplot(mix_cells, aes(Duration_ms, kappa, colour = CueType, group = CueType)) +
+  geom_line() +
+  geom_point(size = 2) +
+  facet_wrap(~ID, scales = "free_y") +
+  scale_x_continuous(breaks = seq(50, 350, by = 50)) +
+  labs(
+    title = "Shared von Mises precision (κ) by cue and duration",
+    x = "Encoding duration (ms)",
+    y = "κ"
+  )
+```
+
+```{r mixture-weight-lines, fig.width=10, fig.height=6}
+ggplot(prop_long, aes(Duration_ms, proportion, colour = CueType, group = CueType)) +
+  geom_line() +
+  geom_point() +
+  facet_grid(component ~ ID, scales = "free_y") +
+  scale_x_continuous(breaks = seq(50, 350, by = 100)) +
+  labs(
+    title = "Mixture weights by cue and duration",
+    x = "Encoding duration (ms)",
+    y = "Proportion"
+  )
+```
+
+
+## Appendix
+
+Legacy / sensitivity material. Not rewritten in the linear style of Sections 1–7;
+kept for reference and frequentist checks. Primary claims come from Sections 3–7.
+
+# Sensitivity Check: Participant-Level Mixed Models
+
+Each currently complete participant (AQ, HC, YILIU) is analysed independently.
+Cue type and encoding duration are categorical predictors, session progression
+is continuous, and the random session intercept accounts for clustering of
+trials within sessions.
+
+```{r participant-level-models}
+d_AQ <- droplevels(filter(d, ID == "AQ"))
+d_HC <- droplevels(filter(d, ID == "HC"))
+d_YILIU <- droplevels(filter(d, ID == "YILIU"))
+
+m_AQ <- lme(
+  fixed = AbsErr ~ CueType * DurationF * Session_z,
+  random = ~ 1 | SessionF,
+  data = d_AQ,
+  method = "REML"
+)
+
+m_HC <- lme(
+  fixed = AbsErr ~ CueType * DurationF * Session_z,
+  random = ~ 1 | SessionF,
+  data = d_HC,
+  method = "REML"
+)
+
+m_YILIU <- lme(
+  fixed = AbsErr ~ CueType * DurationF * Session_z,
+  random = ~ 1 | SessionF,
+  data = d_YILIU,
+  method = "REML"
+)
+
+summary(m_AQ)
+anova(m_AQ, type = "marginal")
+
+summary(m_HC)
+anova(m_HC, type = "marginal")
+
+summary(m_YILIU)
+anova(m_YILIU, type = "marginal")
+```
+
+## Descriptive Means and Variability
+
+Observed absolute-error means and SDs, plus circular SD of signed errors, are
+summarised by cue type, encoding duration, and session phase. Means quantify
+average error magnitude. Absolute-error SD and circular SD quantify response
+variability / precision.
+
+```{r descriptive-means-and-sd}
+library(circular)
+
+circSD_deg <- function(x) {
+  as.numeric(
+    circular::sd.circular(circular(x, units = "degrees"))
+  ) * (180 / pi)
+}
+
+descriptive_summary <- d %>%
+  filter(ID %in% c("AQ", "HC", "YILIU")) %>%
+  group_by(ID, CueType, DurationF, SessionPhase) %>%
+  summarise(
+    n = n(),
+    mean_AbsErr = mean(AbsErr),
+    sd_AbsErr = sd(AbsErr),
+    circSD = circSD_deg(SignedErr),
+    .groups = "drop"
+  ) %>%
+  arrange(ID, SessionPhase, CueType, DurationF)
+
+descriptive_summary
+
+descriptive_gain <- descriptive_summary %>%
+  select(ID, CueType, DurationF, SessionPhase, mean_AbsErr, circSD) %>%
+  pivot_wider(
+    names_from = CueType,
+    values_from = c(mean_AbsErr, circSD)
+  ) %>%
+  mutate(
+    mean_gain = mean_AbsErr_NR - mean_AbsErr_R,
+    circSD_gain = circSD_NR - circSD_R
+  )
+
+descriptive_gain
+```
+
+## Catch-Up Across Session Progression
+
+Early sessions are Sessions 1–2; late sessions are Sessions 9–10; average
+session uses `Session_z = 0`.
+
+For each session slice:
+
+- `350ms - 50ms` is estimated separately for NR and R. Negative values mean
+  lower absolute error at 350 ms.
+- Catch-up is `(R change) - (NR change)`. Positive values mean NR improved more
+  than R, as predicted by a perceptual encoding account.
+- Catch-up progression is `late catch-up - early catch-up`.
+
+```{r participant-catch-up-contrasts}
+early_z <- mean(unique(d$Session_z[d$Session %in% c(1, 2)]))
+late_z <- mean(unique(d$Session_z[d$Session %in% c(9, 10)]))
+session_slices <- c(early = early_z, average = 0, late = late_z)
+
+catch_up_by_session <- function(model) {
+  duration_by_cue <- emmeans(
+    model,
+    ~ DurationF | CueType * Session_z,
+    at = list(Session_z = unname(session_slices))
+  )
+
+  cue_changes <- contrast(
+    duration_by_cue,
+    method = list(
+      "350ms - 50ms" = c(-1, 0, 0, 0, 0, 0, 1)
+    ),
+    by = c("CueType", "Session_z")
+  )
+
+  catch_up <- contrast(
+    cue_changes,
+    method = list(
+      "R change - NR change" = c(-1, 1)
+    ),
+    by = "Session_z"
+  )
+
+  # Session_z order from `at` is early, average, late after numerical sorting.
+  catch_up_progression <- contrast(
+    catch_up,
+    method = list(
+      "Late catch-up - early catch-up" = c(-1, 0, 1)
+    ),
+    by = NULL
+  )
+
+  list(
+    cue_changes = summary(cue_changes, infer = c(TRUE, TRUE)),
+    catch_up = summary(catch_up, infer = c(TRUE, TRUE)),
+    catch_up_progression = summary(
+      catch_up_progression,
+      infer = c(TRUE, TRUE)
+    )
+  )
+}
+
+catch_AQ <- catch_up_by_session(m_AQ)
+catch_HC <- catch_up_by_session(m_HC)
+catch_YILIU <- catch_up_by_session(m_YILIU)
+
+catch_AQ$cue_changes
+catch_AQ$catch_up
+catch_AQ$catch_up_progression
+
+catch_HC$cue_changes
+catch_HC$catch_up
+catch_HC$catch_up_progression
+
+catch_YILIU$cue_changes
+catch_YILIU$catch_up
+catch_YILIU$catch_up_progression
+```
+
+## Model-Estimated Means With Uncertainty
+
+Fitted absolute-error means are reported with standard errors and 95% CIs for
+each cue × duration cell at early, average, and late sessions. These are
+uncertainty estimates for the means, not response-distribution SDs.
+
+```{r model-estimated-means}
+model_means_by_session <- function(model, participant) {
+  emmeans(
+    model,
+    ~ CueType * DurationF | Session_z,
+    at = list(Session_z = unname(session_slices))
+  ) %>%
+    summary(infer = c(TRUE, FALSE)) %>%
+    as_tibble() %>%
+    mutate(
+      ID = participant,
+      SessionSlice = case_when(
+        abs(Session_z - early_z) < 1e-8 ~ "Early",
+        abs(Session_z - 0) < 1e-8 ~ "Average",
+        abs(Session_z - late_z) < 1e-8 ~ "Late"
+      )
+    ) %>%
+    select(
+      ID, SessionSlice, CueType, DurationF,
+      emmean, SE, lower.CL, upper.CL
+    )
+}
+
+model_means <- bind_rows(
+  model_means_by_session(m_AQ, "AQ"),
+  model_means_by_session(m_HC, "HC"),
+  model_means_by_session(m_YILIU, "YILIU")
+)
+
+model_means
+
+model_gain <- model_means %>%
+  select(ID, SessionSlice, CueType, DurationF, emmean) %>%
+  pivot_wider(names_from = CueType, values_from = emmean) %>%
+  mutate(gain = NR - R)
+
+model_gain
+```
+
+## Cue-Specific Duration and Session Effects
+
+The joint models above directly test redundancy gain. The following models
+analyse NR-cue and R-cue trials separately so that duration-related improvement
+can be assessed within each cue condition.
+
+Each model tests:
+
+- whether absolute error differs across encoding durations;
+- whether absolute error changes across sessions;
+- whether the duration function changes across sessions.
+
+```{r cue-specific-models}
+fit_cue_model <- function(data, cue) {
+  cue_data <- droplevels(filter(data, CueType == cue))
+
+  lme(
+    fixed = AbsErr ~ DurationF * Session_z,
+    random = ~ 1 | SessionF,
+    data = cue_data,
+    method = "REML"
+  )
+}
+
+m_AQ_NR <- fit_cue_model(d_AQ, "NR")
+m_AQ_R <- fit_cue_model(d_AQ, "R")
+
+m_HC_NR <- fit_cue_model(d_HC, "NR")
+m_HC_R <- fit_cue_model(d_HC, "R")
+
+m_YILIU_NR <- fit_cue_model(d_YILIU, "NR")
+m_YILIU_R <- fit_cue_model(d_YILIU, "R")
+
+cue_models <- list(
+  AQ_NR = m_AQ_NR,
+  AQ_R = m_AQ_R,
+  HC_NR = m_HC_NR,
+  HC_R = m_HC_R,
+  YILIU_NR = m_YILIU_NR,
+  YILIU_R = m_YILIU_R
+)
+
+for (model_name in names(cue_models)) {
+  cat("\n\n###", model_name, "\n\n")
+  print(anova(cue_models[[model_name]], type = "marginal"))
+}
+```
+
+## Does the Encoding-Duration Effect Reduce with Practice?
+
+For each cue-specific model:
+
+- `350ms - 50ms` estimates encoding-duration improvement. Negative values mean
+  lower error at 350 ms.
+- `Late change - early change` tests whether this duration effect changes with
+  practice. A positive value means that an early 350-ms advantage becomes
+  smaller during later sessions.
+
+```{r cue-specific-duration-by-session-contrasts}
+duration_session_test <- function(model) {
+  duration_means <- emmeans(
+    model,
+    ~ DurationF | Session_z,
+    at = list(Session_z = c(early_z, late_z))
+  )
+
+  duration_changes <- contrast(
+    duration_means,
+    method = list(
+      "350ms - 50ms" = c(-1, 0, 0, 0, 0, 0, 1)
+    ),
+    by = "Session_z"
+  )
+
+  practice_change <- contrast(
+    duration_changes,
+    method = list(
+      "Late change - early change" = c(-1, 1)
+    ),
+    by = NULL
+  )
+
+  list(
+    duration_changes = summary(
+      duration_changes,
+      infer = c(TRUE, TRUE)
+    ),
+    practice_change = summary(
+      practice_change,
+      infer = c(TRUE, TRUE)
+    )
+  )
+}
+
+duration_session_results <- lapply(
+  cue_models,
+  duration_session_test
+)
+
+for (model_name in names(duration_session_results)) {
+  cat("\n\n###", model_name, "\n\n")
+  print(duration_session_results[[model_name]]$duration_changes)
+  print(duration_session_results[[model_name]]$practice_change)
+}
+```
+
+
+
+# Redundancy Gain Function
+This plot isolates redundancy gain: Redundancy Gain = (NR error - R error)
+Theoretically important because the primary research question concerns whether 
+redundancy gain changes as exposure duration increases, rather than just whether overall performance improves with duration.
+Encoding-rate/perceptual accounts predict that non-redundant items should 
+gradually "catch up" with increased exposure duration, producing a decreasing 
+redundancy-gain function
+In contrast, mnemonic/post-encoding accounts predict that redundancy
+gain should emerge rapidly and remain relatively stable across durations.
+
+Thus, the shape of the redundancy-gain function directly visualizes
+whether redundancy effects themselves are exposure-duration dependent.
+
+Current descriptive pattern:
+
+# NOTE:
+This figure is descriptive only. Bayesian hierarchical models are required to 
+formally assess the magnitude and uncertainty of the Cue × Duration interaction.
+
+```{r redundancy-gain}
+gain_d <- d %>%
+  group_by(ID, DurationF, CueType) %>%
+  summarise(
+    mean_abs = mean(AbsErr),
+    .groups = "drop"
+  ) %>%
+  pivot_wider(
+    names_from = CueType,
+    values_from = mean_abs
+  ) %>%
+  mutate(
+    RedundancyGain = NR - R
+  )
+ggplot(gain_d,
+       aes(DurationF, RedundancyGain,
+           group = ID)) +
+  geom_line(alpha = .5) +
+  geom_point(alpha = .7) +
+  stat_summary(
+    aes(group = 1),
+    fun = mean,
+    geom = "line",
+    linewidth = 1.5,
+    colour = "black"
+  ) +
+  stat_summary(
+    aes(group = 1),
+    fun = mean,
+    geom = "point",
+    size = 3,
+    colour = "black"
+  ) +
+  labs(
+    y = "Redundancy Gain (NR - R)",
+    x = "Exposure Duration"
+  )
+```
+
+# INITIAL BAYESIAN HIERARCHICAL PRECISION MODEL
+Goal:
+First inferential test of whether redundancy gain depends on exposure duration.
+
+DV
+- Absolute circular response error (AbsErr)
+
+Fixed effects:
+- CueType: tests overall redundancy gain (R vs NR)
+- DurationF: tests whether overall precision changes across exposure durations
+- CueType × DurationF: critical interaction term testing whether redundancy gain 
+changes as a function of exposure duration
+- SessionF: included as a fixed-effect control factor to account for 
+practice/learning effects across sessions
+
+Random effects:
+- varying intercepts by participant
+- varying CueType slopes by participant
+Random-effects structure allows:
+- baseline precision differences between participants
+- participant-specific redundancy gain magnitude
+
+Distributional family:
+- Student-t likelihood was chosen because trial-level response-error 
+distributions contain heavy tails and occasional large-error trials, which 
+violate normality assumptions.
+
+Current modelling rationale:
+
+- Duration and Session are initially treated as categorical factors to avoid 
+imposing assumptions about monotonicity or functional form.
+
+Further analyses:
+- continuous duration/session models
+- logarithmic/asymptotic duration functions
+- model comparison (categorical vs continuous formulations)
+- practical magnitude assessment of Cue × Duration interaction
+
+Theoretically:
+- encoding-rate/perceptual accounts predict duration-dependent redundancy gain
+- mnemonic/post-encoding accounts predict relatively stable redundancy gain 
+across durations
+Thus, CueType × DurationF is the primary theoretical parameter of interest.
+
+```{r model1, message=FALSE}
+m1 <- brm(
+  AbsErr ~ CueType * DurationF + SessionF +
+    (1 + CueType | ID),
+  data = d,
+  family = student(),
+  prior = c(
+    prior(normal(40, 20), class = Intercept),
+    prior(normal(0, 10), class = b),
+    prior(exponential(1), class = sigma),
+    prior(exponential(1), class = sd)
+  ),
+  chains = 4,
+  cores = 4,
+  iter = 4000,
+  warmup = 2000,
+  control = list(
+    adapt_delta = .95,
+    max_treedepth = 15
+  ),
+  seed = 1234
+)
+
+saveRDS(m1, "m1_categorical_sessionfactor.rds")
+```
+
+# Model Summary (seed 1234)
+ Family: student 
+  Links: mu = identity 
+Formula: AbsErr ~ CueType * DurationF + SessionF + (1 + CueType | ID) 
+   Data: d (Number of observations: 12599) 
+  Draws: 4 chains, each with iter = 4000; warmup = 2000; thin = 1;
+         total post-warmup draws = 8000
+
+Multilevel Hyperparameters:
+~ID (Number of levels: 3) 
+                        Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+sd(Intercept)               2.07      0.85     0.95     4.22 1.00     5399     5513
+sd(CueTypeR)                1.68      0.78     0.66     3.65 1.00     4774     5356
+cor(Intercept,CueTypeR)    -0.12      0.39    -0.78     0.64 1.00     5005     5291
+
+Regression Coefficients:
+                        Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+Intercept                  18.02      1.44    15.26    20.97 1.00     3038     4063
+CueTypeR                   -6.97      1.28    -9.42    -4.32 1.00     2949     3974
+DurationF100ms              1.09      0.83    -0.55     2.70 1.00     3094     4615
+DurationF150ms             -2.38      0.83    -3.99    -0.76 1.00     3070     4613
+DurationF200ms             -2.01      0.80    -3.56    -0.44 1.00     2883     4493
+DurationF250ms             -1.66      0.78    -3.20    -0.12 1.00     3014     4723
+DurationF300ms             -2.90      0.74    -4.35    -1.43 1.00     2770     4118
+DurationF350ms             -2.46      0.77    -3.94    -0.96 1.00     2823     4334
+SessionF2                   0.03      0.52    -0.98     1.02 1.00     4048     5713
+SessionF3                  -0.96      0.49    -1.91    -0.02 1.00     3720     5482
+SessionF4                  -1.10      0.48    -2.05    -0.18 1.00     3682     5628
+SessionF5                  -1.15      0.49    -2.11    -0.19 1.00     3747     5029
+SessionF6                  -1.27      0.48    -2.20    -0.31 1.00     3659     5577
+SessionF7                  -0.44      0.49    -1.40     0.51 1.00     3620     5043
+SessionF8                  -1.14      0.49    -2.09    -0.17 1.00     3703     5314
+SessionF9                  -1.46      0.49    -2.42    -0.49 1.00     3679     5214
+SessionF10                 -1.51      0.48    -2.46    -0.57 1.00     3863     5762
+CueTypeR:DurationF100ms    -1.88      0.96    -3.74     0.01 1.00     3198     4557
+CueTypeR:DurationF150ms     1.59      0.96    -0.28     3.44 1.00     3169     5032
+CueTypeR:DurationF200ms     0.68      0.93    -1.12     2.49 1.00     2927     4508
+CueTypeR:DurationF250ms    -0.10      0.90    -1.85     1.66 1.00     2873     4608
+CueTypeR:DurationF300ms     1.74      0.87     0.02     3.46 1.00     2834     4754
+CueTypeR:DurationF350ms     1.56      0.90    -0.21     3.35 1.00     2885     4588
+
+Further Distributional Parameters:
+      Estimate Est.Error l-95% CI u-95% CI Rhat Bulk_ESS Tail_ESS
+sigma     8.52      0.13     8.27     8.77 1.00     7641     6496
+nu        1.20      0.02     1.16     1.24 1.00     8467     5890
+
+Draws were sampled using sample(hmc). For each parameter, Bulk_ESS
+and Tail_ESS are effective sample size measures, and Rhat is the potential
+scale reduction factor on split chains (at convergence, Rhat = 1).
+
+
+```{r model1-summary}
+m1 <- readRDS("m1_categorical_sessionfactor.rds")
+summary(m1)
+#save.image("S1_analysis_workspace.RData")
+```
+
+# Posterior Diagnostics
+
+```{r diagnostics}
+plot(m1, variable = "^b_", regex = TRUE)
+plot(m1, variable = "^sd_", regex = TRUE)
+pp_check(m1, ndraws = 100)
+```
+
+# Conditional Effects
+
+## Cue × Duration
+
+```{r cond-effects}
+conditional_effects(
+  m1,
+  effects = "DurationF:CueType"
+)
+```
+
+# Posterior Estimates
+
+```{r posterior-estimates}
+fixef(m1)
+```
+
+# Model 1 Sum coding: Summed reference
+
+```{r Model1Sum}
+contrasts(d$CueType) <- contr.sum(2)
+contrasts(d$DurationF) <- contr.sum(7)
+contrasts(d$SessionF) <- contr.sum(length(levels(d$SessionF)))
+
+m1_sum <- brm(
+  AbsErr ~ CueType * DurationF + SessionF +
+    (1 + CueType | ID),
+  data = d,
+  family = student(),
+  prior = c(
+    prior(normal(40, 20), class = Intercept),
+    prior(normal(0, 10), class = b),
+    prior(exponential(1), class = sigma),
+    prior(exponential(1), class = sd)
+  ),
+  chains = 4,
+  cores = 4,
+  iter = 4000,
+  warmup = 2000,
+  control = list(adapt_delta = .95, max_treedepth = 15),
+  seed = 1234
+)
+
+saveRDS(m1_sum, "m1_sum.rds")
+```
+
+```{r model1sum-summary}
+m1_sum <- readRDS("m1_sum.rds")
+summary(m1_sum)
+
+#save.image("S1_analysis_workspace.RData")
+```
+
+
+```{r cond-effects}
+conditional_effects(
+  m1_sum
+)
+```
+
+```{r posterior-estimates}
+fixef(m1_sum)
+emm_cue_duration <- emmeans(
+  m1_sum,
+  ~ CueType * DurationF
+)
+
+emm_cue_duration
+
+gain_by_duration <- contrast(
+  emm_cue_duration,
+  method = list("NR - R" = c(1, -1)),
+  by = "DurationF"
+)
+
+gain_by_duration
+
+gain_df <- as.data.frame(confint(gain_by_duration))
+
+ggplot(gain_df, aes(x = DurationF, y = estimate)) +
+  geom_line(aes(group = 1), linewidth = 1) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = lower.HPD, ymax = upper.HPD), width = .15) +
+  labs(
+    x = "Exposure Duration",
+    y = "Estimated Redundancy Gain (NR - R)"
+  ) +
+  theme_bw()
+```
+
+# MODEL 2: CATEGORICAL INTERACTION-LEARNING MODEL
+
+Goal: Tests whether the CueType × DurationF pattern changes across sessions.
+
+Compared with m1_sum:
+- m1_sum controls for SessionF as a categorical nuisance factor.
+- m2_sum tests whether session/practice modulates the duration-dependence of 
+redundancy gain.
+
+Critical term:
+CueType × DurationF × SessionF
+
+Interpretation:
+If this three-way interaction is meaningfully large, then practice changes how 
+redundancy gain varies across exposure duration.
+
+If small/uncertain, then practice may improve overall performance without 
+substantially changing the redundancy-duration relation.
+
+```{r model2, message=FALSE}
+m2_sessionz <- brm(
+  AbsErr ~ CueType * DurationF * Session_z +
+    (1 + CueType | ID),
+  data = d,
+  family = student(),
+  prior = c(
+    prior(normal(40, 20), class = Intercept),
+    prior(normal(0, 10), class = b),
+    prior(exponential(1), class = sigma),
+    prior(exponential(1), class = sd)
+  ),
+  chains = 4,
+  cores = 4,
+  iter = 4000,
+  warmup = 2000,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 15
+  ),
+  seed = 2346
+)
+
+saveRDS(m2_sessionz, "m2_sessionz_cue_duration_learning.rds")
+```
+
+# Model 2 Summary
+
+```{r model2-summary}
+m2_sessionz <- readRDS("m2_sessionz_cue_duration_learning.rds")
+summary(m2_sessionz)
+
+```
+
+# Estimated marginal means: Cue × Duration at average session
+```{r}
+emm_m2 <- emmeans(
+
+  m2_sessionz,
+
+  ~ CueType * DurationF,
+
+  at = list(Session_z = 0)
+
+)
+
+emm_m2
+
+confint(emm_m2)
+```
+
+# Posterior redundancy gain estimates at average session
+```{r}
+gain_m2 <- contrast(
+  emm_m2,
+  method = list("NR - R" = c(1, -1)),
+  by = "DurationF"
+)
+
+gain_m2
+confint(gain_m2)
+```
+
+# Convert redundancy gain estimates to dataframe and plot
+```{r}
+gain_m2_df <- as.data.frame(confint(gain_m2))
+
+names(gain_m2_df)
+
+ggplot(gain_m2_df, aes(x = DurationF, y = estimate)) +
+  geom_line(aes(group = 1), linewidth = 1) +
+  geom_point(size = 3) +
+  geom_errorbar(
+    aes(ymin = lower.HPD, ymax = upper.HPD),
+    width = .15
+  ) +
+  labs(
+    x = "Exposure Duration",
+    y = "Estimated Redundancy Gain (NR - R)",
+    title = "Posterior Redundancy Gain at Average Session"
+  ) +
+  theme_bw()
+```
+
+
+# Session learning visualization: predicted AbsErr across Session_z
+```{r}
+session_grid <- expand.grid(
+  Session_z = seq(min(d$Session_z), max(d$Session_z), length.out = 100),
+  CueType = levels(d$CueType),
+  DurationF = levels(d$DurationF)
+)
+
+pred_session <- fitted(
+  m2_sessionz,
+  newdata = session_grid,
+  re_formula = NA,
+  summary = TRUE
+)
+
+session_pred_df <- bind_cols(
+  session_grid,
+  as.data.frame(pred_session)
+)
+
+ggplot(
+  session_pred_df,
+  aes(x = Session_z, y = Estimate, colour = CueType)
+) +
+  geom_line(linewidth = 1) +
+  geom_ribbon(
+    aes(ymin = Q2.5, ymax = Q97.5, fill = CueType),
+    alpha = .15,
+    colour = NA
+  ) +
+  facet_wrap(~DurationF) +
+  labs(
+    x = "Session progression (z-scored)",
+    y = "Predicted Absolute Error (deg)",
+    title = "Predicted Session Learning by Cue and Duration"
+  ) +
+  theme_bw()
+```
+
+# Optional: easier session plot averaged across duration
+```{r}
+session_grid_avg <- expand.grid(
+  Session_z = seq(min(d$Session_z), max(d$Session_z), length.out = 100),
+  CueType = levels(d$CueType),
+  DurationF = levels(d$DurationF)
+)
+
+pred_session_avg <- fitted(
+  m2_sessionz,
+  newdata = session_grid_avg,
+  re_formula = NA,
+  summary = TRUE
+)
+
+session_avg_df <- bind_cols(
+  session_grid_avg,
+  as.data.frame(pred_session_avg)
+) %>%
+  group_by(Session_z, CueType) %>%
+  summarise(
+    Estimate = mean(Estimate),
+    Q2.5 = mean(Q2.5),
+    Q97.5 = mean(Q97.5),
+    .groups = "drop"
+  )
+
+ggplot(
+  session_avg_df,
+  aes(x = Session_z, y = Estimate, colour = CueType)
+) +
+  geom_line(linewidth = 1.2) +
+  geom_ribbon(
+    aes(ymin = Q2.5, ymax = Q97.5, fill = CueType),
+    alpha = .15,
+    colour = NA
+  ) +
+  labs(
+    x = "Session progression (z-scored)",
+    y = "Predicted Absolute Error (deg)",
+    title = "Predicted Session Learning Averaged Across Durations"
+  ) +
+  theme_bw()
+```
+
+# Model comparison: m1_sum vs m2_sessionz
+```{r}
+loo_m1_sum <- loo(m1_sum)
+loo_m2_sessionz <- loo(m2_sessionz)
+
+loo_compare(loo_m1_sum, loo_m2_sessionz)
+```
+
+```{r}
+loo_m1_sum <- loo(m1_sum, moment_match = TRUE)
+loo_m2_sessionz <- loo(m2_sessionz, moment_match = TRUE)
+
+loo_compare(loo_m1_sum, loo_m2_sessionz)
+```
+
+```{r}
+saveRDS(loo_m1_sum, "loo_m1_sum.rds")
+saveRDS(loo_m2_sessionz, "loo_m2_sessionz.rds")
+saveRDS(gain_m2, "gain_m2_sessionz.rds")
+```
+
+# RT Model
+
+Secondary analysis.
+
+```{r rt-model, message=FALSE}
+
+m_rt <- brm(
+
+  logRT ~ CueType * Duration + Session_z +
+
+    (1 + CueType | ID),
+
+  data = d,
+
+  family = gaussian(),
+
+  prior = c(
+
+    prior(normal(6, 1), class = Intercept),
+
+    prior(normal(0, .2), class = b),
+
+    prior(exponential(1), class = sigma),
+
+    prior(exponential(1), class = sd)
+
+  ),
+
+  chains = 4,
+
+  cores = 4,
+
+  iter = 4000,
+
+  control = list(
+
+    adapt_delta = .95
+
+  ),
+
+  seed = 2468
+
+)
+
+```
+
+# RT Summary
+
+```{r rt-summary}
+
+summary(m_rt)
+
+```
+
+# Save Models
+
+```{r save-models}
+
+saveRDS(m1, "m1_precision_main.rds")
+
+saveRDS(m2, "m2_precision_learning.rds")
+
+saveRDS(m_rt, "m_rt.rds")
+
+```

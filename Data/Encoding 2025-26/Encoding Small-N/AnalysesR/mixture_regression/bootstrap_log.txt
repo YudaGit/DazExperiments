@@ -1,0 +1,108 @@
+Using n_cores = 4
+Bootstrap AQ: B = 60, maxit = 45, cores = 4
+  AQ boot 10/60
+  AQ boot 20/60
+  AQ boot 30/60
+  AQ boot 40/60
+  AQ boot 50/60
+  AQ boot 60/60
+  kept 60/60 replicates
+Bootstrap HC: B = 60, maxit = 45, cores = 4
+  HC boot 10/60
+  HC boot 20/60
+  HC boot 30/60
+  HC boot 40/60
+  HC boot 50/60
+  HC boot 60/60
+  kept 60/60 replicates
+Bootstrap YILIU: B = 60, maxit = 45, cores = 4
+  YILIU boot 10/60
+  YILIU boot 20/60
+  YILIU boot 30/60
+  YILIU boot 40/60
+  YILIU boot 50/60
+  YILIU boot 60/60
+  kept 60/60 replicates
+
+===== Linear duration trends (average session) =====
+      ID                effect estimate    lower    upper excludes_0
+1     AQ  NR_linear_trend_beta  -0.2210  -0.4832   0.2147      FALSE
+2     HC  NR_linear_trend_beta   0.1889  -0.1548   0.4628      FALSE
+3  YILIU  NR_linear_trend_beta  -0.4380  -0.8090  -0.1029       TRUE
+4     AQ NR_linear_trend_gamma   0.0759  -0.3897   0.5329      FALSE
+5     HC NR_linear_trend_gamma  -0.1076  -0.3938   0.1950      FALSE
+6  YILIU NR_linear_trend_gamma   0.5139  -0.0516   0.8972      FALSE
+7     AQ NR_linear_trend_kappa   7.4527  -0.5467  18.3808      FALSE
+8     HC NR_linear_trend_kappa  11.7959   7.2973  20.9791       TRUE
+9  YILIU NR_linear_trend_kappa  18.6650   6.2072  37.6672       TRUE
+10    AQ   R_linear_trend_beta  -0.0607  -0.2116   0.0471      FALSE
+11    HC   R_linear_trend_beta  -0.1187  -0.2124  -0.0183       TRUE
+12 YILIU   R_linear_trend_beta   0.0214  -0.0591   0.0683      FALSE
+13    AQ  R_linear_trend_gamma  -0.1165  -0.2490  -0.0102       TRUE
+14    HC  R_linear_trend_gamma  -0.0420  -0.1887   0.1051      FALSE
+15 YILIU  R_linear_trend_gamma  -0.2017  -0.3330  -0.0660       TRUE
+16    AQ  R_linear_trend_kappa  14.7105 -12.2369  31.8260      FALSE
+17    HC  R_linear_trend_kappa   4.6769  -8.2768  18.4552      FALSE
+18 YILIU  R_linear_trend_kappa  75.0110  31.6270 132.1208       TRUE
+
+===== 350-50 contrasts =====
+      ID                effect estimate     lower    upper excludes_0
+1     AQ  NR_350_minus_50_beta -0.09872 -0.162216  0.02506      FALSE
+2     HC  NR_350_minus_50_beta  0.01361 -0.078073  0.09354      FALSE
+3  YILIU  NR_350_minus_50_beta -0.14476 -0.225859 -0.04990       TRUE
+4     AQ NR_350_minus_50_gamma  0.09054  0.005004  0.22671       TRUE
+5     HC NR_350_minus_50_gamma  0.06535  0.008759  0.15907       TRUE
+6  YILIU NR_350_minus_50_gamma  0.15836  0.030575  0.23629       TRUE
+7     AQ NR_350_minus_50_kappa  1.83988  0.269920  4.52733       TRUE
+8     HC NR_350_minus_50_kappa  2.83635  1.113033  5.76016       TRUE
+9  YILIU NR_350_minus_50_kappa  0.82779 -1.591673  3.77389      FALSE
+10    AQ   R_350_minus_50_beta -0.00513 -0.053240  0.02395      FALSE
+11    HC   R_350_minus_50_beta -0.04190 -0.065886 -0.01681       TRUE
+12 YILIU   R_350_minus_50_beta  0.00286 -0.023019  0.01730      FALSE
+13    AQ  R_350_minus_50_gamma -0.00419 -0.010772 -0.00037       TRUE
+14    HC  R_350_minus_50_gamma  0.01040  0.000951  0.02349       TRUE
+15 YILIU  R_350_minus_50_gamma -0.03076 -0.069314  0.01199      FALSE
+16    AQ  R_350_minus_50_kappa  2.56014 -2.367684  7.37907      FALSE
+17    HC  R_350_minus_50_kappa  1.53711 -0.334536  3.86724      FALSE
+18 YILIU  R_350_minus_50_kappa 17.40840  4.628452 32.42859       TRUE
+
+===== Gain / catch-up / practice =====
+      ID                      effect  estimate     lower     upper excludes_0
+1     AQ  NR_practice_durEffect_beta  -0.20676  -0.45307  -0.00879       TRUE
+2     HC  NR_practice_durEffect_beta   0.26342   0.03979   0.46342       TRUE
+3  YILIU  NR_practice_durEffect_beta   0.26564  -0.02690   0.47686      FALSE
+4     AQ NR_practice_durEffect_gamma  -0.10668  -0.28595   0.05610      FALSE
+5     HC NR_practice_durEffect_gamma   0.03911  -0.16486   0.39764      FALSE
+6  YILIU NR_practice_durEffect_gamma  -0.11681  -0.39270   0.21681      FALSE
+7     AQ NR_practice_durEffect_kappa  -1.16783  -9.47076   3.54660      FALSE
+8     HC NR_practice_durEffect_kappa  -0.67017  -8.50654   7.58794      FALSE
+9  YILIU NR_practice_durEffect_kappa  -0.35923  -8.05995  10.97789      FALSE
+10    AQ   R_practice_durEffect_beta   0.02051  -0.03270   0.08053      FALSE
+11    HC   R_practice_durEffect_beta   0.05415  -0.05313   0.14882      FALSE
+12 YILIU   R_practice_durEffect_beta  -0.01514  -0.06440   0.02989      FALSE
+13    AQ  R_practice_durEffect_gamma   0.10634   0.00382   0.30303       TRUE
+14    HC  R_practice_durEffect_gamma  -0.05892  -0.13716  -0.00457       TRUE
+15 YILIU  R_practice_durEffect_gamma   0.04854  -0.10211   0.14393      FALSE
+16    AQ  R_practice_durEffect_kappa   2.47847  -8.65865  21.90988      FALSE
+17    HC  R_practice_durEffect_kappa  -0.00905  -5.94390   6.83895      FALSE
+18 YILIU  R_practice_durEffect_kappa  -0.70900 -35.69313  32.89421      FALSE
+19    AQ        catchup_average_beta   0.09359  -0.05645   0.17735      FALSE
+20    HC        catchup_average_beta  -0.05551  -0.14658   0.04158      FALSE
+21 YILIU        catchup_average_beta   0.14762   0.03331   0.22300       TRUE
+22    AQ       catchup_average_gamma  -0.09473  -0.22856  -0.00596       TRUE
+23    HC       catchup_average_gamma  -0.05495  -0.15106   0.01259      FALSE
+24 YILIU       catchup_average_gamma  -0.18912  -0.26642  -0.06083       TRUE
+25    AQ       catchup_average_kappa  -0.72026  -5.51770   5.41259      FALSE
+26    HC       catchup_average_kappa   1.29924  -1.53231   4.59177      FALSE
+27 YILIU       catchup_average_kappa -16.58060 -31.61372  -3.11304       TRUE
+28    AQ      gain50_beta_NR_minus_R   0.15086   0.02873   0.20939       TRUE
+29    HC      gain50_beta_NR_minus_R   0.05674  -0.00357   0.11900      FALSE
+30 YILIU      gain50_beta_NR_minus_R   0.25094   0.18927   0.29639       TRUE
+31    AQ     gain50_gamma_NR_minus_R  -0.00419  -0.01077  -0.00037       TRUE
+32    HC     gain50_gamma_NR_minus_R   0.01666   0.00464   0.02719       TRUE
+33 YILIU     gain50_gamma_NR_minus_R  -0.05174  -0.08649  -0.01255       TRUE
+34    AQ     gain50_kappa_NR_minus_R  -9.09811 -13.78961  -7.17937       TRUE
+35    HC     gain50_kappa_NR_minus_R  -5.12750  -7.23397  -3.44089       TRUE
+36 YILIU     gain50_kappa_NR_minus_R -17.70649 -25.26488 -11.48111       TRUE
+
+DONE

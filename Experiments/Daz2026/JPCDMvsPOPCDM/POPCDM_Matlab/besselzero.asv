@@ -1,0 +1,97 @@
+function x = besselzero(n, k, kind)
+%BESSELZERO Find positive zeros of a Bessel function.
+%   x = BESSELZERO(n, k, kind) returns the first k positive zeros of:
+%       kind = 1: Bessel function of the first kind, J_n(x)
+%       kind = 2: Bessel function of the second kind, Y_n(x)
+%
+%   n must be a nonnegative integer order and k must be a positive integer.
+%   Candidate roots are refined with Halley's method. Extra initial guesses
+%   are used because different guesses can converge to the same root.
+
+    validateattributes(n, {'numeric'}, ...
+        {'scalar', 'real', 'finite', 'integer', 'nonnegative'}, ...
+        mfilename, 'n', 1);
+    validateattributes(k, {'numeric'}, ...
+        {'scalar', 'real', 'finite', 'integer', 'positive'}, ...
+        mfilename, 'k', 2);
+    validateattributes(kind, {'numeric'}, ...
+        {'scalar', 'real', 'finite', 'integer'}, ...
+        mfilename, 'kind', 3);
+
+    if ~ismember(kind, [1, 2])
+        error('besselzero:InvalidKind', ...
+            'kind must be 1 for J_n(x) or 2 for Y_n(x).');
+    end
+
+    % Generate more candidates than required because nearby starting values
+    % can converge to the same zero.
+    k3 = 3 * k;
+    x = zeros(1, k3);
+
+    for j = 1:k3
+        % Starting guesses are spaced approximately pi apart, matching the
+        % asymptotic spacing between consecutive Bessel-function zeros.
+        x0 = 1 + sqrt(2) + (j - 1) * pi + n + n^0.4;
+        % Halley's Method
+        x(j) = findzero(n, x0, kind);
+    end
+
+    % Sort roots, remove duplicates created by convergent starting guesses,
+    % and return only the first k positive roots.
+    x = sort(x);
+    x = x(isfinite(x) & x > 0);
+
+    keep = [true, abs(diff(x)) > 1e-8];
+    x = x(keep);
+
+    if numel(x) < k
+        error('besselzero:TooFewRoots', ...
+            'Only %d distinct positive roots were found; %d were requested.', ...
+            numel(candidates), k);
+    end
+
+    x = candidates(1:k);
+end
+
+function x = findzero(n, x0, kind)
+%FINDZERO Refine one Bessel-function root using Halley's method.
+
+    n1 = n + 1;
+    tol = 1e-12;
+    maxIter = 100;
+    err = Inf;
+    iter = 0;
+
+    while abs(err) > tol && iter < maxIter
+        if kind == 1
+            fn = besselj(n, x0);
+            fn1 = besselj(n1, x0);
+        else
+            fn = bessely(n, x0);
+            fn1 = bessely(n1, x0);
+        end
+
+        x02 = x0^2;
+        numerator = 2 * fn * x0 * (n * fn - fn1 * x0);
+        denominator = 2 * fn1^2 * x02 ...
+            - fn * fn1 * x0 * (4 * n + 1) ...
+            + (n * n1 + x02) * fn^2;
+
+        if denominator == 0 || ~isfinite(denominator)
+            error('besselzero:InvalidHalleyStep', ...
+                'Halley''s method encountered an invalid denominator.');
+        end
+
+        err = numerator / denominator;
+        x0 = x0 - err;
+        iter = iter + 1;
+    end
+
+    if abs(err) > tol || ~isfinite(x0)
+        error('besselzero:NoConvergence', ...
+            'Halley''s method failed to converge within %d iterations.', ...
+            maxIter);
+    end
+
+    x = x0;
+end

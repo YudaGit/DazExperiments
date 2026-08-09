@@ -1,0 +1,47 @@
+Fitting κ-tied mixture for AQ ...
+  start 1/5
+    NLL = 3234.16 conv = 0
+  start 2/5
+    NLL = 3234.16 conv = 0
+  start 3/5
+    NLL = 3234.3 conv = 0
+  start 4/5
+    NLL = 3234.16 conv = 0
+  start 5/5
+    NLL = 3234.16 conv = 0
+  BIC free = 6791.4 | BIC tied = 6718.6 | delta = 72.8 | winner = k_tied
+Fitting κ-tied mixture for HC ...
+  start 1/5
+    NLL = 3249.56 conv = 0
+  start 2/5
+    NLL = 3249.56 conv = 0
+  start 3/5
+    NLL = 3249.57 conv = 0
+  start 4/5
+    NLL = 3249.56 conv = 0
+  start 5/5
+    NLL = 3249.56 conv = 0
+  BIC free = 6817.2 | BIC tied = 6749.4 | delta = 67.8 | winner = k_tied
+Fitting κ-tied mixture for YILIU ...
+  start 1/5
+    NLL = 2391.67 conv = 0
+  start 2/5
+    NLL = 2391.67 conv = 0
+  start 3/5
+    NLL = 2391.67 conv = 0
+  start 4/5
+    NLL = 2391.67 conv = 0
+  start 5/5
+    NLL = 2391.67 conv = 0
+  BIC free = 5081.3 | BIC tied = 5033.6 | delta = 47.7 | winner = k_tied
+# A tibble: 3 x 17
+  ID    n_trials logLik_k_free logLik_k_tied k_free k_tied BIC_k_free BIC_k_tied
+  <chr>    <dbl>         <dbl>         <dbl>  <dbl>  <dbl>      <dbl>      <dbl>
+1 AQ        4200        -3220.        -3234.     42     30      6791.      6719.
+2 HC        4200        -3233.        -3250.     42     30      6817.      6749.
+3 YILIU     4199        -2365.        -2392.     42     30      5081.      5034.
+# i 9 more variables: AIC_k_free <dbl>, AIC_k_tied <dbl>,
+#   delta_BIC_free_minus_tied <dbl>, delta_AIC_free_minus_tied <dbl>,
+#   BIC_winner <chr>, AIC_winner <chr>, kappa_tied_NR <dbl>,
+#   kappa_tied_R <dbl>, convergence_tied <dbl>
+Done.
