@@ -9,7 +9,7 @@
 %         eta2 = exp(-6)
 %
 % Optimizer: MultiStart-style fmincon, 16 starts, MaxIter=2000
-% H0b and H1 warm-start from H0a (or legacy H3a files) when available
+% H0b and H1 warm-start from saved H0a when available
 % =========================================================================
 
 clear; clc;
@@ -18,7 +18,9 @@ clear; clc;
 % "full"  = all five participants x selected hypotheses, 16 starts.
 fitMode = "full";
 
-hypothesisNames = ["H0a", "H0b"]; 
+% H0a is the default baseline. Fit H0a (and optionally H0b) first;
+% then H1. Results overwrite TheoryFits/pop_theory_<name>_full_results.mat
+hypothesisNames = "H1"; 
         
 fitOutput = run_popcdm_theory_fit(hypothesisNames, fitMode);
 
