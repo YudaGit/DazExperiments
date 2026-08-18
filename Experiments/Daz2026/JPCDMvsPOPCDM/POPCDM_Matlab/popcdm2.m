@@ -21,7 +21,9 @@ function [T,Gt, Theta, Ptheta, Mt] = popcdm2(P, nw, h, tmax)
     sigma = 1.0; % fix scaling
     vnorm = P(1);
     eta1 = max(P(2), 0.01);
-    eta2 = max(P(3), 0.01);
+    % Floor matches theory-fit eta2 = exp(-6); was 0.01, which would
+    % silently override a lower fixed tangential noise.
+    eta2 = max(P(3), exp(-6));
     a = P(4);
     alpha = P(5);
     kappa = P(6);

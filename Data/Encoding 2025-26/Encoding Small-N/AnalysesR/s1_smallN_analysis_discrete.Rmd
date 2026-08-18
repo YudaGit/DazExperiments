@@ -1476,6 +1476,12 @@ ggplot(k_free_plot, aes(Duration_ms, kappa, colour = CueType, group = CueType)) 
     y = "κ"
   )
 ```
+Note:
+1, think about kappa mapping
+2, what can the model take out vs what are essentials, reduce to essentials and compare again
+3, compare mixture 2k and fully saturated model
+
+
 
 ## Appendix
 
