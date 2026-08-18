@@ -22,8 +22,8 @@ function output = run_popcdm_theory_fit(hypothesisNames, fitMode)
     hypothesisNames = order_hypotheses_for_warmstart(hypothesisNames);
 
     targetIDs = ["AQ", "ES", "HC", "PG", "YL"];
-    dataFile = ['/Users/prefabteam_ysl/Documents/GitHub/DazExperiments/Data/' ...
-        'Redundancy 2024/Modelling/POPCDM/DazPreprocessed.csv'];
+    dataFile = fullfile('C:\Users\Yuda\Documents\GitHub\DazExperiments\Data', ...
+        'Redundancy 2024', 'DazPreprocessed.csv');
 
     dAll = readtable(dataFile);
     dAll.uid = string(dAll.uid);

@@ -1,0 +1,76 @@
+Jones-Pewsey CDM Notes 18/08/26
+-------------------------------
+
+Cauchy-CDM adaptation 18/08/26
+------------------------------
+The local vjp300rot.c has now been specialized to the wrapped-Cauchy case:
+Jones-Pewsey Psi is compiled at -1 and is no longer a runtime parameter.
+The MEX input is [vnorm, kappa, eta_rad, eta_tan, phi, sigma, a]. Run
+<build_cauchycdm_mex> after changing C source or compile-time assumptions.
+Fitted runtime parameters do not require recompilation. The nine-condition
+Redundancy 2024 fitter is <run_cauchycdm_fit>; see CauchyCDM_README.md.
+
+The program fits the JP-CDM to data from the multirange replication study with M = [1,2,3,4]. The JP becomes Cauchy with Psi = -1.
+
+The data are in 4-element cell arrays in Paul28a.mat. The structures pga4 and pga6 are for the small range and large range experiments.  They have the form:
+
+pga4 =
+
+  1x4 cell array
+
+    {400x4 double}    {400x4 double}    {400x4 double}    {400x4 double}
+
+Each cell is an ntrials x 4 array with columns: stimulus (rad), error (rad), RT (s) and stimulus in monitor coords (rad)
+
+The program is <vwmjp61> => <vjp300rot>. The C-code (which I think you already have) must be mexed before being run:
+      mex vjp300rot.c -lgsl  -lgslcblas -lm
+      
+The program has a full bias structure that can removed, if desired. If so, it skips the integration across the stimulus space, which gives ~2.5 times speed benefit. It is called as:
+
+      
+ help vwmjp61
+  ==========================================================================
+  Circular diffusion model with Jones-Pewsey phase angle to VWM23 experiment.
+  M = [1,2,3,4]
+  25/08/24. delta bias (added to previous <vwmjp6>)
+  27/08/24. Sample size in 1/CSD rather than kappa (from <vwmjp7>)
+  11/09/24. Power-law beta.
+    [ll,aic, qbic,Pred] =  vwmjp61(Pvar, Pfix, Sel, Data, trace)
+  P = [nrm1:nrm4 k1:k4, eta1..eta4, Psi1..Psi4,   B,     A,   alpha, a, Ter1:Ter4 st, delta, beta]  
+          1:4     5:8      9:12        13:16    17:20  21:24   25   26   27:30   31    32    33
+     'Data' is a 4-element cell array using the new conventions. 
+      A is raw bias angles, B is bias strength; k, and Psi are JP precision
+      and shape. The etas are radial variability.
+  18/08/26 - test for B = 0, if so, skip the integration across stimulus space.
+  ===========================================================================
+
+Parameters can be constrained to be zero, or to be equal to one another, via the selector vector, Sel, e.g,  
+P=  [4.4063    3.9911    2.7564    2.7564    4.2035    3.0429    2.9346    2.0924    0.7379    0.5222    0.6272    0.5627   -1.0055   -1.6814  -1.6814   -1.6814         0         0         0         0   -1.4471   -0.0847    1.9256    0.3720    3.0060    4.0117    0.0000    0.229 0.2794    0.3326    0.0001    0.0000    0.9117]
+
+Sel = [1     0     0     0     1     0     0     0     1     0     0     0     1     0     0     0     0     0     0     0     0     0     0     0   0     1     1     1     1     1     1     0     1]
+
+This would be called as:
+
+ [ll,a,b,Pred]=vwmjp61(P(Sel==1), P(Sel==0), Sel, pga4)
+ 
+  ll = 825.0471 a = 1.6713e+03 b = 1.7305e+03
+
+How Sel is treated depends on switches inside the code. Here only the first drift rate norm (v1) is free to vary. Lines 79-87 test Sel(2:4) and if they are zero the other norms v2...v4 are set equal to v1 rather than forced to be equal to their starting values. 
+
+k, Eta, Psi are treated the same way internally. Sel(9:12) =[1, 0, 0, 0] fits with a single eta; Sel(13:16) = [1,0,0,0] with P(13) = -1 will the JP as Cauchy. In this example Psi was free and was estimated at -1.0055!
+
+With Sel([17:25,32]) = and P(17:20) = 0 (the bias amplitudes), the bias model is completely removed.  You'd get a power law fit with Sel(6:8) = 0 (1 x kappa) and Sel(33) = 1 (power law).  
+
+The fminsearch call is:
+
+pest = fminsearch(@vwmjp61, P(Sel==1), options, P(Sel==0), Sel, pga4) 
+
+Inside the code (pp. 152-155) there are hard and soft parameter constraints. Ub and Lb are hard constraints. If any parameter is outside these bounds ll is set large and the program exits. Pub and Plb are soft constraints. If any parameter is outside the contraints, a quadratic penalty is added to ll to encourage the program to look elsewhere. If you're using a constrained search it would be sensible to use Ub and Lb as the bounds. 
+
+
+
+
+
+ 
+
+

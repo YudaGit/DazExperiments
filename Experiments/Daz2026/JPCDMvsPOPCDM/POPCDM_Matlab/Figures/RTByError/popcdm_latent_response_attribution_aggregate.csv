@@ -1,0 +1,10 @@
+ResponseRegion,LatentPOPRegion,PosteriorGivenResponse
+Central,Central,0.938541950140554
+Central,Shoulder,0.061448209156466
+Central,Tail,9.84070298073242e-06
+Shoulder,Central,0.428668363290576
+Shoulder,Shoulder,0.561203552637539
+Shoulder,Tail,0.0101280840718851
+Tail,Central,0.00341146541848152
+Tail,Shoulder,0.0666942880562786
+Tail,Tail,0.92989424652524

@@ -69,8 +69,8 @@ function figureHandles = plot_saved_pop_theory_results(resultFile, targetUIDs)
         uids = uids(keep);
     end
 
-    dataFile = ['/Users/prefabteam_ysl/Documents/GitHub/DazExperiments/Data/' ...
-        'Redundancy 2024/Modelling/POPCDM/DazPreprocessed.csv'];
+    dataFile = fullfile('C:\Users\Yuda\Documents\GitHub\DazExperiments\Data', ...
+        'Redundancy 2024', 'DazPreprocessed.csv');
     d = local_prepare_data(dataFile, uids, condLevels);
 
     figureHandles = gobjects(2 * numel(fitResults), 1);
