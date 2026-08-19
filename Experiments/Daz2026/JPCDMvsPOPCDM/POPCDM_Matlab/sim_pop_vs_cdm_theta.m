@@ -13,8 +13,8 @@ function sim_pop_vs_cdm_theta
 vnorm = 10.0;          % drift-rate norm
 eta1  = 0.50;         % radial drift variability (lb 0.01)
 eta2  = 0.0001;       % tangential; theory fits fix this
-a     = 10.0;          % circular barrier
-alpha = 7;            % POP amplitude: 5 ~ popSS, 60 ~ A2 popcdm, 300 ~ near-delta
+a     = 7.0;          % circular barrier
+alpha = 5;            % POP amplitude: 5 ~ popSS, 60 ~ A2 popcdm, 300 ~ near-delta
 kappa = 10;           % POP concentration (try 4 vs 30)
 ter   = 0.15;         % unused for P(theta); required by popcdm2
 st    = 0.10;

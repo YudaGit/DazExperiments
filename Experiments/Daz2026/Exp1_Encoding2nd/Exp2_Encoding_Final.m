@@ -7,7 +7,7 @@
 % only unique colours and retain the legacy 'NR' cue-type label.
 % Probe: whether a redundant or non-redundant item was cued.
 % for report.
-% Encoding duration: 50, 150, or 250 ms.
+% Encoding duration: 50 or 250 ms.
 % Response precision and RT were recorded for analyses and modelling.
 %======================================================================
 
@@ -44,11 +44,11 @@ design.ConditionSpec = table( ...
     [0; 0; 0; 3; 3; 3; 3], ...
     {'NR'; 'NR'; 'NR'; 'R'; 'NR'; 'R'; 'NR'}, ...
     'VariableNames', {'ItemN','RedundantN','CueType'});
-design.presDurList  = [0.05 0.15 0.25];
+design.presDurList  = [0.05 0.25];
 design.PracticePresDurList = [0.05 0.25];
 design.retDurList   = 0.75;
 design.PracticeReps = 1;                 % reps *per cell* in practice
-design.MainReps     = 25;                % reps *per cell* in main
+design.MainReps     = 35;                % reps *per cell* in main
 
 [pracTrials, expTrials] = TrialMatrix(design, ...
                          sessionN, participantID, age, timestamp);
