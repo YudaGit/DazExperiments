@@ -1,5 +1,5 @@
 %======================================================================
-% Exp1_Encoding_1.m   (Continuous colour-report)
+% Exp1_Encoding2nd_Final.m   (Continuous colour-report)
 % Daz Liu 2025 PhD Experiment 1, Redundancy and Encoding
 %
 % Continuous colour-report task manipulating probe and encoding durations
@@ -49,6 +49,7 @@ design.PracticePresDurList = [0.05 0.25];
 design.retDurList   = 0.75;
 design.PracticeReps = 1;                 % reps *per cell* in practice
 design.MainReps     = 35;                % reps *per cell* in main
+checkpointEvery      = 35;                % save a recovery copy each block
 
 [pracTrials, expTrials] = TrialMatrix(design, ...
                          sessionN, participantID, age, timestamp);
@@ -169,13 +170,20 @@ try
         % feedbackTex = GenerateFeedbackTexture(expTrials(1:ii,:), V.window, size(expTrials,1));
         % DisplayFeedbackTexture(feedbackTex, V.window, V.windowRect, ii, size(expTrials,1));
         % Screen('Close', feedbackTex);
-        
+
+        if mod(ii, checkpointEvery) == 0
+            SaveCheckpoint(expTrials, sessionN, participantID, timestamp);
+        end
+
     end
     SaveData(expTrials, sessionN, participantID, timestamp)
     ExperimentEnd(true);
-catch ME 
+catch ME
     disp('An error occurred:');
     disp(ME.message);
+    if exist('expTrials', 'var')
+        SaveCheckpoint(expTrials, sessionN, participantID, timestamp);
+    end
     ExperimentEnd(false);
 end
 
@@ -905,24 +913,52 @@ end
 
 % ──────────────────────────────────────────────────────────────────────────
 function [] = SaveData(expTrials, sessionN, participantID, timestamp)
-% Saving data
+% Save completed-session data alongside the experiment script.
     global V
-    saveDir = 'Daz25EncodingData';
-    if ~isfolder(saveDir)
-        mkdir(saveDir);
-        disp(['Save Data Directory Created: ', saveDir]);
-    end
+    saveDir = DataSaveDirectory();
     fname = sprintf('EncodingData_%s_sess%d_%s.mat', ...
                     participantID, sessionN, timestamp);
     fullpath = fullfile(saveDir, fname);
     try
+        if ~isfolder(saveDir)
+            mkdir(saveDir);
+            disp(['Save Data Directory Created: ', saveDir]);
+        end
         save(fullpath, 'expTrials', 'V');
         fprintf('✔ Data saved to:\n  %s\n', fullpath);
     catch ME
         warning('Failed to save data: %s\nError message:\n%s', ...
                 fullpath, ME.message);
     end
-     disp(['Data File: ', fname ' saved in directory ', saveDir]);
+end
+
+function [] = SaveCheckpoint(expTrials, sessionN, participantID, timestamp)
+% Overwrite one recoverable partial-session file at regular intervals.
+    global V
+    saveDir = DataSaveDirectory();
+    fname = sprintf('EncodingData_%s_sess%d_%s_checkpoint.mat', ...
+                    participantID, sessionN, timestamp);
+    fullpath = fullfile(saveDir, fname);
+    try
+        if ~isfolder(saveDir)
+            mkdir(saveDir);
+        end
+        save(fullpath, 'expTrials', 'V');
+        fprintf('Checkpoint saved after %d completed trials.\n', ...
+                sum(~isnan(expTrials.ResponseTime)));
+    catch ME
+        warning('Failed to save checkpoint: %s\nError message:\n%s', ...
+                fullpath, ME.message);
+    end
+end
+
+function saveDir = DataSaveDirectory()
+% Always save beside this experiment script, regardless of MATLAB's pwd.
+    scriptDir = fileparts(mfilename('fullpath'));
+    if isempty(scriptDir)
+        scriptDir = pwd;
+    end
+    saveDir = fullfile(scriptDir, 'Daz25EncodingData');
 end
 
 
@@ -935,7 +971,9 @@ Screen('CloseAll');
 WaitSecs(0.5);
 
 v.patch.bg = .5 * 255; % Background gray
-Screen('Preference', 'SkipSyncTests', 0);
+% The lab PC's Windows DWM setup fails PTB's sync validation despite a
+% stable 60 Hz display.  Match the proven lab setup by bypassing that test.
+Screen('Preference', 'SkipSyncTests', 1);
 Screen('Preference', 'VisualDebugLevel', 0); % Minimal feedback
 [v.window, v.windowRect] = Screen('OpenWindow', max(Screen('Screens')), [v.patch.bg, v.patch.bg, v.patch.bg]);
 Screen('BlendFunction', v.window, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); % can use alpha values
@@ -1243,11 +1281,6 @@ end
 % ──────────────────────────────────────────────────────────────────────────
 function [] = ExperimentEnd(Finished)
     global V
-    allTextures = Screen('WindowKind');
-    for i = 1:length(allTextures)
-       Screen('Close', allTextures(i));
-    end
-    close all;
     if Finished
         Screen('TextSize', V.window, 50);
         DrawFormattedText(V.window, 'Experiment Complete!\n\nThank you for your participation.', 'center', V.windowRect(4)/2, [255, 255, 255]);
@@ -1259,6 +1292,7 @@ function [] = ExperimentEnd(Finished)
         Screen('Flip', V.window);
         WaitSecs(1);
     end
+    close all;
     sca; %Screen('CloseAll');
     disp('Experiment Code Finished');
 end

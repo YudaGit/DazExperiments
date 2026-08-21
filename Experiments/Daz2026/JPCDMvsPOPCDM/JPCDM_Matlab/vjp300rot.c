@@ -5,7 +5,7 @@
 %  December 22, 2022
 %
 %  [T, Gt, Theta, Ptheta, Mt] = vjp300rot(P, tmax, noise);
-%   P = [nunorm, kappa, eta, phi, psi, sigma, a]
+%   P = [nunorm, kappa, eta_rad, eta_tan, phi, psi, sigma, a]
 %  
 %  Building: mex vjp300rot.c -lgsl -lgslcblas -lm
 % =========================================================================== 
@@ -21,7 +21,7 @@
 #define nwplus1 51    /* Close the domain */
 #define sz 300   /* Number of time steps */
 #define nwplus1_sz (nwplus1*300)  
-#define NP 7     /* Number of input parameters */
+#define NP 8     /* eta_rad and eta_tan are runtime inputs */
 #define njsteps 21 /* Number of steps in drift angle distribution */
 
 const double pi = 3.141592653589793, eps = 1e-15;
@@ -304,17 +304,18 @@ void vjp300rot(double *T, double *Gt, double *Theta, double *Ptheta, double *Mt,
        Power of cosine distance drift rate variability
        ---------------------------------------------------------------------------- */
     double Pj[6],  ThetaMu[njsteps], ProbMu[njsteps];
-    double v1, v2, phi, nunorm, kappa, sigma, a, psi, eta, 
+    double v1, v2, phi, nunorm, kappa, sigma, a, psi, eta1, eta2,
            inc, sumprob, thetaj, mu1, mu2, sumrj;
     int i, j, k, r, l;
 
     nunorm= P[0];
     kappa = P[1];
-    eta = P[2];
-    phi = P[3];
-    psi = P[4];
-    sigma = P[5];
-    a = P[6];
+    eta1 = P[2];
+    eta2 = P[3];
+    phi = P[4];
+    psi = P[5];
+    sigma = P[6];
+    a = P[7];
 
    /* mexPrintf("nunorm = %6.3f kappa = %4.3f  phi = %6.3f psi = %6.3f, sigma = %6.3f, a = %6.3f\n", 
     nunorm, kappa, phi, psi, sigma, a);*/
@@ -347,8 +348,8 @@ void vjp300rot(double *T, double *Gt, double *Theta, double *Ptheta, double *Mt,
          }
      }   
      /* Mix */
-     Pj[2] = eta;  /* Radial */
-     Pj[3] = 0.01; /* Tangential */
+     Pj[2] = eta1; /* Radial */
+     Pj[3] = eta2; /* Tangential */
      Pj[4] = sigma;
      Pj[5] = a;
 
@@ -485,5 +486,4 @@ unsigned n, m;
 
     vjp300rot(T, Gt, Theta, Ptheta, Mt, P, tmax, noise);
 }
-
 

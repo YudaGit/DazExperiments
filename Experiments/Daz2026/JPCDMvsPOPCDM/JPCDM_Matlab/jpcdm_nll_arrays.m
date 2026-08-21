@@ -3,14 +3,16 @@ function nll = jpcdm_nll_arrays(P, rt, rAngle, tmax)
 % jpcdm_nll_arrays
 %=======================
 % Fast NLL helper using numeric arrays instead of a data table.
-% P = [vnorm, kappa, eta, psi, a, ter, st]
+% P = [vnorm, kappa, eta1, eta2, psi, a, ter, st]
+% Legacy 7-value input is still accepted by jpcdm1, but current model
+% comparison fits pass eta2 explicitly.
 %
 % Guardrails, normalization, interpolation, and likelihood floor match
 % popcdm_nll_arrays so optimizer failures are handled consistently.
 
     penalty = 1e12;
 
-    if numel(P) ~= 7 || any(~isfinite(P)) || ...
+    if ~(numel(P) == 7 || numel(P) == 8) || any(~isfinite(P)) || ...
             any(~isfinite(rt)) || any(~isfinite(rAngle))
         nll = penalty;
         return
@@ -51,7 +53,10 @@ function nll = jpcdm_nll_arrays(P, rt, rAngle, tmax)
     end
     GtOpen = GtOpen / totalMass;
 
-    like = interp2(T, ThetaOpen, GtOpen, rt, rAngle, 'linear', 1e-12);
+    % Periodically close the angular grid before interpolation.
+    thetaClosed = [ThetaOpen, pi];
+    gtClosed = [GtOpen; GtOpen(1, :)];
+    like = interp2(T, thetaClosed, gtClosed, rt, rAngle, 'linear', 1e-12);
     like = max(like, 1e-12);
 
     if any(~isfinite(like))
