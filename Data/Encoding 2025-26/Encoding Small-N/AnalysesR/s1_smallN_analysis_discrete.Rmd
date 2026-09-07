@@ -21,22 +21,24 @@ Companion to `s1_smallN_analysis.Rmd`, identical pipeline except
 Model difference (Sections 3–4):
 
 - Continuous: `AbsErr / cirSD ~ CueType * DurationF * Session_z + (1 | SessionF)`
-- This script: `AbsErr / cirSD ~ CueType * DurationF * SessionF`
-  (no random session intercept — `SessionF` is already a fixed factor)
+- Discrete: **SignedErr** von Mises mixture ladder (Stan, Section 3); cirSD
+  bootstrap + Student-t (Section 4, legacy summary)
 
 Analysis order:
 
 1.  Load and prepare trial data
-2.  Descriptive plots (placeholder)
-3.  Bayesian AbsErr primary (discrete session)
+2.  Descriptive figures (circular SD and RT by participant)
+3.  Bayesian SignedErr VM mixture ladder (Stan: L0 / L1 / L2)
 4.  Bayesian cirSD primary (same design; bootstrap cell replicates)
 5.  Pre-mixture: AbsErr Session 1 vs 10 by duration
 6.  Pre-mixture: cirSD Session 1 vs 10 (nonparametric bootstrap companion)
-7.  Circular mixture cell fits (signed-error distribution; not repeated for cirSD)
-8.  Simple von Mises κ comparison: 14-κ (cue × duration) vs 2-κ (cue only)
-9.  Mixture κ free per cell vs κ tied within cue (β, γ still free per cell)
+7.  Circular mixture cell fits — 3-comp (target + guess + swap)
+8.  Circular mixture cell fits — 2-comp (target + guess; no swap)
+9.  Simple von Mises κ comparison: 14-κ (cue × duration) vs 2-κ (cue only)
+10. Mixture 3-comp: κ free per cell vs κ tied within cue (β, γ free per cell)
+11. Mixture 2-comp: κ free per cell vs κ tied within cue (γ free per cell)
 
-Style: linear commented code; short loops over AQ / HC / YILIU only.
+Style: linear commented code; loops over P01–P04 (AQ, HC, YILIU, YDL).
 
 # Setup
 
@@ -49,7 +51,9 @@ library(bayesplot)   # posterior predictive checks
 library(tidybayes)   # gather posterior draws from emmeans
 library(emmeans)     # estimated marginal means / contrasts
 library(patchwork)   # combine ggplot panels
-library(loo)         # Appendix model comparison only
+library(loo)         # LOO / WAIC model comparison
+library(cmdstanr)    # Stan VM mixture ladder (Section 3)
+library(posterior)   # Stan draw summaries
 library(circular)    # circular SD for signed colour errors
 
 theme_set(theme_bw())
@@ -72,10 +76,16 @@ glimpse(d)
 ```
 
 ```{r prepare-factors}
+# Publication participant IDs (CSV / mixture files still use raw lab IDs).
+id_raw <- c("AQ", "HC", "YILIU", "YDL")
+id_pub <- c("P01", "P02", "P03", "P04")
+names(id_pub) <- id_raw
+participants <- unname(id_pub)
+
 # Set factor levels explicitly so contrasts and plots keep a fixed order.
 d <- d %>%
   mutate(
-    ID = factor(ID),
+    ID = factor(id_pub[as.character(ID)], levels = participants),
     CueType = factor(CueType, levels = c("NR", "R")),
     DurationF = factor(
       Duration,
@@ -87,443 +97,790 @@ d <- d %>%
     logRT = log(RT)
   )
 
-# One data frame per currently complete participant.
-# droplevels() drops unused ID levels so factor levels stay clean.
-d_AQ <- droplevels(filter(d, ID == "AQ"))
-d_HC <- droplevels(filter(d, ID == "HC"))
-d_YILIU <- droplevels(filter(d, ID == "YILIU"))
+# One data frame per complete participant (object names = raw ID; ID column = P0x).
+d_AQ <- droplevels(filter(d, ID == "P01"))
+d_HC <- droplevels(filter(d, ID == "P02"))
+d_YILIU <- droplevels(filter(d, ID == "P03"))
+d_YDL <- droplevels(filter(d, ID == "P04"))
+stopifnot(all(participants %in% levels(d$ID)))
+stopifnot(n_distinct(d_YDL$Session) == 10)
 
 # Confirm design levels.
 levels(d$CueType)
 levels(d$DurationF)
 levels(d$SessionF)
+levels(d$ID)
 ```
 
-# 2. Descriptive figures (placeholder)
+# 2. Descriptive figures
 
-These plots are for exploration only. Manuscript figures will be updated
-later.
+Four vertically stacked panels (one participant each), shared encoding-duration
+axis. **Circular SD:** pooled cell estimate (diamond) with bootstrap 95% CI;
+semi-transparent **AbsErr** trial points behind. **RT:** cell mean with bootstrap
+95% CI; trial-level RT points behind.
 
-```{r descriptives-cirsd}
-# Circular SD of signed errors by participant × cue × duration.
-# sd.circular returns radians when units="degrees"; convert to degrees.
-circ_summary <- d %>%
-  group_by(ID, CueType, DurationF) %>%
-  summarise(
-    circSD = as.numeric(sd.circular(circular(SignedErr, units = "degrees"))) * (180 / pi),
-    meanAbs = mean(AbsErr),
-    .groups = "drop"
+```{r descriptives-helpers, include=FALSE}
+# Circular SD of signed colour errors (degrees).
+circ_sd_deg <- function(x) {
+  x <- x[is.finite(x)]
+  if (length(x) < 2) return(NA_real_)
+  as.numeric(sd.circular(circular(x, units = "degrees"))) * (180 / pi)
+}
+
+# Bootstrap percentile CI for any cell statistic.
+boot_cell_ci <- function(x, stat_fn, B = 2000, conf = 0.95) {
+  x <- x[is.finite(x)]
+  n <- length(x)
+  if (n < 10) {
+    est <- stat_fn(x)
+    return(tibble(estimate = est, lower = NA_real_, upper = NA_real_))
+  }
+  obs <- stat_fn(x)
+  boots <- vapply(seq_len(B), function(b) {
+    stat_fn(sample(x, n, replace = TRUE))
+  }, numeric(1))
+  alpha <- (1 - conf) / 2
+  tibble(
+    estimate = obs,
+    lower = unname(quantile(boots, alpha, na.rm = TRUE)),
+    upper = unname(quantile(boots, 1 - alpha, na.rm = TRUE))
+  )
+}
+
+cue_cols <- c("NR" = "#6B9AC4", "R" = "#C75146")
+cue_x_offset <- c("NR" = -5, "R" = 5)
+
+# Times New Roman for publication; fall back to Times if unavailable (e.g. Linux CI).
+desc_font <- if (
+  requireNamespace("systemfonts", quietly = TRUE) &&
+    "Times New Roman" %in% unique(systemfonts::system_fonts()$family)
+) {
+  "Times New Roman"
+} else {
+  "Times"
+}
+
+theme_desc <- theme_bw(base_size = 11, base_family = desc_font) +
+  theme(
+    panel.grid.minor = element_blank(),
+    strip.placement = "inside",
+    strip.background = element_blank(),
+    strip.text = element_text(face = "bold", hjust = 0.5, vjust = 0),
+    legend.position = "bottom",
+    legend.title = element_text(face = "bold"),
+    plot.title = element_blank(),
+    text = element_text(family = desc_font),
+    axis.title = element_text(family = desc_font),
+    axis.text = element_text(family = desc_font),
+    legend.text = element_text(family = desc_font)
   )
 
-ggplot(circ_summary, aes(DurationF, circSD, colour = CueType, group = CueType)) +
-  geom_line(linewidth = 1) +
+desc_x_jitter <- 2
+# Pad x limits so cue offsets (+ jitter / error-bar caps) are not clipped at 50 / 350 ms.
+desc_x_pad <- max(abs(cue_x_offset)) + desc_x_jitter / 2 + 6
+
+desc_x_scale <- scale_x_continuous(
+  breaks = seq(50, 350, by = 50),
+  limits = c(50, 350),
+  expand = expansion(mult = c(0.08, 0.08))
+)
+
+desc_x_scale_cir <- scale_x_continuous(
+  breaks = seq(50, 350, by = 50),
+  limits = c(50 - desc_x_pad, 350 + desc_x_pad),
+  expand = expansion(mult = c(0, 0))
+)
+```
+
+```{r descriptives-data, message=FALSE, warning=FALSE}
+B_desc <- 2000L
+set.seed(1234)
+
+d_desc <- d %>%
+  mutate(
+    Duration_ms = as.numeric(gsub("ms", "", as.character(DurationF)))
+  )
+
+# Pooled cell cirSD + bootstrap 95% CI (main indicator).
+circ_cell <- d_desc %>%
+  group_by(ID, CueType, DurationF, Duration_ms) %>%
+  group_modify(~ boot_cell_ci(.x$SignedErr, circ_sd_deg, B = B_desc)) %>%
+  ungroup() %>%
+  mutate(
+    Duration_x = Duration_ms + unname(cue_x_offset[as.character(CueType)])
+  )
+
+d_desc_cir <- d_desc %>%
+  mutate(
+    Duration_x = Duration_ms + unname(cue_x_offset[as.character(CueType)])
+  )
+
+# Pooled cell mean RT + bootstrap 95% CI.
+rt_cell <- d_desc %>%
+  group_by(ID, CueType, DurationF, Duration_ms) %>%
+  group_modify(~ boot_cell_ci(.x$RT, mean, B = B_desc)) %>%
+  ungroup()
+```
+
+```{r descriptives-cirsd, fig.width=4.2, fig.height=9, message=FALSE, warning=FALSE}
+# Precision: circular SD (degrees) by cue and duration.
+ggplot() +
+  geom_point(
+    data = d_desc_cir,
+    aes(x = Duration_x, y = AbsErr, colour = CueType),
+    alpha = 0.20,
+    size = 1,
+    stroke = 0,
+    position = position_jitter(width = desc_x_jitter, height = 0, seed = 1234)
+  ) +
+  geom_line(
+    data = circ_cell,
+    aes(x = Duration_x, y = estimate, colour = CueType, group = CueType),
+    linewidth = 0.3,
+    linetype = "dashed"
+  ) +
+  geom_errorbar(
+    data = circ_cell,
+    aes(x = Duration_x, ymin = lower, ymax = upper, colour = 'black'),
+    width = 3,
+    linewidth = 0.5
+  ) +
+  geom_point(
+    data = circ_cell,
+    aes(x = Duration_x, y = estimate, colour = CueType),
+    shape = 23,
+    fill = "white",
+    size = 2.5,
+    stroke = 0.45
+  ) +
+  facet_wrap(~ID, ncol = 1, scales = "fixed") +
+  desc_x_scale_cir +
+  scale_colour_manual(values = cue_cols, name = "Cue") +
+  labs(x = "Encoding duration (ms)", y = "Circular SD (°)") +
+  theme_desc
+```
+
+```{r descriptives-rt, fig.width=4.2, fig.height=9, message=FALSE, warning=FALSE}
+# RT: mean response time with bootstrap 95% CI; trial-level points behind.
+ggplot() +
+  geom_point(
+    data = d_desc,
+    aes(x = Duration_ms, y = RT, colour = CueType),
+    alpha = 0.10,
+    size = 0.55,
+    stroke = 0,
+    position = position_jitter(width = 5, height = 0, seed = 1234)
+  ) +
+  geom_line(
+    data = rt_cell,
+    aes(x = Duration_ms, y = estimate, colour = CueType, group = CueType),
+    linewidth = 0.35,
+    linetype = "dashed"
+  ) +
+  geom_errorbar(
+    data = rt_cell,
+    aes(x = Duration_ms, ymin = lower, ymax = upper, colour = CueType),
+    width = 6,
+    linewidth = 0.35
+  ) +
+  geom_point(
+    data = rt_cell,
+    aes(x = Duration_ms, y = estimate, colour = CueType),
+    shape = 21,
+    fill = "white",
+    size = 1.6,
+    stroke = 0.45
+  ) +
+  facet_wrap(~ID, ncol = 1, scales = "fixed") +
+  desc_x_scale +
+  scale_colour_manual(values = cue_cols, name = "Cue") +
+  labs(x = "Encoding duration (ms)", y = "Response time (ms)") +
+  theme_desc
+```
+
+# 3. Bayesian primary analysis: von Mises mixture ladder (SignedErr)
+
+Generative models on **SignedErr** (radians), fit with **Stan** (`cmdstanr`).
+One hierarchical model per participant × level × κ structure.
+
+| Level | Likelihood | Session nesting |
+|-------|------------|-----------------|
+| **L0** | VM(0, κ) only | κ: Cue×Duration (14κ) or Cue (2κ) + Session offsets |
+| **L1** | VM + uniform guess (γ) | κ as L0; γ ~ Cue×Duration + Session |
+| **L2** | VM + swap (3 bumps) + uniform | κ as L0; β, γ ~ Cue×Duration + Session |
+
+Compare **2κ vs 14κ** within each level (LOO/WAIC). Compare **L0 vs L1 vs L2**
+using the preferred κ structure per level (expect **2κ** at L1/L2 once γ and β are included).
+
+**Runtime guide** (4 chains, 2000 warmup + 2000 sampling, ~4200 trials/participant):
+
+- **L0:** ~5–15 min per fit → ~40–120 min for all 8 L0 fits (4 IDs × 2κ/14κ)
+- **L1:** ~15–30 min per fit
+- **L2:** ~5–10 min per fit → ~40–80 min for all 8 L2 fits (4 IDs × 2κ/14κ)
+
+Fits cache under `bayes_primary_discrete/vm_stan/`. Console shows chain
+progress (`refresh = 100`).
+
+**Parallel fitting:** each level chunk fits 8 models (4 participants × 2κ/14κ)
+in parallel. Default: `n_workers = floor(cores / chains)` with 4 chains per
+fit (e.g. 10 cores → 2 workers × 4 chains). Set `vm_n_workers` in setup to
+override (use `1` for strictly sequential models).
+
+Reliability check: Sections 7–11 (MLE mixture cells, 14κ vs 2κ) unchanged.
+
+```{r vm-ladder-setup, message=FALSE, warning=FALSE}
+source("s1_vm_ladder_stan.R")
+vm_init_plot_defaults()
+
+dir.create("bayes_primary_discrete/vm_stan", showWarnings = FALSE, recursive = TRUE)
+
+vm_raw_ids <- c("AQ", "HC", "YILIU", "YDL")
+vm_id_pub <- c(AQ = "P01", HC = "P02", YILIU = "P03", YDL = "P04")
+
+vm_data <- vm_participant_data(d)
+
+# Stan settings (reduce iter for a quick smoke test if needed).
+vm_chains <- 4
+vm_iter_warmup <- 2000
+vm_iter_sampling <- 2000
+vm_refresh <- 100
+# Parallel model workers (NULL = auto: floor(detectCores() / vm_chains)).
+vm_n_workers <- NULL
+
+vm_parallel_plan <- vm_stan_parallel_plan(
+  chains_per_fit = vm_chains,
+  n_workers = vm_n_workers
+)
+print_vm_stan_parallel_plan(vm_parallel_plan)
+```
+
+## 3.1 L0 — von Mises only (indicative κ)
+
+```{r vm-ladder-L0, message=TRUE, warning=TRUE}
+vm_L0_batch <- fit_vm_ladder_batch(
+  vm_data = vm_data,
+  level = "L0",
+  raw_ids = vm_raw_ids,
+  id_pub = vm_id_pub,
+  kappa_structs = c("2k", "14k"),
+  n_workers = vm_n_workers,
+  chains = vm_chains,
+  iter_warmup = vm_iter_warmup,
+  iter_sampling = vm_iter_sampling,
+  refresh = vm_refresh,
+  seed = 1234
+)
+vm_L0 <- vm_L0_batch$fits
+vm_L0_loo <- vm_L0_batch$compare %>% arrange(ID, delta_loo)
+
+write_csv(vm_L0_loo, "bayes_primary_discrete/vm_ladder_L0_loo.csv")
+saveRDS(list(fits = vm_L0, compare = vm_L0_loo), "bayes_primary_discrete/vm_ladder_L0_results.rds")
+
+vm_L0_loo
+
+# κ by Cue×Duration (posterior median), averaged over sessions — indicative only.
+vm_L0_kappa <- bind_rows(lapply(vm_raw_ids, function(raw) {
+  bind_rows(lapply(names(vm_L0[[raw]]), function(mid) {
+    extract_vm_cell_params(vm_L0[[raw]][[mid]]) %>%
+      mutate(ID = vm_id_pub[[raw]], model_id = mid)
+  }))
+}))
+
+ggplot(
+  vm_summarise_cells_plot(vm_L0_kappa, "kappa"),
+  aes(Duration_ms, estimate, ymin = lower, ymax = upper, colour = CueType, group = CueType)
+) +
+  geom_line(linewidth = 0.4) +
+  geom_errorbar(width = 8, linewidth = 0.35) +
+  geom_point(size = 1.5) +
+  facet_grid(ID ~ model_id) +
+  scale_x_continuous(breaks = seq(50, 350, 50)) +
+  scale_colour_manual(values = cue_cols) +
+  labs(
+    x = "Encoding duration (ms)",
+    y = expression(paste("Posterior ", kappa, " (median + 95% CrI)")),
+    title = "L0 (indicative): precision by cue and duration"
+  ) +
+  theme_desc
+```
+
+## 3.2 L1 — VM + uniform guess
+
+```{r vm-ladder-L1, message=TRUE, warning=TRUE}
+vm_L1_batch <- fit_vm_ladder_batch(
+  vm_data = vm_data,
+  level = "L1",
+  raw_ids = vm_raw_ids,
+  id_pub = vm_id_pub,
+  kappa_structs = c("2k", "14k"),
+  n_workers = vm_n_workers,
+  chains = vm_chains,
+  iter_warmup = vm_iter_warmup,
+  iter_sampling = vm_iter_sampling,
+  refresh = vm_refresh,
+  seed = 2234
+)
+vm_L1 <- vm_L1_batch$fits
+vm_L1_loo <- vm_L1_batch$compare %>% arrange(ID, delta_loo)
+
+write_csv(vm_L1_loo, "bayes_primary_discrete/vm_ladder_L1_loo.csv")
+saveRDS(list(fits = vm_L1, compare = vm_L1_loo), "bayes_primary_discrete/vm_ladder_L1_results.rds")
+
+vm_L1_loo
+
+# γ (guess rate) by cell — primary composition story at L1.
+vm_L1_gamma <- bind_rows(lapply(vm_raw_ids, function(raw) {
+  bind_rows(lapply(names(vm_L1[[raw]]), function(mid) {
+    extract_vm_cell_params(vm_L1[[raw]][[mid]]) %>%
+      mutate(ID = vm_id_pub[[raw]], model_id = mid)
+  }))
+}))
+
+ggplot(
+  vm_summarise_cells_plot(vm_L1_gamma, "gamma"),
+  aes(Duration_ms, estimate, ymin = lower, ymax = upper, colour = CueType, group = CueType)
+) +
+  geom_line(linewidth = 0.4) +
+  geom_errorbar(width = 8, linewidth = 0.35) +
+  geom_point(size = 1.5) +
+  facet_grid(ID ~ model_id) +
+  scale_x_continuous(breaks = seq(50, 350, 50)) +
+  scale_colour_manual(values = cue_cols) +
+  labs(
+    x = "Encoding duration (ms)",
+    y = "Posterior γ (median + 95% CrI)",
+    title = "L1: guessing by cue and duration (session-nested model)"
+  ) +
+  theme_desc
+
+ggplot(
+  vm_summarise_cells_plot(vm_L1_gamma, "kappa"),
+  aes(Duration_ms, estimate, ymin = lower, ymax = upper, colour = CueType, group = CueType)
+) +
+  geom_line(linewidth = 0.4) +
+  geom_errorbar(width = 8, linewidth = 0.35) +
+  geom_point(size = 1.5) +
+  facet_grid(ID ~ model_id) +
+  scale_x_continuous(breaks = seq(50, 350, 50)) +
+  scale_colour_manual(values = cue_cols) +
+  labs(
+    x = "Encoding duration (ms)",
+    y = expression(paste("Posterior ", kappa, " (median + 95% CrI)")),
+    title = "L1: precision by cue and duration (session-nested model)"
+  ) +
+  theme_desc
+```
+
+## 3.3 L2 — VM + swap + uniform guess
+
+L1 comparison suggested **2κ** is sufficient once γ is included; L2 fits both 2κ and 14κ
+for a direct LOO check with swap (β) in the model. Cached 2κ loads instantly if already fit.
+
+```{r vm-ladder-L2, message=TRUE, warning=TRUE}
+vm_L2_batch <- fit_vm_ladder_batch(
+  vm_data = vm_data,
+  level = "L2",
+  raw_ids = vm_raw_ids,
+  id_pub = vm_id_pub,
+  kappa_structs = c("2k", "14k"),
+  n_workers = vm_n_workers,
+  chains = vm_chains,
+  iter_warmup = vm_iter_warmup,
+  iter_sampling = vm_iter_sampling,
+  refresh = vm_refresh,
+  seed = 3234
+)
+vm_L2 <- vm_L2_batch$fits
+vm_L2_loo <- vm_L2_batch$compare %>% arrange(ID, delta_loo)
+
+write_csv(vm_L2_loo, "bayes_primary_discrete/vm_ladder_L2_loo.csv")
+saveRDS(list(fits = vm_L2, compare = vm_L2_loo), "bayes_primary_discrete/vm_ladder_L2_results.rds")
+
+vm_L2_loo
+
+vm_L2_params <- bind_rows(lapply(vm_raw_ids, function(raw) {
+  bind_rows(lapply(names(vm_L2[[raw]]), function(mid) {
+    extract_vm_cell_params(vm_L2[[raw]][[mid]]) %>%
+      mutate(ID = vm_id_pub[[raw]], model_id = mid)
+  }))
+}))
+
+ggplot(
+  vm_summarise_cells_plot(vm_L2_params, "gamma"),
+  aes(Duration_ms, estimate, ymin = lower, ymax = upper, colour = CueType, group = CueType)
+) +
+  geom_line(linewidth = 0.4) +
+  geom_errorbar(width = 8, linewidth = 0.35) +
+  geom_point(size = 1.2) +
+  facet_grid(ID ~ model_id) +
+  scale_x_continuous(breaks = seq(50, 350, 50)) +
+  scale_colour_manual(values = cue_cols) +
+  labs(
+    x = "Encoding duration (ms)", y = "Posterior γ (median + 95% CrI)",
+    title = "L2: guessing by cue and duration (session-nested model)"
+  ) +
+  theme_desc
+
+ggplot(
+  vm_summarise_cells_plot(vm_L2_params, "beta"),
+  aes(Duration_ms, estimate, ymin = lower, ymax = upper, colour = CueType, group = CueType)
+) +
+  geom_line(linewidth = 0.4) +
+  geom_errorbar(width = 8, linewidth = 0.35) +
+  geom_point(size = 1.2) +
+  facet_grid(ID ~ model_id) +
+  scale_x_continuous(breaks = seq(50, 350, 50)) +
+  scale_colour_manual(values = cue_cols) +
+  labs(
+    x = "Encoding duration (ms)", y = "Posterior β (median + 95% CrI)",
+    title = "L2: swap by cue and duration (session-nested model)"
+  ) +
+  theme_desc
+
+ggplot(
+  vm_summarise_cells_plot(vm_L2_params, "kappa"),
+  aes(Duration_ms, estimate, ymin = lower, ymax = upper, colour = CueType, group = CueType)
+) +
+  geom_line(linewidth = 0.4) +
+  geom_errorbar(width = 8, linewidth = 0.35) +
+  geom_point(size = 1.2) +
+  facet_grid(ID ~ model_id) +
+  scale_x_continuous(breaks = seq(50, 350, 50)) +
+  scale_colour_manual(values = cue_cols) +
+  labs(
+    x = "Encoding duration (ms)",
+    y = expression(paste("Posterior ", kappa, " (median + 95% CrI)")),
+    title = "L2: precision by cue and duration (session-nested model)"
+  ) +
+  theme_desc
+```
+
+## 3.4 Model comparison, cell parameters, and session effects
+
+```{r vm-ladder-summary, message=FALSE, warning=FALSE}
+vm_init_plot_defaults()
+
+pick_best <- function(cmp, level) {
+  if (is.null(cmp) || nrow(cmp) == 0) return(tibble())
+  cmp %>%
+    filter(grepl(paste0("^", level), model_id), kappa_struct == "2k") %>%
+    group_by(ID) %>%
+    slice_min(delta_loo, n = 1, with_ties = FALSE) %>%
+    ungroup()
+}
+
+load_vm_loo <- function(level) {
+  f <- file.path("bayes_primary_discrete", paste0("vm_ladder_", level, "_loo.csv"))
+  if (file.exists(f)) read_csv(f, show_col_types = FALSE) else tibble()
+}
+
+vm_L0_loo <- if (exists("vm_L0_loo")) vm_L0_loo else load_vm_loo("L0")
+vm_L1_loo <- if (exists("vm_L1_loo")) vm_L1_loo else load_vm_loo("L1")
+vm_L2_loo <- if (exists("vm_L2_loo")) vm_L2_loo else load_vm_loo("L2")
+
+vm_best_2k <- bind_rows(
+  pick_best(vm_L0_loo, "L0") %>% mutate(ladder = "L0"),
+  pick_best(vm_L1_loo, "L1") %>% mutate(ladder = "L1"),
+  pick_best(vm_L2_loo, "L2") %>% mutate(ladder = "L2")
+)
+
+vm_cross_level <- bind_rows(
+  lapply(vm_raw_ids, function(raw) {
+    rows <- list()
+    for (lv in c("L0", "L1", "L2")) {
+      for (ks in c("2k", "14k")) {
+        fit <- vm_load_fit_cache(raw, lv, ks)
+        if (is.null(fit) || is.null(fit$loo)) next
+        rows[[length(rows) + 1L]] <- tibble(
+          ID = vm_id_pub[[raw]],
+          raw_ID = raw,
+          level = lv,
+          model_id = paste0(lv, "_", ks),
+          kappa_struct = ks,
+          elpd_loo = fit$loo$estimates["elpd_loo", "Estimate"]
+        )
+      }
+    }
+    if (length(rows) == 0) return(NULL)
+    bind_rows(rows) %>%
+      group_by(ID) %>%
+      mutate(delta_loo = -elpd_loo + max(elpd_loo)) %>%
+      ungroup()
+  })
+)
+
+# ---- full cell-level parameters (all models) ----
+vm_all_cells <- vm_collect_all_cell_params(
+  raw_ids = vm_raw_ids,
+  id_pub = vm_id_pub,
+  levels = c("L0", "L1", "L2"),
+  kappa_structs = c("2k", "14k")
+)
+vm_all_cells_fmt <- vm_format_cell_params(vm_all_cells)
+
+write_csv(vm_best_2k, "bayes_primary_discrete/vm_ladder_best_2k.csv")
+write_csv(vm_cross_level, "bayes_primary_discrete/vm_ladder_cross_level_loo.csv")
+write_csv(vm_all_cells_fmt, "bayes_primary_discrete/vm_ladder_all_cell_params.csv")
+
+# ---- session offset parameters (S2–S10 vs S1) ----
+vm_session_offsets <- vm_collect_session_offsets(
+  raw_ids = vm_raw_ids,
+  id_pub = vm_id_pub,
+  levels = c("L0", "L1", "L2"),
+  kappa_structs = c("2k", "14k")
+)
+write_csv(vm_session_offsets, "bayes_primary_discrete/vm_ladder_session_offsets.csv")
+
+# ---- session change at cell level (S10 − S1) ----
+vm_session_kappa <- vm_session_cell_change(vm_all_cells, "kappa")
+vm_session_gamma <- vm_session_cell_change(vm_all_cells, "gamma")
+vm_session_beta <- vm_session_cell_change(vm_all_cells, "beta")
+vm_session_cell <- bind_rows(vm_session_kappa, vm_session_gamma, vm_session_beta)
+write_csv(vm_session_cell, "bayes_primary_discrete/vm_ladder_session_cell_change.csv")
+
+cat("=== LOO: best 2κ per level ===\n")
+print(vm_best_2k %>% select(ID, ladder, model_id, elpd_loo, delta_loo))
+
+cat("\n=== LOO: all models cross-level (per ID) ===\n")
+print(vm_cross_level %>% arrange(ID, delta_loo))
+
+cat("\n=== Full cell params: ", nrow(vm_all_cells_fmt), " rows exported ===\n")
+print(
+  vm_all_cells_fmt %>%
+    filter(level %in% c("L1", "L2"), kappa_struct == "2k",
+           CueType == "NR", Duration_ms %in% c(50, 350), SessionF == "1") %>%
+    select(ID, level, model_id, CueType, Duration_ms, SessionF,
+           kappa, kappa_lo, kappa_hi, gamma, gamma_lo, gamma_hi, beta, beta_lo, beta_hi) %>%
+    arrange(ID, level, Duration_ms),
+  n = 32
+)
+
+cat("\n=== Session offsets (median log/logit add-on, S2–S10) ===\n")
+print(
+  vm_session_offsets %>%
+    filter(model_id %in% c("L1_2k", "L2_2k")) %>%
+    group_by(ID, model_id, component) %>%
+    summarise(
+      median_offset = median(logit_or_log_median),
+      max_abs = max(abs(logit_or_log_median)),
+      .groups = "drop"
+    ) %>%
+    arrange(ID, model_id, component),
+  n = 40
+)
+
+cat("\n=== Session cell change S10−S1 (NR, 50 & 350 ms, L1/L2 2κ) ===\n")
+print(
+  vm_session_cell %>%
+    filter(kappa_struct == "2k", level %in% c("L1", "L2"),
+           CueType == "NR", Duration_ms %in% c(50, 350)) %>%
+    select(ID, level, parameter, Duration_ms, S1, S10, delta_S10_minus_S1, delta_lo, delta_hi) %>%
+    arrange(ID, level, parameter, Duration_ms),
+  n = 40
+)
+```
+
+## 3.5 Theory contrasts (posterior draws)
+
+Contrasts on **κ, γ, β** with 95% CrI: redundancy **gain** (R−NR), **duration**
+(350−50 ms), and **session** (S10−S1). Primary models: L1/L2 with 2κ and 14κ.
+
+```{r vm-ladder-contrasts, message=FALSE, warning=FALSE}
+vm_theory <- vm_collect_theory_contrasts(
+  raw_ids = vm_raw_ids,
+  id_pub = vm_id_pub,
+  levels = c("L1", "L2"),
+  kappa_structs = c("2k", "14k")
+)
+write_csv(vm_theory, "bayes_primary_discrete/vm_ladder_theory_contrasts.csv")
+
+vm_theory_focus <- vm_theory %>%
+  filter(
+    (grepl("^gain_R_minus_NR", contrast) & grepl("(50|350)ms_S", contrast)) |
+      grepl("^dur350_minus_50", contrast) |
+      grepl("^session_S10_minus_S1", contrast)
+  ) %>%
+  mutate(
+    param = case_when(
+      grepl("_kappa_", contrast) ~ "kappa",
+      grepl("_gamma_", contrast) ~ "gamma",
+      grepl("_beta_", contrast) ~ "beta"
+    ),
+    effect = case_when(
+      grepl("^gain", contrast) ~ "R − NR",
+      grepl("^dur350", contrast) ~ "350 − 50 ms",
+      grepl("^session", contrast) ~ "S10 − S1",
+      TRUE ~ NA_character_
+    ),
+    duration_ms = as.integer(str_extract(contrast, "(\\d+)(?=ms)")),
+    session = str_extract(contrast, "S\\d+$"),
+    cue = case_when(
+      grepl("^gain", contrast) ~ NA_character_,
+      grepl("_NR_", contrast) ~ "NR",
+      grepl("_R_", contrast) ~ "R",
+      TRUE ~ NA_character_
+    )
+  )
+
+vm_theory_focus %>%
+  filter(kappa_struct == "2k") %>%
+  select(ID, level, model_id, effect, param, cue, duration_ms, session,
+         median, lower, upper) %>%
+  arrange(ID, level, effect, param, cue, duration_ms, session)
+
+ggplot(
+  vm_theory_focus %>%
+    filter(
+      kappa_struct == "2k",
+      param %in% c("gamma", "kappa"),
+      effect == "350 − 50 ms",
+      session == "S1"
+    ),
+  aes(cue, median, ymin = lower, ymax = upper, colour = param, group = param)
+) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_errorbar(width = 0.15, linewidth = 0.35, position = position_dodge(width = 0.4)) +
+  geom_point(size = 2.5, position = position_dodge(width = 0.4)) +
+  facet_grid(ID ~ level) +
+  scale_colour_manual(values = c(kappa = "#2166AC", gamma = "#B2182B")) +
+  labs(
+    title = "Duration contrast (350 − 50 ms): κ and γ [L1/L2, 2κ, Session 1]",
+    x = "Cue", y = "Posterior contrast (95% CrI)", colour = "Parameter"
+  ) +
+  theme_desc
+
+ggplot(
+  vm_theory_focus %>%
+    filter(
+      kappa_struct == "2k",
+      param == "gamma",
+      effect == "R − NR",
+      session == "S1",
+      duration_ms %in% c(50L, 350L)
+    ),
+  aes(duration_ms, median, ymin = lower, ymax = upper, group = level, colour = level)
+) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_line(linewidth = 0.5) +
+  geom_errorbar(width = 12, linewidth = 0.35) +
   geom_point(size = 2) +
   facet_wrap(~ID) +
-  labs(y = "Circular SD (deg)", x = "Encoding duration")
-# Same summary pooled across participants (descriptive only; not primary inference).
-group_circ <- d %>%
-  group_by(CueType, DurationF) %>%
-  summarise(
-    circSD = as.numeric(sd.circular(circular(SignedErr, units = "degrees"))) * (180 / pi),
-    .groups = "drop"
-  )
-
-ggplot(group_circ, aes(DurationF, circSD, colour = CueType, group = CueType)) +
-  geom_line(linewidth = 1) +
-  geom_point(size = 2) +
-  labs(y = "Circular SD (deg)", x = "Encoding duration")
+  scale_x_continuous(breaks = c(50, 350)) +
+  labs(
+    title = "Redundancy gain contrast (γ_R − γ_NR) [2κ]",
+    x = "Duration (ms)", y = "Posterior contrast (95% CrI)"
+  ) +
+  theme_desc
 ```
 
-# 3. Bayesian primary analysis: AbsErr (discrete session)
+## 3.6 Posterior predictive checks (SignedErr density)
 
-One Student-t model per participant:
+Observed **trial histograms** (all sessions pooled) overlaid with **L0 / L1 / L2**
+mixture PDFs (solid) and **component curves** (dashed). Panels labelled by
+participant, cue, and duration (50 & 350 ms, **2κ**).
 
-`AbsErr ~ CueType * DurationF * SessionF`
-
-- Cue, duration, and session are all categorical (cell means).
-- No `(1 | SessionF)`: session is already a fixed factor, so a random
-  session intercept would be redundant / unidentified.
-- “Average session” contrasts = equal-weight average over all `SessionF`
-  levels (emmeans default when SessionF is omitted from the specs).
-- Early = sessions 1–2; late = sessions 9–10 (mean of those session
-  contrasts).
-- ROPE for AbsErr differences: ±3 degrees.
-
-## 3.1 Fit / load models
-
-```{r bayes-fit, message=FALSE, warning=FALSE}
-# Region of practical equivalence for AbsErr contrasts (degrees).
-rope_abs <- 3
-
-# Session factor levels used in early / late / S1 / S10 contrasts.
-sess_levels <- levels(d$SessionF)
-stopifnot(all(c("1", "2", "9", "10") %in% sess_levels))
-early_sessions <- c("1", "2")
-late_sessions  <- c("9", "10")
-
-# Ordered-duration linear contrast weights (7 levels: 50 ... 350 ms).
-# Negative AbsErr contrast = error falls as duration increases.
-w_linear <- c(-3, -2, -1, 0, 1, 2, 3)
-w_350_minus_50 <- c(-1, 0, 0, 0, 0, 0, 1)
-
-# Weights for Session 1 − Session 10 on the SessionF factor (order = sess_levels).
-w_s1_minus_s10 <- setNames(rep(0, length(sess_levels)), sess_levels)
-w_s1_minus_s10["1"]  <- 1
-w_s1_minus_s10["10"] <- -1
-
-# Mildly regularising priors. No class = "sd" (no random effects in this model).
-bayes_priors <- c(
-  prior(normal(30, 20), class = "Intercept"),
-  prior(normal(0, 15), class = "b"),
-  prior(exponential(1), class = "sigma"),
-  prior(gamma(2, 0.1), class = "nu")
+```{r vm-ladder-ppc, fig.width=14, fig.height=12, message=FALSE, warning=FALSE}
+ppc_level_cols <- c(L0 = "#7570B3", L1 = "#1B9E77", L2 = "#D95F02")
+ppc_component_lty <- c(
+  target = "dashed",
+  uniform = "dotdash",
+  swap1 = "dotted",
+  swap2 = "longdash",
+  swap3 = "twodash"
 )
 
-dir.create("bayes_primary_discrete", showWarnings = FALSE, recursive = TRUE)
+vm_ppc_plot_cell <- function(raw, id_label, cue, duration) {
+  ppc <- vm_ppc_compare_levels(raw, cue, duration, kappa_struct = "2k")
+  if (is.null(ppc)) return(NULL)
 
-# Fit / cache each participant. Saved under bayes_primary_discrete/ so they do
-# not overwrite the continuous Session_z models.
-m_AQ <- brm(
-  AbsErr ~ CueType * DurationF * SessionF,
-  data = d_AQ,
-  family = student(),
-  prior = bayes_priors,
-  chains = 4, cores = 4, iter = 4000, warmup = 2000,
-  control = list(adapt_delta = 0.95, max_treedepth = 12),
-  seed = 1234,
-  file = "bayes_primary_discrete/m_AQ_abserr",
-  file_refit = "on_change"
-)
+  dur_ms <- as.integer(gsub("ms", "", duration))
+  panel_title <- paste(id_label, cue, paste0(dur_ms, " ms"), sep = " · ")
 
-m_HC <- brm(
-  AbsErr ~ CueType * DurationF * SessionF,
-  data = d_HC,
-  family = student(),
-  prior = bayes_priors,
-  chains = 4, cores = 4, iter = 4000, warmup = 2000,
-  control = list(adapt_delta = 0.95, max_treedepth = 12),
-  seed = 1234,
-  file = "bayes_primary_discrete/m_HC_abserr",
-  file_refit = "on_change"
-)
-
-m_YILIU <- brm(
-  AbsErr ~ CueType * DurationF * SessionF,
-  data = d_YILIU,
-  family = student(),
-  prior = bayes_priors,
-  chains = 4, cores = 4, iter = 4000, warmup = 2000,
-  control = list(adapt_delta = 0.95, max_treedepth = 12),
-  seed = 1234,
-  file = "bayes_primary_discrete/m_YILIU_abserr",
-  file_refit = "on_change"
-)
-
-summary(m_AQ)
-summary(m_HC)
-summary(m_YILIU)
-```
-
-## 3.2 Theory contrasts (written out)
-
-Same scientific questions as the continuous script; session slices use
-discrete session labels instead of Session_z landmarks.
-
-1.  Redundancy gain at 50 ms (averaged over sessions): AbsErr(NR) −
-    AbsErr(R)
-2.  Duration change by cue (averaged over sessions): 350−50 and linear
-    trend
-3.  Catch-up early / average / late; average = all sessions; early =
-    1–2; late = 9–10
-4.  Practice: late − early change in the 50→350 duration effect, by cue
-
-```{r bayes-contrasts, message=FALSE, warning=FALSE}
-contrast_rows <- list()
-row_i <- 0
-models <- list(AQ = m_AQ, HC = m_HC, YILIU = m_YILIU)
-
-for (pid in names(models)) {
-  model <- models[[pid]]
-
-  # ---- 1) Redundancy gain by duration, averaged over SessionF ----
-  emm_gain <- emmeans(model, ~ CueType | DurationF)
-  ct_gain <- contrast(emm_gain, method = list("NR - R" = c(1, -1)), by = "DurationF")
-  draws_gain <- gather_emmeans_draws(ct_gain)
-
-  for (dur in levels(d$DurationF)) {
-    v <- draws_gain$.value[draws_gain$DurationF == dur]
-    v <- v[is.finite(v)]
-    stopifnot(length(v) > 0)
-    row_i <- row_i + 1
-    contrast_rows[[row_i]] <- tibble(
-      ID = pid,
-      effect = paste0("gain_", dur),
-      median = median(v),
-      lower = as.numeric(quantile(v, 0.025)),
-      upper = as.numeric(quantile(v, 0.975)),
-      p_lt_0 = mean(v < 0),
-      p_gt_0 = mean(v > 0),
-      p_in_rope = mean(abs(v) < rope_abs)
-    )
-  }
-
-  v <- draws_gain$.value[draws_gain$DurationF == "50ms"]
-  v <- v[is.finite(v)]
-  row_i <- row_i + 1
-  contrast_rows[[row_i]] <- tibble(
-    ID = pid,
-    effect = "gain_at_50ms",
-    median = median(v),
-    lower = as.numeric(quantile(v, 0.025)),
-    upper = as.numeric(quantile(v, 0.975)),
-    p_lt_0 = mean(v < 0),
-    p_gt_0 = mean(v > 0),
-    p_in_rope = mean(abs(v) < rope_abs)
-  )
-
-  # ---- 2) Duration effects by cue, averaged over SessionF ----
-  emm_dur <- emmeans(model, ~ DurationF | CueType)
-  ct_dur <- contrast(
-    emm_dur,
-    method = list(
-      "linear_trend" = w_linear,
-      "350ms - 50ms" = w_350_minus_50
-    ),
-    by = "CueType"
-  )
-  draws_dur <- gather_emmeans_draws(ct_dur)
-
-  for (cue in c("NR", "R")) {
-    for (cname in c("linear_trend", "350ms - 50ms")) {
-      v <- draws_dur$.value[draws_dur$CueType == cue & draws_dur$contrast == cname]
-      v <- v[is.finite(v)]
-      stopifnot(length(v) > 0)
-      row_i <- row_i + 1
-      contrast_rows[[row_i]] <- tibble(
-        ID = pid,
-        effect = paste0(cue, ": ", cname),
-        median = median(v),
-        lower = as.numeric(quantile(v, 0.025)),
-        upper = as.numeric(quantile(v, 0.975)),
-        p_lt_0 = mean(v < 0),
-        p_gt_0 = mean(v > 0),
-        p_in_rope = mean(abs(v) < rope_abs)
+  comp <- ppc$components %>%
+    mutate(
+      level = factor(level, levels = c("L0", "L1", "L2")),
+      component = factor(
+        component,
+        levels = c("target", "uniform", "swap1", "swap2", "swap3")
       )
+    )
+
+  ggplot() +
+    geom_histogram(
+      aes(x = ppc$observed, y = after_stat(density)),
+      binwidth = 10, boundary = -180, fill = "grey85", colour = "white",
+      alpha = 0.85
+    ) +
+    geom_line(
+      data = ppc$mixture %>% mutate(level = factor(level, levels = c("L0", "L1", "L2"))),
+      aes(x = theta_deg, y = density, colour = level),
+      linewidth = 0.9, inherit.aes = FALSE
+    ) +
+    geom_line(
+      data = comp,
+      aes(x = theta_deg, y = density, colour = level, linetype = component),
+      linewidth = 0.55, inherit.aes = FALSE
+    ) +
+    scale_x_continuous(limits = c(-180, 180), breaks = seq(-180, 180, 90)) +
+    scale_colour_manual(name = "Model", values = ppc_level_cols) +
+    scale_linetype_manual(name = "Component", values = ppc_component_lty) +
+    labs(
+      title = panel_title,
+      x = "Signed error (°)", y = "Density"
+    ) +
+    theme_desc +
+    theme(
+      plot.title = element_text(size = 10, face = "bold"),
+      legend.position = "none"
+    )
+}
+
+ppc_specs <- expand_grid(
+  raw = vm_raw_ids,
+  cue = c("NR", "R"),
+  duration = c("50ms", "350ms")
+) %>%
+  mutate(
+    id_label = unname(vm_id_pub[raw]),
+    row_key = interaction(cue, duration, lex.order = TRUE)
+  ) %>%
+  arrange(row_key, id_label)
+
+ppc_plots <- pmap(
+  ppc_specs,
+  function(raw, cue, duration, id_label, row_key) {
+    vm_ppc_plot_cell(raw, id_label, cue, duration)
+  }
+)
+
+ppc_plots <- ppc_plots[!vapply(ppc_plots, is.null, logical(1))]
+if (length(ppc_plots) > 0) {
+  for (i in seq_along(ppc_plots)) {
+    if (i > 1) {
+      ppc_plots[[i]] <- ppc_plots[[i]] + theme(legend.position = "none")
+    } else {
+      ppc_plots[[i]] <- ppc_plots[[i]] +
+        theme(
+          legend.position = "bottom",
+          legend.box = "vertical",
+          legend.text = element_text(size = 8)
+        )
     }
   }
 
-  # ---- 3) 50→350 duration change at every session, then slice ----
-  emm_dur_sess <- emmeans(model, ~ DurationF | CueType * SessionF)
-  ct_dur_sess <- contrast(
-    emm_dur_sess,
-    method = list("350ms - 50ms" = w_350_minus_50),
-    by = c("CueType", "SessionF")
-  )
-  draws_ds <- gather_emmeans_draws(ct_dur_sess)
-  draws_ds$SessionF <- as.character(draws_ds$SessionF)
-
-  # Average the 50→350 change across sessions within each posterior draw.
-  slice_early <- draws_ds %>%
-    filter(SessionF %in% early_sessions) %>%
-    group_by(.draw, CueType) %>%
-    summarise(.value = mean(.value), .groups = "drop")
-  slice_average <- draws_ds %>%
-    filter(SessionF %in% sess_levels) %>%
-    group_by(.draw, CueType) %>%
-    summarise(.value = mean(.value), .groups = "drop")
-  slice_late <- draws_ds %>%
-    filter(SessionF %in% late_sessions) %>%
-    group_by(.draw, CueType) %>%
-    summarise(.value = mean(.value), .groups = "drop")
-
-  slice_draws <- list(
-    early = slice_early,
-    average = slice_average,
-    late = slice_late
-  )
-
-  for (slice in c("early", "average", "late")) {
-    wide <- slice_draws[[slice]] %>%
-      pivot_wider(names_from = CueType, values_from = .value)
-    v <- wide$R - wide$NR
-    v <- v[is.finite(v)]
-    stopifnot(length(v) > 0)
-    row_i <- row_i + 1
-    contrast_rows[[row_i]] <- tibble(
-      ID = pid,
-      effect = paste0("catchup_", slice),
-      median = median(v),
-      lower = as.numeric(quantile(v, 0.025)),
-      upper = as.numeric(quantile(v, 0.975)),
-      p_lt_0 = mean(v < 0),
-      p_gt_0 = mean(v > 0),
-      p_in_rope = mean(abs(v) < rope_abs)
+  patchwork::wrap_plots(ppc_plots, ncol = 4, byrow = TRUE) +
+    patchwork::plot_annotation(
+      title = "Posterior predictive checks: all sessions pooled [2κ]",
+      subtitle = paste(
+        "Rows: NR/R × 50/350 ms · Columns: P01–P04 ·",
+        "Solid = mixture PDF · Dashed = components (colour = model level)"
+      ),
+      theme = theme(
+        plot.title = element_text(size = 12, face = "bold"),
+        plot.subtitle = element_text(size = 10)
+      )
     )
-  }
-
-  # Catch-up late − early
-  wide_e <- slice_draws$early %>%
-    pivot_wider(names_from = CueType, values_from = .value) %>%
-    mutate(catchup = R - NR)
-  wide_l <- slice_draws$late %>%
-    pivot_wider(names_from = CueType, values_from = .value) %>%
-    mutate(catchup = R - NR)
-  v <- wide_l$catchup[match(wide_e$.draw, wide_l$.draw)] - wide_e$catchup
-  v <- v[is.finite(v)]
-  row_i <- row_i + 1
-  contrast_rows[[row_i]] <- tibble(
-    ID = pid,
-    effect = "catchup_late_minus_early",
-    median = median(v),
-    lower = as.numeric(quantile(v, 0.025)),
-    upper = as.numeric(quantile(v, 0.975)),
-    p_lt_0 = mean(v < 0),
-    p_gt_0 = mean(v > 0),
-    p_in_rope = mean(abs(v) < rope_abs)
-  )
-
-  # ---- 4) Practice: late − early duration effect, by cue ----
-  for (cue in c("NR", "R")) {
-    early_df <- slice_draws$early %>% filter(CueType == cue) %>% arrange(.draw)
-    late_df  <- slice_draws$late  %>% filter(CueType == cue) %>% arrange(.draw)
-    stopifnot(identical(early_df$.draw, late_df$.draw))
-    v <- late_df$.value - early_df$.value
-    v <- v[is.finite(v)]
-    stopifnot(length(v) > 0)
-    row_i <- row_i + 1
-    contrast_rows[[row_i]] <- tibble(
-      ID = pid,
-      effect = paste0(cue, ": duration_effect_late_minus_early"),
-      median = median(v),
-      lower = as.numeric(quantile(v, 0.025)),
-      upper = as.numeric(quantile(v, 0.975)),
-      p_lt_0 = mean(v < 0),
-      p_gt_0 = mean(v > 0),
-      p_in_rope = mean(abs(v) < rope_abs)
-    )
-  }
 }
-
-primary_summary <- bind_rows(contrast_rows) %>%
-  arrange(effect, ID)
-
-primary_summary
-
-theory_focus <- primary_summary %>%
-  filter(
-    effect %in% c(
-      "gain_at_50ms",
-      "NR: linear_trend", "R: linear_trend",
-      "NR: 350ms - 50ms", "R: 350ms - 50ms",
-      "catchup_early", "catchup_average", "catchup_late",
-      "catchup_late_minus_early",
-      "NR: duration_effect_late_minus_early",
-      "R: duration_effect_late_minus_early"
-    )
-  ) %>%
-  mutate(
-    question = case_when(
-      effect == "gain_at_50ms" ~ "1. redundancy advantage",
-      grepl("linear_trend|350ms - 50ms", effect) ~ "2. duration change by cue",
-      grepl("^catchup_", effect) ~ "3. NR catch-up vs R",
-      grepl("duration_effect_late_minus_early", effect) ~ "4. practice change of duration slope",
-      TRUE ~ "other"
-    )
-  ) %>%
-  arrange(question, effect, ID)
-
-theory_focus
-
-write_csv(theory_focus, "bayes_primary_discrete/theory_focus.csv")
-write_csv(primary_summary, "bayes_primary_discrete/primary_summary.csv")
-```
-
-## 3.3 Posterior predictive checks
-
-```{r bayes-ppc, fig.width=10, fig.height=7}
-p_ecdf_AQ <- pp_check(m_AQ, ndraws = 50, type = "ecdf_overlay") +
-  coord_cartesian(xlim = c(0, 180)) +
-  labs(title = "AQ: ECDF", x = "AbsErr (deg)")
-p_ecdf_HC <- pp_check(m_HC, ndraws = 50, type = "ecdf_overlay") +
-  coord_cartesian(xlim = c(0, 180)) +
-  labs(title = "HC: ECDF", x = "AbsErr (deg)")
-p_ecdf_YILIU <- pp_check(m_YILIU, ndraws = 50, type = "ecdf_overlay") +
-  coord_cartesian(xlim = c(0, 180)) +
-  labs(title = "YILIU: ECDF", x = "AbsErr (deg)")
-
-yrep_AQ <- pmin(pmax(posterior_predict(m_AQ, ndraws = 8), 0), 180)
-yrep_HC <- pmin(pmax(posterior_predict(m_HC, ndraws = 8), 0), 180)
-yrep_YILIU <- pmin(pmax(posterior_predict(m_YILIU, ndraws = 8), 0), 180)
-
-p_hist_AQ <- bayesplot::ppc_hist(get_y(m_AQ), yrep_AQ, binwidth = 5) +
-  coord_cartesian(xlim = c(0, 180)) +
-  labs(title = "AQ: hist", x = "AbsErr (deg)")
-p_hist_HC <- bayesplot::ppc_hist(get_y(m_HC), yrep_HC, binwidth = 5) +
-  coord_cartesian(xlim = c(0, 180)) +
-  labs(title = "HC: hist", x = "AbsErr (deg)")
-p_hist_YILIU <- bayesplot::ppc_hist(get_y(m_YILIU), yrep_YILIU, binwidth = 5) +
-  coord_cartesian(xlim = c(0, 180)) +
-  labs(title = "YILIU: hist", x = "AbsErr (deg)")
-
-(p_ecdf_AQ | p_ecdf_HC | p_ecdf_YILIU) /
-  (p_hist_AQ | p_hist_HC | p_hist_YILIU)
-```
-
-## 3.4 Contrast plots
-
-```{r bayes-contrast-plots, fig.width=10, fig.height=8}
-plot_duration <- primary_summary %>%
-  filter(effect %in% c("NR: 350ms - 50ms", "R: 350ms - 50ms")) %>%
-  mutate(CueType = if_else(grepl("^NR", effect), "NR", "R"))
-
-plot_catch <- primary_summary %>%
-  filter(effect %in% c("catchup_early", "catchup_average", "catchup_late")) %>%
-  mutate(
-    SessionSlice = factor(
-      gsub("catchup_", "", effect),
-      levels = c("early", "average", "late")
-    )
-  )
-
-plot_practice <- primary_summary %>%
-  filter(grepl("duration_effect_late_minus_early", effect)) %>%
-  mutate(CueType = if_else(grepl("^NR", effect), "NR", "R"))
-
-p1 <- ggplot(plot_duration, aes(CueType, median, ymin = lower, ymax = upper)) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_hline(yintercept = c(-rope_abs, rope_abs), linetype = "dotted", colour = "grey40") +
-  geom_pointrange() +
-  facet_wrap(~ID) +
-  labs(
-    title = "50→350 ms AbsErr change by cue (avg over sessions)",
-    subtitle = "Negative = lower error at 350 ms; dotted = ±3° ROPE",
-    y = "Posterior median (deg)", x = "Cue"
-  )
-
-p2 <- ggplot(plot_catch, aes(SessionSlice, median, ymin = lower, ymax = upper, group = 1)) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_hline(yintercept = c(-rope_abs, rope_abs), linetype = "dotted", colour = "grey40") +
-  geom_line() +
-  geom_pointrange() +
-  facet_wrap(~ID) +
-  labs(
-    title = "NR catch-up across session slices (discrete)",
-    subtitle = "Early = S1–2; average = all sessions; late = S9–10",
-    y = "Posterior median (deg)", x = "Session slice"
-  )
-
-p3 <- ggplot(plot_practice, aes(CueType, median, ymin = lower, ymax = upper)) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_hline(yintercept = c(-rope_abs, rope_abs), linetype = "dotted", colour = "grey40") +
-  geom_pointrange() +
-  facet_wrap(~ID) +
-  labs(
-    title = "Practice change in 50→350 duration effect",
-    subtitle = "Late (S9–10) − early (S1–2)",
-    y = "Posterior median (deg)", x = "Cue"
-  )
-
-p1 / p2 / p3
 ```
 
 # 4. Bayesian primary analysis: cirSD (discrete session)
@@ -595,7 +952,8 @@ dir.create("bayes_primary_discrete", showWarnings = FALSE, recursive = TRUE)
 cir_boot_files <- c(
   AQ = "bayes_primary_discrete/cirsd_boot_AQ.rds",
   HC = "bayes_primary_discrete/cirsd_boot_HC.rds",
-  YILIU = "bayes_primary_discrete/cirsd_boot_YILIU.rds"
+  YILIU = "bayes_primary_discrete/cirsd_boot_YILIU.rds",
+  YDL = "bayes_primary_discrete/cirsd_boot_YDL.rds"
 )
 d_cir_AQ <- if (file.exists(cir_boot_files[["AQ"]])) readRDS(cir_boot_files[["AQ"]]) else {
   tmp <- build_cirsd_boot(d_AQ); saveRDS(tmp, cir_boot_files[["AQ"]]); tmp
@@ -606,14 +964,18 @@ d_cir_HC <- if (file.exists(cir_boot_files[["HC"]])) readRDS(cir_boot_files[["HC
 d_cir_YILIU <- if (file.exists(cir_boot_files[["YILIU"]])) readRDS(cir_boot_files[["YILIU"]]) else {
   tmp <- build_cirsd_boot(d_YILIU); saveRDS(tmp, cir_boot_files[["YILIU"]]); tmp
 }
+d_cir_YDL <- if (file.exists(cir_boot_files[["YDL"]])) readRDS(cir_boot_files[["YDL"]]) else {
+  tmp <- build_cirsd_boot(d_YDL); saveRDS(tmp, cir_boot_files[["YDL"]]); tmp
+}
 
 stopifnot(nrow(d_cir_AQ) == 2 * 7 * 10 * B_cir)
+stopifnot(nrow(d_cir_YDL) == 2 * 7 * 10 * B_cir)
 
 bayes_priors_cir <- c(
   prior(normal(40, 20), class = "Intercept"),
   prior(normal(0, 15), class = "b"),
-  prior(exponential(1), class = "sigma"),
-  prior(gamma(2, 0.1), class = "nu")
+  prior(exponential(1 / 15), class = "sigma"),
+  prior(gamma(2, 0.05), class = "nu")
 )
 
 m_cir_AQ <- brm(
@@ -637,10 +999,18 @@ m_cir_YILIU <- brm(
   control = list(adapt_delta = 0.95, max_treedepth = 12), seed = 1234,
   file = "bayes_primary_discrete/m_YILIU_cirsd", file_refit = "on_change"
 )
+m_cir_YDL <- brm(
+  cirSD_deg ~ CueType * DurationF * SessionF,
+  data = d_cir_YDL, family = student(), prior = bayes_priors_cir,
+  chains = 4, cores = 4, iter = 4000, warmup = 2000,
+  control = list(adapt_delta = 0.95, max_treedepth = 12), seed = 1234,
+  file = "bayes_primary_discrete/m_YDL_cirsd", file_refit = "on_change"
+)
 
 summary(m_cir_AQ)
 summary(m_cir_HC)
 summary(m_cir_YILIU)
+summary(m_cir_YDL)
 ```
 
 ## 4.2 Theory contrasts (cirSD; same questions as AbsErr)
@@ -648,7 +1018,7 @@ summary(m_cir_YILIU)
 ```{r cirsd-bayes-contrasts, message=FALSE, warning=FALSE}
 contrast_rows_cir <- list()
 row_i <- 0
-models_cir <- list(AQ = m_cir_AQ, HC = m_cir_HC, YILIU = m_cir_YILIU)
+models_cir <- list(P01 = m_cir_AQ, P02 = m_cir_HC, P03 = m_cir_YILIU, P04 = m_cir_YDL)
 
 for (pid in names(models_cir)) {
   model <- models_cir[[pid]]
@@ -803,7 +1173,8 @@ write_csv(primary_summary_cir, "bayes_primary_discrete/primary_summary_cirsd.csv
 ```{r cirsd-bayes-ppc, fig.width=10, fig.height=4}
 (pp_check(m_cir_AQ, ndraws = 50, type = "ecdf_overlay") + labs(title = "AQ: cirSD ECDF", x = "cirSD (deg)")) |
   (pp_check(m_cir_HC, ndraws = 50, type = "ecdf_overlay") + labs(title = "HC: cirSD ECDF", x = "cirSD (deg)")) |
-  (pp_check(m_cir_YILIU, ndraws = 50, type = "ecdf_overlay") + labs(title = "YILIU: cirSD ECDF", x = "cirSD (deg)"))
+  (pp_check(m_cir_YILIU, ndraws = 50, type = "ecdf_overlay") + labs(title = "YILIU: cirSD ECDF", x = "cirSD (deg)")) |
+  (pp_check(m_cir_YDL, ndraws = 50, type = "ecdf_overlay") + labs(title = "YDL: cirSD ECDF", x = "cirSD (deg)"))
 ```
 
 ## 4.4 Contrast plots (cirSD)
@@ -843,102 +1214,91 @@ p3c <- ggplot(plot_practice_cir, aes(CueType, median, ymin = lower, ymax = upper
 p1c / p2c / p3c
 ```
 
-# 5. Pre-mixture 1: AbsErr Session 1 vs Session 10 by duration
+# 5. VM ladder: Session 1 vs Session 10 (γ and κ from L1, 2κ)
 
-With discrete `SessionF`, this is a direct session contrast (not a
-Session_z slice).
+Uses **L1_2k** posterior cell parameters. Requires Section 3.2 (L1) to be fit first.
 
-```{r abserr-s1-s10, message=FALSE, warning=FALSE}
-s1s10_rows <- list()
+```{r vm-s1-s10, message=FALSE, warning=FALSE}
+vm_init_plot_defaults()
+if (!exists("vm_L1")) {
+  vm_L1 <- readRDS("bayes_primary_discrete/vm_ladder_L1_results.rds")$fits
+}
+
+vm_s1s10_rows <- list()
 row_i <- 0
 
-for (pid in names(models)) {
-  model <- models[[pid]]
-
-  emm <- emmeans(model, ~ SessionF | CueType * DurationF)
-  ct <- contrast(
-    emm,
-    method = list("S1 - S10" = as.numeric(w_s1_minus_s10)),
-    by = c("CueType", "DurationF")
-  )
-  draws <- gather_emmeans_draws(ct)
+for (raw in vm_raw_ids) {
+  fit_obj <- vm_L1[[raw]][["L1_2k"]]
+  stopifnot(!is.null(fit_obj))
+  cp <- extract_vm_cell_params(fit_obj)
 
   for (cue in c("NR", "R")) {
     for (dur in levels(d$DurationF)) {
-      v <- draws$.value[draws$CueType == cue & draws$DurationF == dur]
-      v <- v[is.finite(v)]
-      stopifnot(length(v) > 0)
+      s1 <- cp %>% filter(CueType == cue, DurationF == dur, SessionF == "1")
+      s10 <- cp %>% filter(CueType == cue, DurationF == dur, SessionF == "10")
+      stopifnot(nrow(s1) == 1, nrow(s10) == 1)
       dur_ms <- as.numeric(gsub("ms", "", dur))
-      row_i <- row_i + 1
-      s1s10_rows[[row_i]] <- tibble(
-        ID = pid,
-        CueType = cue,
-        DurationF = dur,
-        Duration_ms = dur_ms,
-        short_duration = dur_ms <= 150,
-        median = median(v),
-        lower = as.numeric(quantile(v, 0.025)),
-        upper = as.numeric(quantile(v, 0.975)),
-        p_gt_0 = mean(v > 0),
-        p_lt_0 = mean(v < 0),
-        p_in_rope = mean(abs(v) < rope_abs)
-      )
+      for (param in c("gamma", "kappa")) {
+        row_i <- row_i + 1
+        vm_s1s10_rows[[row_i]] <- tibble(
+          ID = vm_id_pub[[raw]],
+          CueType = cue,
+          DurationF = dur,
+          Duration_ms = dur_ms,
+          parameter = param,
+          median = s10[[paste0(param, "_median")]] - s1[[paste0(param, "_median")]],
+          lower = s10[[paste0(param, "_lower")]] - s1[[paste0(param, "_upper")]],
+          upper = s10[[paste0(param, "_upper")]] - s1[[paste0(param, "_lower")]]
+        )
+      }
     }
-
-    short <- draws %>%
-      filter(CueType == cue, DurationF %in% c("50ms", "100ms", "150ms")) %>%
-      group_by(.draw) %>%
-      summarise(.value = mean(.value), .groups = "drop")
-    v <- short$.value[is.finite(short$.value)]
-    row_i <- row_i + 1
-    s1s10_rows[[row_i]] <- tibble(
-      ID = pid,
-      CueType = cue,
-      DurationF = "short_mean",
-      Duration_ms = NA_real_,
-      short_duration = TRUE,
-      median = median(v),
-      lower = as.numeric(quantile(v, 0.025)),
-      upper = as.numeric(quantile(v, 0.975)),
-      p_gt_0 = mean(v > 0),
-      p_lt_0 = mean(v < 0),
-      p_in_rope = mean(abs(v) < rope_abs)
-    )
   }
 }
 
-abserr_s1_s10 <- bind_rows(s1s10_rows)
-abserr_s1_s10_cell <- abserr_s1_s10 %>%
-  filter(DurationF != "short_mean") %>%
-  arrange(ID, CueType, Duration_ms)
-abserr_s1_s10_short <- abserr_s1_s10 %>%
-  filter(DurationF == "short_mean") %>%
-  arrange(ID, CueType)
+vm_s1s10 <- bind_rows(vm_s1s10_rows) %>% arrange(ID, parameter, CueType, Duration_ms)
+vm_s1s10
 
-abserr_s1_s10_cell
-abserr_s1_s10_short
-
-write_csv(abserr_s1_s10_cell, "bayes_primary_discrete/abserr_s1_vs_s10_by_duration.csv")
-write_csv(abserr_s1_s10_short, "bayes_primary_discrete/abserr_s1_vs_s10_short.csv")
+write_csv(vm_s1s10, "bayes_primary_discrete/vm_ladder_s1_vs_s10.csv")
 ```
 
-```{r abserr-s1-s10-plot, fig.width=10, fig.height=5}
+```{r vm-s1-s10-plot, fig.width=10, fig.height=8}
 ggplot(
-  abserr_s1_s10_cell,
+  vm_s1s10 %>% filter(parameter == "gamma"),
   aes(Duration_ms, median, ymin = lower, ymax = upper, colour = CueType, group = CueType)
 ) +
   geom_hline(yintercept = 0, linetype = "dashed") +
-  geom_hline(yintercept = c(-rope_abs, rope_abs), linetype = "dotted", colour = "grey40") +
-  geom_line() +
-  geom_pointrange() +
+  geom_line(linewidth = 0.5) +
+  geom_errorbar(width = 8, linewidth = 0.35) +
+  geom_point(size = 2) +
   facet_wrap(~ID) +
+  scale_x_continuous(breaks = seq(50, 350, by = 50)) +
+  scale_colour_manual(values = cue_cols) +
   labs(
-    title = "AbsErr Session 1 − Session 10 by duration (discrete SessionF)",
-    subtitle = "Positive = higher AbsErr in Session 1; dotted = ±3° ROPE",
+    title = "L1 (2κ): Session 10 − Session 1 change in γ",
     x = "Encoding duration (ms)",
-    y = "Posterior median difference (deg)"
-  )
+    y = "Δγ (median + 95% CrI)"
+  ) +
+  theme_desc
+
+ggplot(
+  vm_s1s10 %>% filter(parameter == "kappa"),
+  aes(Duration_ms, median, ymin = lower, ymax = upper, colour = CueType, group = CueType)
+) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_line(linewidth = 0.5) +
+  geom_errorbar(width = 8, linewidth = 0.35) +
+  geom_point(size = 2) +
+  facet_wrap(~ID) +
+  scale_x_continuous(breaks = seq(50, 350, by = 50)) +
+  scale_colour_manual(values = cue_cols) +
+  labs(
+    title = "L1 (2κ): Session 10 − Session 1 change in κ",
+    x = "Encoding duration (ms)",
+    y = expression(Delta * kappa ~ "(median + 95% CrI)")
+  ) +
+  theme_desc
 ```
+
 
 # 6. Pre-mixture 2: cirSD Session 1 vs Session 10 (bootstrap)
 
@@ -951,7 +1311,7 @@ variability in Session 1.
 B <- 10000  # bootstrap replicates
 set.seed(1234)
 
-ids <- c("AQ", "HC", "YILIU")
+ids <- participants
 cues <- c("NR", "R")
 durs <- levels(d$DurationF)
 
@@ -1114,7 +1474,7 @@ ggplot(
   )
 ```
 
-# 7. Circular mixture: per-cell ML (target + guess + swap)
+# 7. Circular mixture (3-comp): per-cell ML (target + guess + swap)
 
 Bays-style mixture on signed errors, one independent ML fit per cue ×
 duration cell (14 cells × participant; sessions pooled). Always 3 unique
@@ -1130,10 +1490,17 @@ non-target colours, so the swap term is three equal von Mises bumps:
 
 ```{r mixture-load}
 mix_file <- "mixture_cells/all_cell_params.csv"
+need_mix <- (!file.exists(mix_file)) ||
+  (!all(id_raw %in% read_csv(mix_file, show_col_types = FALSE)$ID))
+if (need_mix) {
+  message("Running s1_mixture_cells.R ...")
+  system("Rscript s1_mixture_cells.R", intern = FALSE)
+}
 stopifnot(file.exists(mix_file))
 
 mix_cells <- read_csv(mix_file, show_col_types = FALSE) %>%
   mutate(
+    ID = factor(id_pub[ID], levels = participants),
     CueType = factor(CueType, levels = c("NR", "R")),
     DurationF = factor(
       DurationF,
@@ -1142,7 +1509,7 @@ mix_cells <- read_csv(mix_file, show_col_types = FALSE) %>%
     Duration_ms = as.numeric(gsub("ms", "", as.character(DurationF)))
   )
 
-stopifnot(all(c("AQ", "HC", "YILIU") %in% mix_cells$ID))
+stopifnot(all(participants %in% mix_cells$ID))
 stopifnot(all(mix_cells$convergence == 0 | is.na(mix_cells$convergence)))
 stopifnot(all(mix_cells$p_target + mix_cells$gamma + mix_cells$beta > 0.99))
 stopifnot(all(mix_cells$p_target + mix_cells$gamma + mix_cells$beta < 1.01))
@@ -1211,7 +1578,107 @@ ggplot(prop_long, aes(Duration_ms, proportion, colour = CueType, group = CueType
   )
 ```
 
-# 8. Simple von Mises: 14-κ vs 2-κ (sessions pooled)
+# 8. Circular mixture (2-comp): per-cell ML (target + guess)
+
+Same cell grid as §7, but **no colour-swap**. Large errors can only be
+explained as guesses. Useful because swap models often over-attribute
+guessing as swaps.
+
+`p(θ) = p_target · VM(0, κ) + γ · Uniform`, with `p_target = 1 − γ`.
+
+Fits from `Rscript s1_mixture_cells.R` (Part D) →
+`mixture_cells/all_cell_params_2comp.csv`.
+
+```{r mixture2-load}
+mix2_file <- "mixture_cells/all_cell_params_2comp.csv"
+need_mix2 <- (!file.exists(mix2_file)) ||
+  (!all(id_raw %in% read_csv(mix2_file, show_col_types = FALSE)$ID))
+if (need_mix2) {
+  message("Running s1_mixture_cells.R (includes 2-comp Part D) ...")
+  system("Rscript s1_mixture_cells.R", intern = FALSE)
+}
+stopifnot(file.exists(mix2_file))
+
+mix2_cells <- read_csv(mix2_file, show_col_types = FALSE) %>%
+  mutate(
+    ID = factor(id_pub[ID], levels = participants),
+    CueType = factor(CueType, levels = c("NR", "R")),
+    DurationF = factor(
+      DurationF,
+      levels = c("50ms", "100ms", "150ms", "200ms", "250ms", "300ms", "350ms")
+    ),
+    Duration_ms = as.numeric(gsub("ms", "", as.character(DurationF)))
+  )
+
+stopifnot(all(participants %in% mix2_cells$ID))
+stopifnot(all(mix2_cells$convergence == 0 | is.na(mix2_cells$convergence)))
+stopifnot(all(abs(mix2_cells$p_target + mix2_cells$gamma - 1) < 1e-6))
+
+mix2_cells %>%
+  select(ID, CueType, DurationF, n_trials, kappa, circSD_deg,
+         p_target, gamma, nll, convergence) %>%
+  mutate(across(c(kappa, circSD_deg, p_target, gamma, nll), ~ round(.x, 3))) %>%
+  arrange(ID, CueType, DurationF)
+```
+
+```{r mixture2-proportion-plot, fig.width=10, fig.height=6}
+prop2_long <- mix2_cells %>%
+  select(ID, CueType, Duration_ms, p_target, gamma) %>%
+  pivot_longer(
+    c(p_target, gamma),
+    names_to = "component",
+    values_to = "proportion"
+  ) %>%
+  mutate(
+    component = factor(
+      component,
+      levels = c("p_target", "gamma"),
+      labels = c("Target", "Guess")
+    )
+  )
+
+ggplot(prop2_long, aes(Duration_ms, proportion, fill = component)) +
+  geom_col(width = 35, colour = "grey20", linewidth = 0.2) +
+  facet_grid(CueType ~ ID) +
+  scale_x_continuous(breaks = seq(50, 350, by = 50)) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, 1)) +
+  labs(
+    title = "2-comp mixture proportions by cue and duration",
+    subtitle = "Target + guess only (no swap); independent ML fits; sessions pooled",
+    x = "Encoding duration (ms)",
+    y = "Response proportion",
+    fill = "Component"
+  ) +
+  theme(legend.position = "bottom")
+```
+
+```{r mixture2-kappa-plot, fig.width=10, fig.height=4}
+ggplot(mix2_cells, aes(Duration_ms, kappa, colour = CueType, group = CueType)) +
+  geom_line() +
+  geom_point(size = 2) +
+  facet_wrap(~ID, scales = "free_y") +
+  scale_x_continuous(breaks = seq(50, 350, by = 50)) +
+  labs(
+    title = "2-comp von Mises precision (κ) by cue and duration",
+    x = "Encoding duration (ms)",
+    y = "κ"
+  )
+```
+
+```{r mixture2-weight-lines, fig.width=10, fig.height=5}
+ggplot(prop2_long, aes(Duration_ms, proportion, colour = CueType, group = CueType)) +
+  geom_line() +
+  geom_point() +
+  facet_grid(component ~ ID, scales = "free_y") +
+  scale_x_continuous(breaks = seq(50, 350, by = 100)) +
+  labs(
+    title = "2-comp mixture weights by cue and duration",
+    x = "Encoding duration (ms)",
+    y = "Proportion"
+  )
+```
+
+# 9. Simple von Mises: 14-κ vs 2-κ (sessions pooled)
 
 Assumption-light variability check (no mixture). Signed errors are treated as
 a single von Mises centred at 0 (target). Sessions are pooled within cue ×
@@ -1292,7 +1759,7 @@ vm_bic_rows <- list()
 row_k <- 0
 row_b <- 0
 
-for (pid in c("AQ", "HC", "YILIU")) {
+for (pid in participants) {
   d_pid <- d_vm %>% filter(ID == pid)
   n_pid <- nrow(d_pid)
 
@@ -1405,7 +1872,7 @@ ggplot(k14, aes(Duration_ms, kappa, colour = CueType, group = CueType)) +
   )
 ```
 
-# 9. Mixture: κ free per cell vs κ tied within cue
+# 10. Mixture 3-comp: κ free per cell vs κ tied within cue
 
 After allowing swap (β) and guess (γ) to explain heavy tails, does **precision κ**
 still need to vary with encoding duration?
@@ -1423,21 +1890,26 @@ after mixture decomposition).
 
 ```{r mixture-kappa-free-vs-tied, message=FALSE, warning=FALSE}
 mix_bic_file <- "bayes_primary_discrete/mixture_kappa_free_vs_tied_bic.csv"
-if (!file.exists(mix_bic_file)) {
+need_mix_kappa <- (!file.exists(mix_bic_file)) ||
+  (!all(id_raw %in% read_csv(mix_bic_file, show_col_types = FALSE)$ID))
+if (need_mix_kappa) {
   message("Running s1_mixture_kappa_compare.R (κ-tied fits) ...")
   system("Rscript s1_mixture_kappa_compare.R", intern = FALSE)
 }
 stopifnot(file.exists(mix_bic_file))
 
-mix_kappa_bic <- read_csv(mix_bic_file, show_col_types = FALSE)
+mix_kappa_bic <- read_csv(mix_bic_file, show_col_types = FALSE) %>%
+  mutate(ID = factor(id_pub[ID], levels = participants))
 mix_kappa_tied_params <- read_csv(
   "bayes_primary_discrete/mixture_kappa_tied_params.csv",
   show_col_types = FALSE
-)
+) %>%
+  mutate(ID = factor(id_pub[ID], levels = participants))
 mix_kappa_free_params <- read_csv(
   "bayes_primary_discrete/mixture_kappa_free_params.csv",
   show_col_types = FALSE
-)
+) %>%
+  mutate(ID = factor(id_pub[ID], levels = participants))
 
 mix_kappa_bic %>%
   mutate(across(where(is.numeric), ~ round(.x, 2)))
@@ -1470,21 +1942,85 @@ ggplot(k_free_plot, aes(Duration_ms, kappa, colour = CueType, group = CueType)) 
   facet_wrap(~ID, scales = "free_y") +
   scale_x_continuous(breaks = seq(50, 350, by = 50)) +
   labs(
-    title = "Mixture κ: free per cell (lines) vs tied within cue (dashed)",
+    title = "3-comp mixture κ: free per cell (lines) vs tied within cue (dashed)",
     subtitle = "β and γ free per cell in both models; sessions pooled",
     x = "Encoding duration (ms)",
     y = "κ"
   )
 ```
-Note:
-1, think about kappa mapping
-2, what can the model take out vs what are essentials, reduce to essentials and compare again
-3, compare mixture 2k and fully saturated model
 
+# 11. Mixture 2-comp: κ free per cell vs κ tied within cue
 
+Same question as §10, but after **target + guess only** (no swap). Does κ still
+need to vary with duration once γ can absorb heavy tails?
+
+- **κ-free:** 14 × {κ, γ} = 28 parameters (`mixture_cells/all_cell_params_2comp.csv`).
+- **κ-tied:** one κ per cue; γ free per cell (2 + 14 = 16 parameters).
+
+Fit offline with `Rscript s1_mixture_kappa_compare.R` (2-comp section).
+
+```{r mixture2-kappa-free-vs-tied, message=FALSE, warning=FALSE}
+mix2_bic_file <- "bayes_primary_discrete/mixture_kappa_2comp_free_vs_tied_bic.csv"
+need_mix2_kappa <- (!file.exists(mix2_bic_file)) ||
+  (!all(id_raw %in% read_csv(mix2_bic_file, show_col_types = FALSE)$ID))
+if (need_mix2_kappa) {
+  message("Running s1_mixture_kappa_compare.R ...")
+  system("Rscript s1_mixture_kappa_compare.R", intern = FALSE)
+}
+stopifnot(file.exists(mix2_bic_file))
+
+mix2_kappa_bic <- read_csv(mix2_bic_file, show_col_types = FALSE) %>%
+  mutate(ID = factor(id_pub[ID], levels = participants))
+mix2_kappa_tied_params <- read_csv(
+  "bayes_primary_discrete/mixture_kappa_2comp_tied_params.csv",
+  show_col_types = FALSE
+) %>%
+  mutate(ID = factor(id_pub[ID], levels = participants))
+mix2_kappa_free_params <- read_csv(
+  "bayes_primary_discrete/mixture_kappa_2comp_free_params.csv",
+  show_col_types = FALSE
+) %>%
+  mutate(ID = factor(id_pub[ID], levels = participants))
+
+mix2_kappa_bic %>%
+  mutate(across(where(is.numeric), ~ round(.x, 2)))
+
+k2_free_plot <- mix2_kappa_free_params %>%
+  mutate(
+    Duration_ms = as.numeric(gsub("ms", "", as.character(DurationF))),
+    CueType = factor(CueType, levels = c("NR", "R"))
+  )
+k2_tied_plot <- mix2_kappa_bic %>%
+  select(ID, kappa_tied_NR, kappa_tied_R) %>%
+  pivot_longer(
+    c(kappa_tied_NR, kappa_tied_R),
+    names_to = "CueType",
+    values_to = "kappa_tied"
+  ) %>%
+  mutate(CueType = if_else(CueType == "kappa_tied_NR", "NR", "R"))
+```
+
+```{r mixture2-kappa-free-vs-tied-plot, fig.width=10, fig.height=4}
+ggplot(k2_free_plot, aes(Duration_ms, kappa, colour = CueType, group = CueType)) +
+  geom_hline(
+    data = k2_tied_plot,
+    aes(yintercept = kappa_tied, colour = CueType),
+    linetype = "dashed", alpha = 0.7
+  ) +
+  geom_line() +
+  geom_point(size = 2) +
+  facet_wrap(~ID, scales = "free_y") +
+  scale_x_continuous(breaks = seq(50, 350, by = 50)) +
+  labs(
+    title = "2-comp mixture κ: free per cell (lines) vs tied within cue (dashed)",
+    subtitle = "γ free per cell in both models; sessions pooled; no swap",
+    x = "Encoding duration (ms)",
+    y = "κ"
+  )
+```
 
 ## Appendix
 
 Legacy frequentist / exploratory Bayes material lives in
 `s1_smallN_analysis.Rmd`. Primary discrete-session inference is Sections
-3–9 above.
+3–11 above.

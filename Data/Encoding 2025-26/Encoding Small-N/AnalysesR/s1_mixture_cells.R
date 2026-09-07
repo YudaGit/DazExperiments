@@ -32,7 +32,8 @@
 # HOW TO READ THIS FILE
 #   Part A  — tiny helpers (angle wrap, VM log-density)
 #   Part B  — one worked example cell (AQ / NR / 50ms) with comments
-#   Part C  — same fit repeated for all 14 × 3 cells; save tables
+#   Part C  — 3-comp fit for all cells → mixture_cells/all_cell_params.csv
+#   Part D  — 2-comp fit (target + guess only) → mixture_cells/all_cell_params_2comp.csv
 #
 # RUN
 #   Rscript s1_mixture_cells.R
@@ -245,9 +246,6 @@ stopifnot(all(c(
   paste0("ItemHue", 1:6)
 ) %in% names(d)))
 
-# Design check from earlier exploration: every trial has 4 unique colours.
-stopifnot(all(d$NUniqueColors == 4))
-
 d <- d %>%
   mutate(
     CueType = factor(CueType, levels = c("NR", "R")),
@@ -257,7 +255,7 @@ d <- d %>%
     )
   )
 
-participants <- c("AQ", "HC", "YILIU")
+participants <- c("AQ", "HC", "YILIU", "YDL")
 cues <- c("NR", "R")
 durs <- levels(d$DurationF)
 
@@ -346,7 +344,7 @@ all_cells <- bind_rows(all_rows) %>%
 # Safety checks.
 stopifnot(all(abs(all_cells$p_target + all_cells$beta + all_cells$gamma - 1) < 1e-8))
 stopifnot(all(all_cells$convergence == 0))
-stopifnot(nrow(all_cells) == 42)
+stopifnot(nrow(all_cells) == length(participants) * 14)
 
 write_csv(all_cells, "mixture_cells/all_cell_params.csv")
 saveRDS(all_cells, "mixture_cells/all_cell_params.rds")
@@ -357,3 +355,135 @@ print(
 )
 
 message("Done. Wrote mixture_cells/all_cell_params.csv")
+
+# =============================================================================
+# Part D — 2-comp mixture (target + guess; no swap)
+# =============================================================================
+# Rationale: swap terms can over-attribute guesses as colour swaps.
+# Same cell grid as Part C; outputs live alongside 3-comp under mixture_cells/.
+
+decode_par_2 <- function(par) {
+  kappa <- exp(par[1])
+  gamma <- 1 / (1 + exp(-par[2]))
+  list(kappa = kappa, gamma = gamma, p_target = 1 - gamma)
+}
+
+cell_nll_2 <- function(par, theta) {
+  p <- decode_par_2(par)
+  if (!is.finite(p$kappa) || p$kappa < 1e-6 || p$kappa > 5000) return(1e12)
+  if (p$p_target <= 1e-12 || p$gamma <= 1e-12) return(1e12)
+  log_target <- log(p$p_target) + log_vonmises(theta, 0, p$kappa)
+  log_guess <- log(p$gamma) - log(2 * pi)
+  m <- pmax(log_target, log_guess)
+  ll <- m + log(exp(log_target - m) + exp(log_guess - m))
+  if (any(!is.finite(ll))) return(1e12)
+  -sum(ll)
+}
+
+fit_one_cell_2 <- function(d_cell) {
+  n <- nrow(d_cell)
+  stopifnot(n > 20)
+  theta <- wrap_rad_from_deg(d_cell$SignedErr)
+
+  start_list <- list()
+  for (k0 in c(2, 4, 8, 16, 32)) {
+    for (g0 in c(0.02, 0.08, 0.20, 0.40)) {
+      start_list[[length(start_list) + 1]] <- c(log(k0), qlogis(g0))
+    }
+  }
+  while (length(start_list) < 30) {
+    start_list[[length(start_list) + 1]] <- c(
+      log(runif(1, 1, 40)),
+      qlogis(runif(1, 0.01, 0.55))
+    )
+  }
+
+  opt_control <- list(maxit = 2000, reltol = 1e-12)
+  best_nll <- Inf
+  best_par <- NULL
+  best_conv <- NA_integer_
+  best_start <- NA_integer_
+
+  for (s in seq_along(start_list)) {
+    fit <- tryCatch(
+      optim(
+        par = start_list[[s]],
+        fn = cell_nll_2,
+        theta = theta,
+        method = "BFGS",
+        control = opt_control
+      ),
+      error = function(e) NULL
+    )
+    if (is.null(fit)) next
+    if (fit$value < best_nll) {
+      best_nll <- fit$value
+      best_par <- fit$par
+      best_conv <- fit$convergence
+      best_start <- s
+    }
+  }
+
+  stopifnot(!is.null(best_par), best_conv == 0)
+  p <- decode_par_2(best_par)
+  tibble(
+    n_trials = n,
+    kappa = p$kappa,
+    gamma = p$gamma,
+    p_target = p$p_target,
+    circSD_deg = circSD_from_kappa(p$kappa),
+    nll = best_nll,
+    convergence = best_conv,
+    start_id = best_start
+  )
+}
+
+message("=== Fitting 2-comp mixture (target + guess) for all cells ===")
+
+all_rows_2 <- list()
+row_i <- 0
+
+for (pid in participants) {
+  message("Participant ", pid, " (2-comp)")
+  for (cue in cues) {
+    for (dur in durs) {
+      d_cell <- d %>% filter(ID == pid, CueType == cue, DurationF == dur)
+      fit <- fit_one_cell_2(d_cell)
+      row_i <- row_i + 1
+      all_rows_2[[row_i]] <- fit %>%
+        mutate(
+          ID = pid,
+          CueType = cue,
+          DurationF = dur,
+          Duration_ms = as.numeric(gsub("ms", "", dur)),
+          .before = 1
+        )
+      message(
+        "  ", cue, " ", dur,
+        " | κ=", round(fit$kappa, 2),
+        " γ=", round(fit$gamma, 3),
+        " pt=", round(fit$p_target, 3)
+      )
+    }
+  }
+  part_tbl <- bind_rows(all_rows_2) %>% filter(ID == pid)
+  write_csv(part_tbl, file.path("mixture_cells", paste0("m_", pid, "_cells_2comp.csv")))
+  saveRDS(part_tbl, file.path("mixture_cells", paste0("m_", pid, "_cells_2comp.rds")))
+}
+
+all_cells_2 <- bind_rows(all_rows_2) %>%
+  arrange(ID, CueType, Duration_ms)
+
+stopifnot(all(abs(all_cells_2$p_target + all_cells_2$gamma - 1) < 1e-8))
+stopifnot(all(all_cells_2$convergence == 0))
+stopifnot(nrow(all_cells_2) == length(participants) * 14)
+
+write_csv(all_cells_2, "mixture_cells/all_cell_params_2comp.csv")
+saveRDS(all_cells_2, "mixture_cells/all_cell_params_2comp.rds")
+
+print(
+  all_cells_2 %>%
+    select(ID, CueType, DurationF, kappa, gamma, p_target, circSD_deg, convergence)
+)
+
+message("Done. Wrote mixture_cells/all_cell_params.csv and all_cell_params_2comp.csv")

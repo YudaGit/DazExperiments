@@ -58,14 +58,18 @@ end
 dataAll = vertcat(allSessions{:});
 rawTrialCount = height(dataAll);
 
-requiredFields = {'Precision', 'ResponseTime', 'CueType', 'PresDur', ...
-    'Grouping', 'Colors', 'Target'};
+requiredFields = {'Precision', 'ResponseAngle', 'ResponseTime', 'CueType', ...
+    'PresDur', 'Grouping', 'Colors', 'Target'};
 missingFields = setdiff(requiredFields, dataAll.Properties.VariableNames);
 if ~isempty(missingFields)
     error('Trial table is missing required fields: %s', strjoin(missingFields, ', '));
 end
 
-%% Parse display colours (N x 6 item hues, degrees)
+%% Parse display colours (N x 6 item hues, fixed-wheel degrees)
+% Colors are assigned at trial generation in fixed colour-wheel space
+% (1..360 deg indices). Session wheel rotation (WheelRotation) is applied
+% only at response: ResponseAngle = mod(mouseAngle - wheelRotation, 360).
+% Item hues therefore need no further derotation.
 itemHues = parseColorsMatrix(dataAll.Colors, setSize);
 targetIdx = double(dataAll.Target);
 
@@ -78,14 +82,15 @@ targetHue = itemHues(sub2ind(size(itemHues), (1:height(itemHues))', targetIdx));
 
 %% Clean trials
 missingPrecision = ~isfinite(dataAll.Precision);
+missingResponse = ~isfinite(dataAll.ResponseAngle);
 missingRT = ~isfinite(dataAll.ResponseTime);
 slowRT = dataAll.ResponseTime > 3000;
 fastRT = dataAll.ResponseTime < 300;
 invalidTargetHue = ~isfinite(targetHue);
 invalidItemHue = any(~isfinite(itemHues), 2);
 
-keepTrial = ~(missingPrecision | missingRT | slowRT | fastRT | ...
-    invalidTargetHue | invalidItemHue);
+keepTrial = ~(missingPrecision | missingResponse | missingRT | slowRT | ...
+    fastRT | invalidTargetHue | invalidItemHue);
 dataAll = dataAll(keepTrial, :);
 itemHues = itemHues(keepTrial, :);
 targetIdx = targetIdx(keepTrial);
@@ -94,6 +99,7 @@ targetHue = targetHue(keepTrial);
 fprintf('\nTrial cleaning\n');
 fprintf('Raw trials:                 %d\n', rawTrialCount);
 fprintf('Missing precision:          %d\n', sum(missingPrecision));
+fprintf('Missing response angle:     %d\n', sum(missingResponse));
 fprintf('Missing RT:                 %d\n', sum(missingRT));
 fprintf('RT > 3000 ms:               %d\n', sum(slowRT & ~missingRT));
 fprintf('RT < 300 ms:                %d\n', sum(fastRT & ~missingRT));
@@ -130,10 +136,13 @@ durationLabels = arrayfun( ...
     false);
 Duration = categorical(Duration_ms, durationLevels, durationLabels);
 
-SignedErr = wrapSignedDeg(double(dataAll.Precision));
+% Precision is already signed error in fixed-wheel space (TargetHue - ResponseHue).
+SignedErr = double(dataAll.Precision);
+if any(SignedErr <= -180 | SignedErr > 180)
+    error('Precision must lie in (-180, 180] degrees for all retained trials.');
+end
 AbsErr = abs(SignedErr);
 RT = double(dataAll.ResponseTime);
-logRT = log(RT);
 
 Session_z = (Session - mean(Session)) ./ std(Session);
 SessionPhase = strings(height(dataAll), 1);
@@ -142,51 +151,31 @@ SessionPhase(Session >= 9) = "Late";
 SessionPhase(Session > 2 & Session < 9) = "Middle";
 SessionPhase = categorical(SessionPhase, ["Early", "Middle", "Late"]);
 
-% Response hue in the same colour-index space as Colors{1}(Target).
-ResponseHue = mod(targetHue - SignedErr, 360);
+% Response hue: use task-recorded ResponseAngle (already derotated from session wheel).
+ResponseHue = mod(double(dataAll.ResponseAngle), 360);
 
+% QC: SignedErr must match target-response in signed circular space.
+signedFromResponse = wrapSignedDeg(targetHue - ResponseHue);
+if max(abs(signedFromResponse - SignedErr)) > 1e-6
+    error(['Precision inconsistent with TargetHue and ResponseAngle. ', ...
+        'Max abs diff = %.3g deg.'], max(abs(signedFromResponse - SignedErr)));
+end
+
+% Per-slot signed error: item hue minus response hue (same convention as Precision).
 itemSignedErr = zeros(height(dataAll), setSize);
-itemAbsErr = zeros(height(dataAll), setSize);
-itemIsRedundant = false(height(dataAll), setSize);
-closestItemIdx = nan(height(dataAll), 1);
-minNonTargetAbsErr = nan(height(dataAll), 1);
-minNonTargetUniqueAbsErr = nan(height(dataAll), 1);
-nUniqueColors = nan(height(dataAll), 1);
-
 for ii = 1:height(dataAll)
-    hues = itemHues(ii, :);
     responseHue = ResponseHue(ii);
-    tgt = targetIdx(ii);
-
-    [~, ~, hueClass] = unique(hues);
-    hueCounts = accumarray(hueClass(:), 1);
-    itemIsRedundant(ii, :) = hueCounts(hueClass) >= 2;
-
     for jj = 1:setSize
-        err = wrapSignedDeg(hues(jj) - responseHue);
-        itemSignedErr(ii, jj) = err;
-        itemAbsErr(ii, jj) = abs(err);
-    end
-
-    [~, closestItemIdx(ii)] = min(itemAbsErr(ii, :));
-
-    nonTargetMask = true(1, setSize);
-    nonTargetMask(tgt) = false;
-    minNonTargetAbsErr(ii) = min(itemAbsErr(ii, nonTargetMask));
-
-    uniqueHues = unique(hues);
-    nUniqueColors(ii) = numel(uniqueHues);
-    targetColourValue = hues(tgt);
-    swapHues = uniqueHues(uniqueHues ~= targetColourValue);
-    if isempty(swapHues)
-        minNonTargetUniqueAbsErr(ii) = NaN;
-    else
-        swapErr = arrayfun(@(h) abs(wrapSignedDeg(h - responseHue)), swapHues);
-        minNonTargetUniqueAbsErr(ii) = min(swapErr);
+        itemSignedErr(ii, jj) = wrapSignedDeg(itemHues(ii, jj) - responseHue);
     end
 end
 
-isSwapResponse = closestItemIdx ~= targetIdx;
+% Target slot should reproduce SignedErr.
+targetSignedErr = itemSignedErr(sub2ind(size(itemSignedErr), ...
+    (1:height(itemSignedErr))', targetIdx));
+if max(abs(targetSignedErr - SignedErr)) > 1e-6
+    error('ItemSignedErr at target slot does not match SignedErr.');
+end
 
 modelT = table( ...
     ID, ...
@@ -200,32 +189,20 @@ modelT = table( ...
     AbsErr, ...
     SignedErr, ...
     RT, ...
-    logRT, ...
     targetIdx, ...
     targetHue, ...
     ResponseHue, ...
     itemHues(:, 1), itemHues(:, 2), itemHues(:, 3), ...
     itemHues(:, 4), itemHues(:, 5), itemHues(:, 6), ...
-    itemIsRedundant(:, 1), itemIsRedundant(:, 2), itemIsRedundant(:, 3), ...
-    itemIsRedundant(:, 4), itemIsRedundant(:, 5), itemIsRedundant(:, 6), ...
     itemSignedErr(:, 1), itemSignedErr(:, 2), itemSignedErr(:, 3), ...
     itemSignedErr(:, 4), itemSignedErr(:, 5), itemSignedErr(:, 6), ...
-    closestItemIdx, ...
-    isSwapResponse, ...
-    minNonTargetAbsErr, ...
-    minNonTargetUniqueAbsErr, ...
-    nUniqueColors, ...
     'VariableNames', { ...
     'ID', 'Session', 'Session_z', 'SessionPhase', 'CueType', 'Duration', ...
-    'Duration_ms', 'Grouping', 'AbsErr', 'SignedErr', 'RT', 'logRT', ...
+    'Duration_ms', 'Grouping', 'AbsErr', 'SignedErr', 'RT', ...
     'TargetIdx', 'TargetHue', 'ResponseHue', ...
     'ItemHue1', 'ItemHue2', 'ItemHue3', 'ItemHue4', 'ItemHue5', 'ItemHue6', ...
-    'ItemIsRedundant1', 'ItemIsRedundant2', 'ItemIsRedundant3', ...
-    'ItemIsRedundant4', 'ItemIsRedundant5', 'ItemIsRedundant6', ...
     'ItemSignedErr1', 'ItemSignedErr2', 'ItemSignedErr3', ...
-    'ItemSignedErr4', 'ItemSignedErr5', 'ItemSignedErr6', ...
-    'ClosestItemIdx', 'IsSwapResponse', ...
-    'MinNonTargetAbsErr', 'MinNonTargetUniqueAbsErr', 'NUniqueColors'});
+    'ItemSignedErr4', 'ItemSignedErr5', 'ItemSignedErr6'});
 
 modelT = sortrows(modelT, {'ID', 'Session'});
 
@@ -238,11 +215,6 @@ disp(sessionSummary);
 
 disp('Trials by participant, cue type, and duration');
 disp(conditionSummary);
-
-swapSummary = groupsummary(modelT, {'CueType', 'Duration'}, ...
-    'mean', {'IsSwapResponse', 'MinNonTargetUniqueAbsErr'});
-disp('Swap diagnostics by cue type and duration');
-disp(swapSummary);
 
 writetable(modelT, outputFile);
 fprintf('Saved %d trials to:\n%s\n', height(modelT), outputFile);
