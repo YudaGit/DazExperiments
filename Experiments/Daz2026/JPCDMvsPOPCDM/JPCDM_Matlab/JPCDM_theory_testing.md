@@ -70,6 +70,8 @@ CauchyCDM is the `psi = -1` constrained JP-family special case with nine conditi
 
 Older files such as `run_jpcdm_grouped_vnorm_fit.m`, `jp_fit_9p3v3ter_results.mat`, `jp_fit_9k3v3ter_results.mat`, `jp_fit_freePsi_groupedVnorm_results.mat`, and `jp_fit_freeKappa_groupedVnorm_results.mat` are retained as historical exploratory fits. They used older parameter grouping and/or timing conventions and should not be presented as publication-final comparisons against the current POPCDM/CauchyCDM fits.
 
+The historical POP-versus-JP result remains meaningful within its own specification. POP and JP were compared under a broadly equivalent older 3-vnorm/3-ter skeleton, and POP won that comparison. The current JP result does not imply that the old comparison was wrong. Instead, the project-level model skeleton changed after RT diagnostics showed that drift norm is better grouped by set size than by cue type, redundancy route, or unique-colour count. The current JP H0a/H0b route is therefore the fair comparison for the updated set-size `vnorm` and shared-timing framework.
+
 ## Current caveats
 
 - The JP source has been updated for runtime `eta2`; old MEX binaries must be rebuilt before fitting.

@@ -1,0 +1,83 @@
+Wrapper/fitting scripts in POPvJPvCauchy:
+- [pgpop1.m](pgpop1.m): POP likelihood wrapper for Paul small-range data, M = [1, 2, 3, 4], likely pga4.
+- [pgpop1a.m](pgpop1a.m): POP likelihood wrapper for Paul large-range data, M = [1, 2, 4, 6], likely pga6.
+- [vwmjp61.m](vwmjp61.m): JP likelihood wrapper for small-range data, M = [1, 2, 3, 4].
+- [vwmjp61a.m](vwmjp61a.m): JP likelihood wrapper for large-range data, M = [1, 2, 4, 6].
+- [setopt.m](setopt.m): old-style fminsearch option helper, more of a command reminder than a full fitting script.
+Diagnostic/plotting scripts:
+- [mvwm23.m](/Users/prefabteam_ysl/Documents/GitHub/DazExperiments/Experiments/Daz2026/JPCDMvsPOPCDM/POPvJPvCauchy/mvwm23.m): marginal plots for four-condition fits, small-range style.
+- [mvwm23a.m](/Users/prefabteam_ysl/Documents/GitHub/DazExperiments/Experiments/Daz2026/JPCDMvsPOPCDM/POPvJPvCauchy/mvwm23a.m): marginal plots for large-range M = [1, 2, 4, 6].
+- [qvwm23.m](/Users/prefabteam_ysl/Documents/GitHub/DazExperiments/Experiments/Daz2026/JPCDMvsPOPCDM/POPvJPvCauchy/qvwm23.m): RT quantile-by-error diagnostic.
+- [pgcomp26.m](/Users/prefabteam_ysl/Documents/GitHub/DazExperiments/Experiments/Daz2026/JPCDMvsPOPCDM/POPvJPvCauchy/pgcomp26.m): compares two prediction objects.
+
+
+New JP calling conventions:
+
+  [ll,ll2, aic, qbic,Pred] =  vwmjp61(Pvar, Pfix, Sel, Data, trace)
+      P = [nrm1:nrm4 k1:k4, eta1..eta4, Psi1..Psi4,   B,     A,   alpha, a, Ter1:Ter4 st, delta, beta]  
+          1:4     5:8      9:12        13:16    17:20  21:24   25   26   27:30   31    32    33
+
+now passes back 2 x LL as well as LL. LL has a quadratic penalty for bound violation which we don't want in the model selection statistics, only in the minimization. ll2 is 2 x LL and the AIC and BIC are calculated without the penalty. 
+
+<vwm61> is for small range experiment M = [1,2,3,4]; <vwm61a> is for large range experiment M = [1,2,4,6]. Pop code model also returns ll2.
+
+Paul's data for multirange replication: pga4 (small range), pga6 (large range)
+
+JP Cauchy constrained, beta = 0.5, Psi = -1 (was -1.09) <vwmjp61> fits pga4
+{pg32}  0.8481    1.6956    1.7136    1.7620    0.0090 
+
+JP Cauchy constrained, beta = 0.5, Psi = -1 (was -1.5) <vwmjp61a> fits pga6
+{pg34} 1.3883    2.7758    2.7938    2.8422    0.0090 - prefer the free Psi
+
+Popcode model:
+
+New C-code
+ mex vpop300rot.c -lgsl  -lgslcblas -lm
+
+<pgpop1>, <pgpop1a> fit small and large range experiments. They parameterize xi the Gumbel noise and hold the tuning amplitude constant as 1.0. beta = 0.5 imposes and sample-size scaling on the noise; beta free is a power law. 
+
+ [ll,ll2,a,b,Pred]=pgpop1(P(Sel==1), P(Sel==0), Sel, pga4);     
+
+{pgp2}
+Sel =[
+
+     1     0     0     0     1     1     1     0     0     0     0     0     0     0     0     0     1     1     1     1     1    1     0   1]  % free beta
+
+P =[
+
+    4.5144    3.5000    3.5000    3.5000   36.5800    0.0145    0.7736         0         0         0         0   -1.1971    0.0477        0.3082    1.9062    4.1382    0.0000    0.2234    0.2701    0.3210    0.0000    0.0007    0.9180]
+
+
+[ll,ll2,a,b,Pred]=pgpop1(P(Sel==1), P(Sel==0), Sel, pga4);
+>> [ll,ll2,a,b,sum(Sel)] =
+   1.0e+03 *
+    0.9201    1.8396    1.8616    1.9207    0.0110
+
+{pgp4} fit to pga6
+
+[ll,ll2,a,b,Pred]=pgpop1a(P(Sel==1), P(Sel==0), Sel, pga6);[ll, ll2, a, b, sum(Sel)]
+    1.4533    2.9029    2.9249    2.9841    0.0110
+
+mvwm23(pga4, Pred, [2.5, 2.5]) plots marginals; <mvwm23a> does the same for the large range (just the labels are different). The optional last argument sets y-axis scaling for accuracy and x-axis scaling for RT.
+
+ qvwm23(@pgpop1a, P(Sel==1), P(Sel==0), Sel, pga6, [.5,2.0])
+
+does Q x Q plots. Passes in the function, the parameters used in the fit, the data, and optional yaxis-scaling.
+
+<pgcomp26> compares two set of fits:
+ load pg34
+>> PredJP = Pred
+
+>> load pgp4
+>> PredPop = Pred
+pgcomp26(pga6, PredJP, PredPop, [2.5,2.5])
+
+The second of the two sets of predictions is dashed and magenta.
+
+The fifth parameter is xi for set size 1 it is small. With the paramters in {pgp4}, beta = 0.94, 
+Xi =
+
+    0.0279    0.0537    0.1032    0.1512
+for the four conditions.  
+
+

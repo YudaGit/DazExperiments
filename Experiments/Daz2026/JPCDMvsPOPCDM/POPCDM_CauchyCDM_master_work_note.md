@@ -53,6 +53,8 @@ The current comparable POPCDM and CauchyCDM routes use participant-level joint l
 
 The models differ in their front-layer distribution, parameterization, hard boxes, and currently one likelihood-boundary convention described in Section 6. The older JPCDM fits are historically informative and have been superseded by the current JP H0a/H0b route for future formal comparisons.
 
+The historical POP-versus-JP comparison should not be discarded. POP and JP were previously compared under an older but broadly equivalent 3-vnorm/3-ter specification, and POP won that comparison. The later correction is that the older shared skeleton was not the best scientific skeleton for the current project. Subsequent RT diagnostics showed that drift norm should be grouped by set size rather than by cue type, redundancy route, or unique-colour count. This is why the current harmonized comparison uses S2/S4/S6 `vnorm` and shared timing parameters.
+
 ## 4. POPCDM route
 
 ### 4.1 Generative interpretation
@@ -439,7 +441,7 @@ Interpretation / empirical result.
 **Results:**
 
 - Superseded by the 2026-08-21 harmonized JP H0a/H0b results below.
-- Historical saved baseline comparisons suggested POPCDM won against JPCDM, but those JP fits used older parameter groupings and are no longer the relevant comparison.
+- Historical saved baseline comparisons showed POPCDM won against JPCDM within the older 3-vnorm/3-ter comparison skeleton. That result remains valid for that older specification, but the skeleton itself was later superseded because RT evidence favoured set-size `vnorm` grouping and shared timing.
 - The Jones--Pewsey route still needs constraints for theoretical interpretability; the Cauchy special case at `psi=-1` is currently the strongest JP-family route.
 
 **Interpretation:**
