@@ -1,0 +1,2 @@
+uid,model,nFree,bestStart,NLL,minus2LL,AIC,BIC,nSuccess,boundaryParams
+AQ,cauchy,14,8,2949.83168288787,5899.66336577573,5927.66336577573,6017.39164003657,10,eta

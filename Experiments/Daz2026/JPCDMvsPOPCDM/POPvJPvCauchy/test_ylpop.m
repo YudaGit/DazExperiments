@@ -1,24 +1,32 @@
-function [ll, ll2, qaic, qbic, Pred] = test_ylpop(Pvar, Pfix, Sel, Data, trace)
+function [ll, ll2, qaic, qbic, Pred] = test_ylpop(Pvar, Pfix, Sel, Data, trace, hypothesis)
 %TEST_YLPOP POP-CDM likelihood for one Re2024 participant.
-%   Baseline test wrapper, no category-bias layer.
+%   H0: one shared eta. H1: one eta per condition.
 %
 %   P = [vnormS2:vnormS6, kappa, xi1:xi9, eta, a, Ter, st]
 %        1:3              4      5:13    14   15 16   17
+
+%   H1 = [vnormS2:vnormS6, kappa, xi1:xi9, eta1:eta9, a, Ter, st]
+%          1:3              4      5:13      14:22     23 24   25
 
     if nargin < 5
         trace = 0;
     end
 
     modelName = "pop";
+    if nargin < 6 || isempty(hypothesis)
+        hypothesis = "H0";
+    end
+    hypothesis = local_hypothesis(hypothesis);
+
     meta = local_meta();
-    np = 17;
+    np = 17 + 8 * (hypothesis == "H1");
 
     [ll, ll2, qaic, qbic, Pred] = local_eval_model( ...
-        modelName, Pvar, Pfix, Sel, Data, trace, np, meta);
+        modelName, Pvar, Pfix, Sel, Data, trace, np, meta, hypothesis);
 end
 
 function [ll, ll2, qaic, qbic, Pred] = local_eval_model( ...
-        modelName, Pvar, Pfix, Sel, Data, trace, np, meta)
+        modelName, Pvar, Pfix, Sel, Data, trace, np, meta, hypothesis)
 
     tau2 = 1.0;
     nCond = numel(meta.condLevels);
@@ -41,7 +49,7 @@ function [ll, ll2, qaic, qbic, Pred] = local_eval_model( ...
     P(Sel == 1) = Pvar;
     P(Sel == 0) = Pfix;
 
-    [lb, ub, plb, pub] = local_bounds(modelName);
+    [lb, ub, plb, pub] = local_bounds(modelName, hypothesis);
     lbFree = lb(Sel == 1);
     ubFree = ub(Sel == 1);
     if any(Pvar < lbFree) || any(Pvar > ubFree)
@@ -63,11 +71,15 @@ function [ll, ll2, qaic, qbic, Pred] = local_eval_model( ...
     vnorm = P(1:3);
     kappa = P(4);
     xi = P(5:13);
-    eta = P(14);
-    a = P(15);
-    Ter = P(16);
-    st = P(17);
-
+    etaCount = 1 + 8 * (hypothesis == "H1");
+    eta = P(14:(13 + etaCount));
+    etaIndexByCond = ones(1, nCond);
+    if hypothesis == "H1"
+        etaIndexByCond = 1:nCond;
+    end
+    a = P(14 + etaCount);
+    Ter = P(15 + etaCount);
+    st = P(16 + etaCount);
     sigma = 1.0;
     llRaw = 0;
     Gstuff = cell(3, nCond);
@@ -77,7 +89,7 @@ function [ll, ll2, qaic, qbic, Pred] = local_eval_model( ...
 
     for c = 1:nCond
         setIdx = meta.setIndexByCond(c);
-        Pc = [vnorm(setIdx), kappa, xi(c), eta, sigma, a];
+        Pc = [vnorm(setIdx), kappa, xi(c), eta(etaIndexByCond(c)), sigma, a];
         [tc, gtmc, ftmc, thetac, pthetac, mthetac, mdthetac, ethetac, llc] = ...
             local_condition_likelihood(modelName, Pc, Data{c}, Ter, st, meta);
 
@@ -196,14 +208,22 @@ function meta = local_meta()
     meta.sz = 300;
 end
 
-function [lb, ub, plb, pub] = local_bounds(modelName)
+function [lb, ub, plb, pub] = local_bounds(modelName, hypothesis)
+    etaCount = 1 + 8 * (hypothesis == "H1");
     switch modelName
         case "pop"
-            lb = [2 * ones(1, 3), 0.01, 0.0001 * ones(1, 9), 0.02, 2.0, 0, 0];
-            ub = [12 * ones(1, 3), 80.0, 5.0 * ones(1, 9), 8.0, 12.0, 1, 0.7];
-            plb = [2.5 * ones(1, 3), 0.05, 0.001 * ones(1, 9), 0.05, 2.5, 0, 0.01];
-            pub = [11.5 * ones(1, 3), 70.0, 4.5 * ones(1, 9), 7.0, 11.5, 0.8, 0.6];
+            lb = [2 * ones(1, 3), 0.01, 0.0001 * ones(1, 9), 0.02 * ones(1, etaCount), 2.0, 0, 0];
+            ub = [12 * ones(1, 3), 80.0, 5.0 * ones(1, 9), 8.0 * ones(1, etaCount), 12.0, 1, 0.7];
+            plb = [2.5 * ones(1, 3), 0.05, 0.001 * ones(1, 9), 0.05 * ones(1, etaCount), 2.5, 0, 0.01];
+            pub = [11.5 * ones(1, 3), 70.0, 4.5 * ones(1, 9), 7.0 * ones(1, etaCount), 11.5, 0.8, 0.6];
         otherwise
             error('Unknown model name.');
+    end
+end
+
+function hypothesis = local_hypothesis(hypothesis)
+    hypothesis = upper(string(hypothesis));
+    if ~isscalar(hypothesis) || ~ismember(hypothesis, ["H0", "H1"])
+        error('%s:UnknownHypothesis', mfilename, 'hypothesis must be "H0" or "H1".');
     end
 end

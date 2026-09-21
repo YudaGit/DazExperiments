@@ -1,4 +1,4 @@
-function qvwm23(fitfunc, Pvar, Pfix, Sel, Data_in, ybounds);
+function figureHandle = qvwm23(fitfunc, Pvar, Pfix, Sel, Data_in, ybounds, conditionLabels)
 % ----------------------------------------------------------------------
 % Empirical and RT fitted RT quantiles as a function of theta.
 % Generic Q x Q plot for VWM23 experiment.
@@ -11,6 +11,18 @@ function qvwm23(fitfunc, Pvar, Pfix, Sel, Data_in, ybounds);
    if nargin < 6
        ybounds = [0.5, 2.5];
    end
+
+   % Preserve the supplied four-condition figure unchanged. Re2024 uses
+   % nine conditions, so route it to the generalized team-style layout.
+   if nargin < 7 || isempty(conditionLabels)
+       conditionLabels = "Condition " + string(1:size(Data_in, 2));
+   end
+   if size(Data_in, 2) ~= 4
+       figureHandle = local_qvwm23_multicond(fitfunc, Pvar, Pfix, Sel, ...
+           Data_in, ybounds, conditionLabels);
+       return
+   end
+   figureHandle = [];
   
     minrt = 0.15;  % Filter
     maxrt = 2.5;
@@ -154,6 +166,89 @@ function qploti(co, axi, Datai, Gt, T, thetai, tmax, minrt, maxrt, labi, do_xlab
 end
 
 
+
+function figureHandle = local_qvwm23_multicond(fitfunc, Pvar, Pfix, Sel, Data, ybounds, conditionLabels)
+% Generalized Re2024 branch using the visual convention of qploti/bin9.
+    if ~iscell(Data) || size(Data, 1) ~= 1
+        error('QVWM23:DataShape', 'Data must be a 1-by-nConditions cell array.');
+    end
+    nCond = size(Data, 2);
+    conditionLabels = string(conditionLabels);
+    if numel(conditionLabels) ~= nCond
+        error('QVWM23:ConditionLabels', 'Provide one label per condition.');
+    end
+    co = [0,0,1; 0,0.5,0; 1,0,0; 0,0.75,0.75; 0.75,0,0.75];
+    q = [.1, .3, .5, .7, .9];
+    [~, ~, ~, ~, Pred] = fitfunc(Pvar, Pfix, Sel, Data, 0);
+    Gstuff = Pred{2};
+    nColumns = 3;
+    nRows = ceil(nCond / nColumns);
+    figureHandle = figure('Color', 'w', 'Position', [50 50 1450 360 * nRows], ...
+        'Name', 'QVWM23 Re2024 RT quantiles by response error');
+    tiledlayout(figureHandle, nRows, nColumns, 'TileSpacing', 'compact', 'Padding', 'compact');
+    for c = 1:nCond
+        ax = nexttile;
+        local_qplot_re2024(ax, Data{c}, Gstuff{3,c}, Gstuff{1,c}, Gstuff{2,c}, ...
+            q, co, ybounds, conditionLabels(c));
+        if c > nCond - nColumns
+            xlabel(ax, 'Response Error (rad)');
+        end
+        if mod(c - 1, nColumns) == 0
+            ylabel(ax, 'Quantile RT (s)');
+        end
+    end
+end
+
+function local_qplot_re2024(ax, Datai, Gt, T, theta, q, co, ybounds, labelText)
+    if size(Datai, 2) == 3
+        Datai = Datai(:, 2:3);
+    elseif size(Datai, 2) ~= 2
+        error('QVWM23:DataColumns', 'Data cells require [error RT] or [stimulus error RT].');
+    end
+    nw = size(Gt, 1);
+    h = T(2) - T(1);
+    w = 2*pi/nw;
+    fittedQ = nan(nw, numel(q));
+    for i = 1:nw
+        F = cumsum(Gt(i,:)) * h * w;
+        F = F / F(end);
+        [Fu, idx] = unique(F, 'stable');
+        keep = Fu > 0 & Fu < 1;
+        fittedQ(i,:) = interp1(Fu(keep), T(idx(keep)), q, 'linear', 'extrap');
+    end
+    [empiricalQ, thetaCentres, ~] = local_bin9_re2024(Datai, ybounds, q);
+    hold(ax, 'on');
+    theta = theta(1:nw)';
+    for j = 1:numel(q)
+        plot(ax, theta, fittedQ(:,j), '-.k', 'LineWidth', 1.15, 'HandleVisibility', 'off');
+        valid = isfinite(empiricalQ(j,:));
+        plot(ax, thetaCentres(valid), empiricalQ(j,valid), 'k-', ...
+            'LineWidth', 0.8, 'HandleVisibility', 'off');
+        plot(ax, thetaCentres(valid), empiricalQ(j,valid), 'o', 'MarkerSize', 4, ...
+            'MarkerEdgeColor', co(j,:), 'MarkerFaceColor', co(j,:), 'HandleVisibility', 'off');
+    end
+    xlim(ax, [-pi pi]); ylim(ax, ybounds); grid(ax, 'on');
+    title(ax, labelText, 'Interpreter', 'none', 'FontSize', 9);
+end
+
+function [Q, thetaCentres, binCount] = local_bin9_re2024(Data, ybounds, q)
+    Data = Data(Data(:,2) >= ybounds(1) & Data(:,2) <= ybounds(2), :);
+    [~, order] = sort(Data(:,1));
+    Data = Data(order,:);
+    nBins = 9;
+    edges = round(linspace(0, size(Data,1), nBins+1));
+    Q = nan(numel(q), nBins);
+    thetaCentres = nan(1, nBins);
+    binCount = zeros(1, nBins);
+    for b = 1:nBins
+        rows = (edges(b)+1):edges(b+1);
+        binCount(b) = numel(rows);
+        if ~isempty(rows)
+            thetaCentres(b) = mean(Data(rows,1));
+            Q(:,b) = quantile(Data(rows,2), q)';
+        end
+    end
+end
 function [Q, ThetaCentres] = bin9(Data, minrt, maxrt);
 % ========================================================================================
 %    [Q, ThetaCentres] = bin9(Data, minrt, maxrt)
@@ -192,6 +287,7 @@ for i = 1:lnd
     BinCount(j) = BinCount(j) + 1;
     k = k + 1;
 end
+
 ThetaCentres = BinTheta ./ BinCount;
 
 % Filter outliers, sort RTs in each bin
@@ -205,7 +301,3 @@ for j = 1 : ntheta
     Q(:,j) = rts(Qx); 
 end
 end
-
-
-
-

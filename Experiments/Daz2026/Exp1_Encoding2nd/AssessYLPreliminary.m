@@ -1,5 +1,6 @@
 % AssessYLPreliminary.m
-% Preliminary quality-control, preparation, and plotting for YL sessions.
+% Preliminary quality-control, preparation, and plotting for all listed
+% participants' completed sessions.
 % Loads completed session files only (not recovery checkpoints), verifies the
 % trial structure and planned balance, then saves a combined table, QC tables,
 % and a raw-error / conditional circular-SD figure.
@@ -16,8 +17,15 @@ if ~isfolder(outputDir)
     mkdir(outputDir);
 end
 
-participantID = "YL";
+participantIDs = ["YL" "AQ"];
+for participantID = participantIDs
+    reviewParticipant(participantID, dataDir, outputDir);
+end
+
+function reviewParticipant(participantID, dataDir, outputDir)
+rng(1); % Reproducible bootstrap intervals and horizontal jitter.
 expectedTrialsPerCell = 35;
+nBootstrap = 2000;
 setSizes = [2 4 6];
 durations = [0.05 0.25];
 conditionTypes = ["B" "R" "NR"];
@@ -147,12 +155,18 @@ for setSize = setSizes
             end
             usable = inCondition & allTrials.IsUsable;
             errors = allTrials.Precision(usable);
+            responseTimes = allTrials.ResponseTime(usable);
             resultantLength = abs(mean(exp(1i * deg2rad(errors))));
             cirSD = rad2deg(sqrt(-2 * log(max(resultantLength, realmin))));
+            [cirSDLow, cirSDHigh] = bootstrapCirSD(errors, nBootstrap);
+            medianRT = median(responseTimes, 'omitnan');
+            [medianRTLow, medianRTHigh] = bootstrapMedian(responseTimes, nBootstrap);
             row = table(setSize, duration, conditionType, sum(inCondition), ...
-                sum(usable), mean(abs(errors), 'omitnan'), cirSD, ...
+                sum(usable), mean(abs(errors), 'omitnan'), cirSD, cirSDLow, cirSDHigh, ...
+                medianRT, medianRTLow, medianRTHigh, ...
                 'VariableNames', {'ItemN','PresDur','ConditionType','TrialN', ...
-                'UsableN','MeanAbsPrecision','CirSD'});
+                'UsableN','MeanAbsPrecision','CirSD','CirSDLow95','CirSDHigh95', ...
+                'MedianRT','MedianRTLow95','MedianRTHigh95'});
             conditionSummary = [conditionSummary; row]; %#ok<AGROW>
         end
     end
@@ -172,11 +186,11 @@ for session = unique(allTrials.SessionN)'
 end
 
 % Save analysis-ready data and human-readable QC tables.
-save(fullfile(outputDir, 'YL_preliminary_combined.mat'), 'allTrials', ...
+save(fullfile(outputDir, sprintf('%s_preliminary_combined.mat', participantID)), 'allTrials', ...
     'balanceBySession', 'conditionSummary', 'sessionQC');
-writetable(balanceBySession, fullfile(outputDir, 'YL_trial_balance.csv'));
-writetable(conditionSummary, fullfile(outputDir, 'YL_condition_summary.csv'));
-writetable(sessionQC, fullfile(outputDir, 'YL_session_QC.csv'));
+writetable(balanceBySession, fullfile(outputDir, sprintf('%s_trial_balance.csv', participantID)));
+writetable(conditionSummary, fullfile(outputDir, sprintf('%s_condition_summary.csv', participantID)));
+writetable(sessionQC, fullfile(outputDir, sprintf('%s_session_QC.csv', participantID)));
 
 fprintf('\nLoaded %d completed sessions and %d total trials for %s.\n', ...
     numel(files), nTrials, participantID);
@@ -185,14 +199,14 @@ if all(balanceBySession.IsBalanced)
     fprintf('Balance check passed: every valid session × condition × duration cell has %d trials.\n', ...
         expectedTrialsPerCell);
 else
-    warning('At least one planned cell does not have %d trials. See YL_trial_balance.csv.', ...
+    warning('At least one planned cell does not have %d trials. Inspect the balance CSV.', ...
         expectedTrialsPerCell);
 end
 if all(sessionQC.StimulusProblemN == 0) && all(sessionQC.TargetProblemN == 0) ...
         && all(sessionQC.CueProblemN == 0)
     fprintf('Stimulus, target, and R/NR assignment checks passed for all trials.\n');
 else
-    warning('Stimulus, target, or cue-assignment checks failed. Inspect YL_session_QC.csv.');
+    warning('Stimulus, target, or cue-assignment checks failed. Inspect the session QC CSV.');
 end
 
 % Plot: raw absolute errors are semi-transparent; filled diamonds show the
@@ -200,8 +214,9 @@ end
 typeColors = [0.20 0.55 0.85; 0.85 0.30 0.20; 0.20 0.65 0.35]; % B, R, NR
 typeOffsets = [-0.20 0 0.20];
 rng(1); % Reproducible horizontal jitter only.
-figure('Color', 'w', 'Position', [100 100 1200 620]);
+figure('Color', 'w', 'Position', [100 100 1000 600]);
 hold on;
+set(gca, 'FontSize', 15, 'LineWidth', 1);
 legendHandles = gobjects(numel(conditionTypes), 1);
 
 for typeIdx = 1:numel(conditionTypes)
@@ -229,6 +244,11 @@ for typeIdx = 1:numel(conditionTypes)
                 & conditionSummary.PresDur == durations(durationIdx) ...
                 & conditionSummary.ConditionType == type;
             if any(summaryCell)
+                cirSD = conditionSummary.CirSD(summaryCell);
+                lowerError = cirSD - conditionSummary.CirSDLow95(summaryCell);
+                upperError = conditionSummary.CirSDHigh95(summaryCell) - cirSD;
+                errorbar(xCenter + typeOffsets(typeIdx), cirSD, lowerError, upperError, ...
+                    'k', 'LineStyle', 'none', 'LineWidth', 1.2, 'CapSize', 8);
                 scatter(xCenter + typeOffsets(typeIdx), conditionSummary.CirSD(summaryCell), ...
                     173, color, 'd', 'filled', 'MarkerEdgeColor', 'k', 'LineWidth', 0.9);
             end
@@ -242,15 +262,118 @@ xticks(1:6);
 xticklabels(repmat({'50 ms','250 ms'}, 1, 3));
 xlim([0.45 6.55]);
 ylim([0 195]);
-ylabel('Absolute response error / circular SD (degrees)');
-xlabel('Encoding duration, grouped by set size');
-text(1.5, 187, 'Set size 2', 'HorizontalAlignment', 'center', 'FontWeight', 'bold');
-text(3.5, 187, 'Set size 4', 'HorizontalAlignment', 'center', 'FontWeight', 'bold');
-text(5.5, 187, 'Set size 6', 'HorizontalAlignment', 'center', 'FontWeight', 'bold');
-title(sprintf('%s preliminary data: raw error and conditional circular SD', participantID));
+ylabel('Absolute response error / circular SD (degrees)', 'FontSize', 17);
+xlabel('Encoding duration, grouped by set size', 'FontSize', 17);
+text(1.5, 187, 'Set size 2', 'HorizontalAlignment', 'center', 'FontWeight', 'bold', 'FontSize', 16);
+text(3.5, 187, 'Set size 4', 'HorizontalAlignment', 'center', 'FontWeight', 'bold', 'FontSize', 16);
+text(5.5, 187, 'Set size 6', 'HorizontalAlignment', 'center', 'FontWeight', 'bold', 'FontSize', 16);
+title(sprintf('%s preliminary data: raw error and conditional circular SD', participantID), 'FontSize', 19);
 legend(legendHandles(isgraphics(legendHandles)), cellstr(conditionTypes(isgraphics(legendHandles))), ...
-    'Location', 'northwest', 'Box', 'off');
+    'Location', 'northwest', 'Box', 'off', 'FontSize', 16);
 grid on; box off;
 
-plotBase = fullfile(outputDir, 'YL_preliminary_error_and_cirSD');
+plotBase = fullfile(outputDir, sprintf('%s_preliminary_error_and_cirSD', participantID));
 exportgraphics(gcf, [plotBase '.png'], 'Resolution', 300);
+
+% Matching RT plot: raw RTs are semi-transparent; diamonds show median RT
+% with percentile 95% bootstrap confidence intervals.
+rng(1);
+figure('Color', 'w', 'Position', [100 100 1000 600]);
+hold on;
+set(gca, 'FontSize', 15, 'LineWidth', 1);
+legendHandles = gobjects(numel(conditionTypes), 1);
+usableRT = allTrials.ResponseTime(allTrials.IsUsable);
+rtTop = max(1000, 1.15 * max(usableRT));
+for typeIdx = 1:numel(conditionTypes)
+    type = conditionTypes(typeIdx);
+    color = typeColors(typeIdx, :);
+    for setIdx = 1:numel(setSizes)
+        for durationIdx = 1:numel(durations)
+            xCenter = (setIdx - 1) * numel(durations) + durationIdx;
+            inCell = allTrials.ItemN == setSizes(setIdx) ...
+                & allTrials.PresDur == durations(durationIdx) ...
+                & allTrials.ConditionType == type ...
+                & allTrials.IsUsable;
+            if ~any(inCell)
+                continue
+            end
+            x = xCenter + typeOffsets(typeIdx) + 0.12 * (rand(sum(inCell), 1) - 0.5);
+            scatter(x, allTrials.ResponseTime(inCell), 24, color, 'filled', ...
+                'MarkerFaceAlpha', 0.22, 'MarkerEdgeAlpha', 0.12);
+            if ~isgraphics(legendHandles(typeIdx))
+                legendHandles(typeIdx) = plot(nan, nan, 'o', 'MarkerSize', 7, ...
+                    'MarkerFaceColor', color, 'MarkerEdgeColor', color, ...
+                    'LineStyle', 'none');
+            end
+            summaryCell = conditionSummary.ItemN == setSizes(setIdx) ...
+                & conditionSummary.PresDur == durations(durationIdx) ...
+                & conditionSummary.ConditionType == type;
+            if any(summaryCell)
+                medianRT = conditionSummary.MedianRT(summaryCell);
+                lowerError = medianRT - conditionSummary.MedianRTLow95(summaryCell);
+                upperError = conditionSummary.MedianRTHigh95(summaryCell) - medianRT;
+                errorbar(xCenter + typeOffsets(typeIdx), medianRT, lowerError, upperError, ...
+                    'k', 'LineStyle', 'none', 'LineWidth', 1.2, 'CapSize', 8);
+                scatter(xCenter + typeOffsets(typeIdx), medianRT, 173, color, 'd', ...
+                    'filled', 'MarkerEdgeColor', 'k', 'LineWidth', 0.9);
+            end
+        end
+    end
+end
+xline(2.5, ':', 'Color', [0.45 0.45 0.45]);
+xline(4.5, ':', 'Color', [0.45 0.45 0.45]);
+xticks(1:6);
+xticklabels(repmat({'50 ms','250 ms'}, 1, 3));
+xlim([0.45 6.55]);
+ylim([0 rtTop]);
+ylabel('Response time (ms)', 'FontSize', 17);
+xlabel('Encoding duration, grouped by set size', 'FontSize', 17);
+text(1.5, rtTop * 0.96, 'Set size 2', 'HorizontalAlignment', 'center', 'FontWeight', 'bold', 'FontSize', 16);
+text(3.5, rtTop * 0.96, 'Set size 4', 'HorizontalAlignment', 'center', 'FontWeight', 'bold', 'FontSize', 16);
+text(5.5, rtTop * 0.96, 'Set size 6', 'HorizontalAlignment', 'center', 'FontWeight', 'bold', 'FontSize', 16);
+title(sprintf('%s preliminary data: response time', participantID), 'FontSize', 19);
+legend(legendHandles(isgraphics(legendHandles)), cellstr(conditionTypes(isgraphics(legendHandles))), ...
+    'Location', 'northwest', 'Box', 'off', 'FontSize', 16);
+grid on; box off;
+exportgraphics(gcf, fullfile(outputDir, sprintf('%s_preliminary_RT.png', participantID)), 'Resolution', 300);
+end
+
+function [cirSDLow, cirSDHigh] = bootstrapCirSD(errors, nBootstrap)
+% Percentile 95% bootstrap confidence interval for circular SD in degrees.
+errors = errors(isfinite(errors));
+if numel(errors) < 2
+    cirSDLow = nan;
+    cirSDHigh = nan;
+    return
+end
+
+nErrors = numel(errors);
+bootstrapSD = zeros(nBootstrap, 1);
+for bootstrapIdx = 1:nBootstrap
+    resampledErrors = errors(randi(nErrors, nErrors, 1));
+    resultantLength = abs(mean(exp(1i * deg2rad(resampledErrors))));
+    bootstrapSD(bootstrapIdx) = rad2deg(sqrt(-2 * log(max(resultantLength, realmin))));
+end
+interval = prctile(bootstrapSD, [2.5 97.5]);
+cirSDLow = interval(1);
+cirSDHigh = interval(2);
+end
+
+function [medianLow, medianHigh] = bootstrapMedian(values, nBootstrap)
+% Percentile 95% bootstrap confidence interval for the median response time.
+values = values(isfinite(values));
+if numel(values) < 2
+    medianLow = nan;
+    medianHigh = nan;
+    return
+end
+
+nValues = numel(values);
+bootstrapMedians = zeros(nBootstrap, 1);
+for bootstrapIdx = 1:nBootstrap
+    bootstrapMedians(bootstrapIdx) = median(values(randi(nValues, nValues, 1)));
+end
+interval = prctile(bootstrapMedians, [2.5 97.5]);
+medianLow = interval(1);
+medianHigh = interval(2);
+end

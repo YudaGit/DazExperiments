@@ -1,26 +1,111 @@
-function output = test_fit_re2024(requestedModels)
-%TEST_FIT_RE2024 Fit test POP/JP/Cauchy wrappers to Re2024 participants.
-%   Uses fmincon with 10 custom starts and an 8-worker parpool, following
-%   the earlier POP/Cauchy fitting workflow.
+function output = test_fit_re2024(hypothesis, requestedModels, runLabel, warmStartFile, requestedParticipants)
+%TEST_FIT_RE2024 Fit named team-Cauchy hypothesis variants to Re2024.
+%   Uses fmincon with an 8-worker parpool. H0 uses 10 starts; H1 and
+%   legacy diagnostic routes use 24 starts.
 %
-%   output = TEST_FIT_RE2024(["pop","jp","jpcau"]) fits only the requested
-%   model routes. Available names are "pop", "jp", "jpcau", and "cauchy".
+%   output = TEST_FIT_RE2024() fits H0: cellwise kappa_mu with one shared
+%   vnorm, eta, a, Ter, and st.
+%
+%   H1_ETA, H1_VNORM, and H1_TER make eta, vnorm, or Ter cellwise while
+%   retaining cellwise kappa_mu. H1_VNORM_SN is the set-size-vnorm model.
+%   LEGACY_ETA_CELL_VNORM_SN preserves the earlier cellwise-eta result.
+%
+%   For a nested route refit, provide an H0 aggregate result file and, if
+%   needed, one participant. Its H0 solution becomes an exact H1 start:
+%   TEST_FIT_RE2024("H1_ETA", "cauchy", "H1_eta_YL", h0File, "YL")
 
-    if nargin < 1 || isempty(requestedModels)
-        requestedModels = ["pop", "jp", "jpcau"];
+    if nargin < 1 || isempty(hypothesis)
+        hypothesis = "H0";
+    end
+    hypothesis = upper(string(hypothesis));
+    validHypotheses = ["H0", "H1_ETA", "H1_VNORM", "H1_TER", ...
+        "H1_VNORM_SN", "LEGACY_ETA_CELL_VNORM_SN"];
+    if ~isscalar(hypothesis) || ~ismember(hypothesis, validHypotheses)
+        error('test_fit_re2024:UnknownHypothesis', ...
+            'Unknown hypothesis: %s.', hypothesis);
+    end
+    if nargin < 2 || isempty(requestedModels)
+        requestedModels = "cauchy";
     end
     requestedModels = string(requestedModels);
+    if nargin < 3 || isempty(runLabel)
+        switch hypothesis
+            case "H0"
+                runLabel = "H0_kappaCell_sharedDecision";
+            case "H1_ETA"
+                runLabel = "H1_eta";
+            case "H1_VNORM"
+                runLabel = "H1_vnorm";
+            case "H1_TER"
+                runLabel = "H1_ter";
+            case "H1_VNORM_SN"
+                runLabel = "H1_vnorm_sn";
+            case "LEGACY_ETA_CELL_VNORM_SN"
+                runLabel = "Legacy_etaCell_vnormSN";
+            otherwise
+                error('test_fit_re2024:UnknownHypothesis', 'Unknown hypothesis.');
+        end
+    end
+    if nargin < 4 || isempty(warmStartFile)
+        warmStartFile = "";
+    end
+    warmStartFile = string(warmStartFile);
+    if ~isscalar(warmStartFile)
+        error('test_fit_re2024:InvalidWarmStartFile', ...
+            'warmStartFile must be one path or empty.');
+    end
+    runLabel = string(runLabel);
+    if ~isscalar(runLabel) || strlength(runLabel) == 0
+        error('test_fit_re2024:InvalidRunLabel', ...
+            'runLabel must be one non-empty string.');
+    end
 
     thisDir = fileparts(mfilename('fullpath'));
     addpath(thisDir, '-begin');
+
+    % A persistent MATLAB session can retain an earlier helper definition.
+    % Reload the two files that define and consume the parameter layout before
+    % constructing this run's catalogue.
+    rehash;
+    clear re2024_cauchy_hypothesis_spec test_ylcauchy
 
     build_test_mex();
 
     [DataAll, condLevels, d, participantIDs, trialCounts, preparedDataFile] = ...
         prepareRe2024Data([], ["AQ", "ES", "HC", "PG", "YL"], true);
 
+    if nargin >= 5 && ~isempty(requestedParticipants)
+        requestedParticipants = string(requestedParticipants);
+        keepParticipant = ismember(participantIDs, requestedParticipants);
+        if ~any(keepParticipant) || any(~ismember(requestedParticipants, participantIDs))
+            error('test_fit_re2024:UnknownParticipant', ...
+                'requestedParticipants must be drawn from: %s.', ...
+                strjoin(participantIDs, ', '));
+        end
+        DataAll = DataAll(keepParticipant, :);
+        participantIDs = participantIDs(keepParticipant);
+        trialCounts = trialCounts(keepParticipant, :);
+    end
+
+    warmStartResults = struct();
+    if strlength(warmStartFile) > 0
+        if ~isfile(warmStartFile)
+            error('test_fit_re2024:WarmStartFileMissing', ...
+                'Cannot find warm-start file: %s.', warmStartFile);
+        end
+        warmLoaded = load(warmStartFile, 'allResults');
+        if ~isfield(warmLoaded, 'allResults')
+            error('test_fit_re2024:InvalidWarmStartFile', ...
+                'warmStartFile must contain allResults.');
+        end
+        warmStartResults = warmLoaded.allResults;
+    end
+
     nWorkers = 8;
     nStarts = 10;
+    if hypothesis ~= "H0"
+        nStarts = 24;
+    end
     maxIter = 2000;
     maxFunEvals = 100000;
     optTol = 1e-6;
@@ -45,6 +130,17 @@ function output = test_fit_re2024(requestedModels)
             end
             parpool('local', nWorkers);
         end
+        % Workers can likewise retain an old parameter-layout helper from a
+        % previous fit in the same pool.  Clear cached functions before parfor
+        % starts load the current files.  This is preventive only: retain the
+        % parallel pool if a MATLAB release does not support pctRunOnAll.
+        try
+            pctRunOnAll clear functions
+            pctRunOnAll rehash
+        catch ME
+            warning('test_fit_re2024:WorkerFunctionRefreshFailed', ...
+                'Workers will refresh functions on demand. %s', ME.message);
+        end
         useParallel = true;
     catch ME
         warning('test_fit_re2024:ParallelUnavailable', ...
@@ -52,7 +148,8 @@ function output = test_fit_re2024(requestedModels)
         useParallel = false;
     end
 
-    catalogs = local_model_catalogs(condLevels);
+    catalogs = local_model_catalogs(condLevels, hypothesis);
+    layoutVersion = catalogs.cauchy.layoutVersion;
     modelNames = cellstr(requestedModels(:));
     availableModels = string(fieldnames(catalogs));
     unknownModels = setdiff(requestedModels, availableModels);
@@ -62,7 +159,7 @@ function output = test_fit_re2024(requestedModels)
             strjoin(unknownModels, ', '), strjoin(availableModels, ', '));
     end
 
-    resultsDir = fullfile(thisDir, 'TestFits');
+    resultsDir = fullfile(thisDir, 'TestFits', char(runLabel));
     if ~exist(resultsDir, 'dir')
         mkdir(resultsDir);
     end
@@ -90,7 +187,9 @@ function output = test_fit_re2024(requestedModels)
             lbFree = cat.lb(cat.Sel);
             ubFree = cat.ub(cat.Sel);
 
-            starts = local_build_starts(Pvar0, lbFree, ubFree, nStarts);
+            warmStart = local_warm_start(cat, hypothesis, warmStartResults, ...
+                uid, modelName);
+            starts = local_build_starts(Pvar0, lbFree, ubFree, nStarts, warmStart);
             fitFunc = cat.fitFunc;
 
             jobTimer = tic;
@@ -113,6 +212,11 @@ function output = test_fit_re2024(requestedModels)
 
             [bestNLL, bestIdx] = min(allNLL);
             bestPvar = allPvar(bestIdx, :);
+            if any(bestPvar < lbFree - 1e-10) || any(bestPvar > ubFree + 1e-10)
+                error('test_fit_re2024:BoundViolationAfterOptimization', ...
+                    ['%s / %s returned a vector outside the exact bounds ', ...
+                     'passed to fmincon.'], uid, modelName);
+            end
             [bestObj, ll2, qaic, qbic, Pred] = fitFunc(bestPvar, Pfix, cat.Sel, Data, 0);
             Pfit = zeros(1, cat.np);
             Pfit(cat.Sel) = bestPvar;
@@ -122,11 +226,19 @@ function output = test_fit_re2024(requestedModels)
             result = struct();
             result.uid = uid;
             result.modelName = modelName;
+            result.hypothesis = hypothesis;
+            result.layoutVersion = cat.layoutVersion;
+            result.warmStartFile = warmStartFile;
             result.Pfit = Pfit;
             result.Pvar = bestPvar;
             result.Pfix = Pfix;
             result.Sel = cat.Sel;
             result.paramNames = cat.paramNames;
+            % Preserve the runtime catalogue used for this fit.  This makes
+            % parameter-order and bound audits possible from the MAT file.
+            result.catalogP0 = cat.P0;
+            result.catalogLB = cat.lb;
+            result.catalogUB = cat.ub;
             result.bestNLL = bestNLL;
             result.bestObj = bestObj;
             result.ll2 = ll2;
@@ -140,13 +252,13 @@ function output = test_fit_re2024(requestedModels)
             result.allIterations = allIterations;
             result.allFuncCount = allFuncCount;
             result.boundary = boundary;
-
             fieldName = matlab.lang.makeValidName(char(uid + "_" + modelName));
             allResults.(fieldName) = result;
             checkpointFile = fullfile(resultsDir, ...
                 "checkpoint_" + string(uid) + "_" + modelName + ".mat");
             save(checkpointFile, 'result', 'condLevels', 'participantIDs', ...
-                'trialCounts', 'preparedDataFile', 'nStarts', 'nWorkers', 'opts');
+                'trialCounts', 'preparedDataFile', 'nStarts', 'nWorkers', ...
+                'opts', 'runLabel', 'hypothesis', 'warmStartFile');
 
             boundaryText = "";
             if ~isempty(boundary)
@@ -173,56 +285,29 @@ function output = test_fit_re2024(requestedModels)
     end
 
     outFile = fullfile(resultsDir, ...
-        "test_fit_re2024_" + string(datetime('now', 'Format', 'yyyyMMdd_HHmmss')) + ".mat");
+        runLabel + "_" + string(datetime('now', 'Format', 'yyyyMMdd_HHmmss')) + ".mat");
     save(outFile, 'allResults', 'rows', 'condLevels', 'participantIDs', ...
-        'trialCounts', 'd', 'preparedDataFile', 'nStarts', 'nWorkers', 'opts');
-    writetable(rows, fullfile(resultsDir, 'test_fit_re2024_summary.csv'));
+        'trialCounts', 'd', 'preparedDataFile', 'nStarts', 'nWorkers', ...
+                'opts', 'runLabel', 'hypothesis', 'warmStartFile', 'layoutVersion');
+    writetable(rows, fullfile(resultsDir, char(runLabel + "_summary.csv")));
 
     output = struct();
     output.resultsFile = outFile;
     output.summary = rows;
     output.allResults = allResults;
+    output.layoutVersion = layoutVersion;
 end
 
-function catalogs = local_model_catalogs(condLevels)
-    nCond = numel(condLevels);
-    setNames = ["S2", "S4", "S6"];
-
-    popNames = ["vnorm" + setNames, "kappa", "xi_" + condLevels, ...
-        "eta", "a", "Ter", "st"];
-    popP0 = [6, 6, 6, 15, 0.08 * ones(1, nCond), 0.5, 6, 0.25, 0.2];
-    popLb = [2 * ones(1, 3), 0.01, 0.0001 * ones(1, nCond), 0.02, 2, 0, 0];
-    popUb = [12 * ones(1, 3), 80, 5 * ones(1, nCond), 8, 12, 1, 0.7];
-    popSel = true(1, numel(popP0));
-
-    cauNames = ["vnorm" + setNames, "kappa_" + condLevels, ...
-        "eta", "a", "Ter", "st"];
-    cauP0 = [6, 6, 6, 8 * ones(1, nCond), 0.5, 6, 0.25, 0.2];
-    cauLb = [2 * ones(1, 3), 0.001 * ones(1, nCond), 0.02, 2, 0, 0];
-    cauUb = [12 * ones(1, 3), 80 * ones(1, nCond), 8, 12, 1, 0.7];
-    cauSel = true(1, numel(cauP0));
-
-    jpNames = ["vnorm" + setNames, "kappa_" + condLevels, ...
-        "eta", "a", "Ter", "st", "psi"];
-    jpP0 = [6, 6, 6, 8 * ones(1, nCond), 0.5, 6, 0.25, 0.2, -1];
-    jpLb = [2 * ones(1, 3), 0.001 * ones(1, nCond), 0.02, 2, 0, 0, -1.95];
-    jpUb = [12 * ones(1, 3), 80 * ones(1, nCond), 8, 12, 1, 0.7, 0.95];
-    jpSel = true(1, numel(jpP0));
-
-    jpcauNames = ["vnorm" + setNames, "kappa_" + condLevels, ...
-        "eta", "a", "Ter", "st"];
-    jpcauP0 = [6, 6, 6, 8 * ones(1, nCond), 0.5, 6, 0.25, 0.2];
-    jpcauLb = [2 * ones(1, 3), 0.001 * ones(1, nCond), 0.02, 2, 0, 0];
-    jpcauUb = [12 * ones(1, 3), 80 * ones(1, nCond), 8, 12, 1, 0.7];
-    jpcauSel = true(1, numel(jpcauP0));
-
-    catalogs.pop = local_catalog(@test_ylpop, popNames, popP0, popLb, popUb, popSel);
-    catalogs.jp = local_catalog(@test_yljp, jpNames, jpP0, jpLb, jpUb, jpSel);
-    catalogs.jpcau = local_catalog(@test_yljpcau, jpcauNames, jpcauP0, jpcauLb, jpcauUb, jpcauSel);
-    catalogs.cauchy = local_catalog(@test_ylcauchy, cauNames, cauP0, cauLb, cauUb, cauSel);
+function catalogs = local_model_catalogs(condLevels, hypothesis)
+    spec = re2024_cauchy_hypothesis_spec(hypothesis, condLevels);
+    catalogs = struct();
+    catalogs.cauchy = local_catalog( ...
+        @(varargin) test_ylcauchy(varargin{:}, spec), ...
+        spec.paramNames, spec.P0, spec.lb, spec.ub, true(size(spec.P0)), ...
+        spec.layoutVersion);
 end
 
-function cat = local_catalog(fitFunc, paramNames, P0, lb, ub, Sel)
+function cat = local_catalog(fitFunc, paramNames, P0, lb, ub, Sel, layoutVersion)
     cat.fitFunc = fitFunc;
     cat.paramNames = paramNames;
     cat.P0 = P0;
@@ -230,20 +315,65 @@ function cat = local_catalog(fitFunc, paramNames, P0, lb, ub, Sel)
     cat.ub = ub;
     cat.Sel = Sel;
     cat.np = numel(P0);
+    cat.layoutVersion = layoutVersion;
 end
 
-function starts = local_build_starts(Pvar0, lbFree, ubFree, nStarts)
+function starts = local_build_starts(Pvar0, lbFree, ubFree, nStarts, warmStart)
+    if nargin < 5
+        warmStart = [];
+    end
     nFree = numel(Pvar0);
     starts = zeros(nStarts, nFree);
     starts(1, :) = min(max(Pvar0, lbFree), ubFree);
-    for s = 2:nStarts
+    if ~isempty(warmStart)
+        starts(1, :) = min(max(warmStart, lbFree), ubFree);
+    end
+
+    nLocal = min(5, nStarts);
+    for s = 2:nLocal
+        jitter = starts(1, :) .* (1 + 0.25 * randn(1, nFree));
+        starts(s, :) = min(max(jitter, lbFree), ubFree);
+    end
+    for s = (nLocal + 1):nStarts
         u = rand(1, nFree);
         starts(s, :) = lbFree + u .* (ubFree - lbFree);
     end
-    if nStarts >= 2
-        jitter = starts(1, :) .* (1 + 0.25 * randn(1, nFree));
-        starts(2, :) = min(max(jitter, lbFree), ubFree);
+end
+
+function warmStart = local_warm_start(cat, hypothesis, warmStartResults, uid, modelName)
+    warmStart = [];
+    if hypothesis == "H0" || isempty(fieldnames(warmStartResults))
+        return
     end
+
+    fieldName = matlab.lang.makeValidName(char(uid + "_" + modelName));
+    if ~isfield(warmStartResults, fieldName)
+        warning('test_fit_re2024:WarmStartMissing', ...
+            'No H0 result for %s in the supplied warm-start file.', fieldName);
+        return
+    end
+    source = warmStartResults.(fieldName);
+    sourceNames = string(source.paramNames);
+    sourceP = source.Pfit;
+    targetP = cat.P0;
+
+    for i = 1:numel(cat.paramNames)
+        targetName = cat.paramNames(i);
+        sourceIndex = find(sourceNames == targetName, 1);
+        if isempty(sourceIndex) && (startsWith(targetName, "eta_") || ...
+                startsWith(targetName, "vnorm_") || startsWith(targetName, "Ter_"))
+            sourceIndex = find(sourceNames == extractBefore(targetName, "_"), 1);
+        end
+        if isempty(sourceIndex) && startsWith(targetName, "vnormS")
+            sourceIndex = find(sourceNames == "vnorm", 1);
+        end
+        if isempty(sourceIndex)
+            error('test_fit_re2024:WarmStartMappingFailed', ...
+                'Cannot map H0 parameter %s into %s.', targetName, hypothesis);
+        end
+        targetP(i) = sourceP(sourceIndex);
+    end
+    warmStart = targetP(cat.Sel);
 end
 
 function [allPvar, allNLL, allExitflag, allIterations, allFuncCount] = ...

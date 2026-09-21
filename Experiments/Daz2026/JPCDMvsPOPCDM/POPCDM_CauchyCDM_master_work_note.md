@@ -613,3 +613,76 @@ Candidate sentence, figure, table, or section affected.
 
 **Next decision:**  
 The specific follow-up that would distinguish competing explanations.
+
+## 2026-09-14: staged H1 plan following review of the team-core fits
+
+**Status:** Descriptive data check / interpretation / agreed development sequence / open tests. No model code changed and no fits rerun for this entry. This entry updates the next-step priorities above; historical fits and their original specifications remain part of the record.
+
+### Current scope and H0 provenance
+
+The active implementation is now the `POPvJPvCauchy` team-core package. H0 has already been fitted. The current runner and wrappers contain an interrupted H1 edit: the runner passes a hypothesis argument to wrappers that do not all accept it, and the team-Cauchy wrapper applies a two-group eta index even when H0 supplies scalar eta. These current interface failures do NOT establish that the earlier saved H0 fits were computed incorrectly. The earlier review's instruction to “repair and reproduce H0” should mean restoring a runnable H0 evaluation path and checking saved solutions, not automatically repeating optimization.
+
+Preserve saved H0 parameters, predictions, summaries, and available source/version provenance. Restore the original H0 mapping, then evaluate each saved parameter vector once with the appropriate original specification. Compare raw NLL (minus2LL/2), penalized objective, and joint predictions separately: the saved NLL field may include a soft-bound penalty. Check that the restored path reproduces the saved values within numerical tolerance. A successful check supports reuse of H0 without refitting. If the exact original source is unavailable, report that reproducibility limitation rather than attributing present edits to historical runs.
+
+Refitting is justified only if a consequential change affects the fitted likelihood or parameter space, or an optimization problem is established: e.g., a material quadrature correction, wrong parameter mapping actually used in H0, changed RT conditioning, corrected joint-density computation, or failure to recover a known nested solution. Correcting a plotting-only median or a marginal diagnostic does not by itself require refitting. No automatic H0 refit is scheduled by this note.
+
+### Separate overall slowing from slow-tail behaviour
+
+A descriptive recheck of DazPreprocessed.csv used the existing five participants and 300–3000 ms RT filter. S6C4NR and S6C4R mean RTs exceed S4C4 for every participant (approximately 3–128 ms and 65–191 ms, respectively). This holds C fixed but changes both S and redundancy. It therefore supports an effect beyond colour count alone, not a uniquely identified redundancy cost at fixed total cognitive load. Existing S-specific drift norms already accommodate some item-load slowing.
+
+S6C2R mean RT also exceeds S2C2 for every participant despite only 0.6–2.4% tail responses. This motivates testing an additive retrieval/nondecision delay first: slowing need not be accompanied by many large errors. It does not rule out lower drift, because memory precision and decision parameters can compensate in the joint model. Nor does it establish that most observed tail responses originate in latent directional errors; that attribution requires the fitted latent model. The older POP decomposition is model-dependent evidence for that attribution.
+
+Tail frequency P(|error| > 45 degrees) and conditional tail slowing are distinct outcomes. Sparse tails imply uncertain conditional RT estimates, not necessarily absent slow errors. For example, ES S2C2 has six tail observations, with a mean tail-minus-central difference around 171 ms; YL S4C2R has no tail observations under this filter. Report tail counts and uncertainty, and do not impute an observed tail mean when its count is zero. Regional comparisons should be computed within participant and condition before pooling.
+
+### First H1: shared redundancy increment in Ter
+
+Prioritize the team wrapped-Cauchy core. Fit all nine conditions jointly, preserving the H0 memory parameters, three S-specific mean drift norms, shared eta, boundary, and st. Add one participant-specific coefficient delta_red:
+
+    Ter(p,c) = Ter0(p) + delta_red(p) * D(c)
+    D(c) = 1 when S(c) > C(c), otherwise 0.
+
+In the current condition order [S2C2, S4C2NR, S4C2R, S4C4, S6C2NR, S6C2R, S6C4NR, S6C4R, S6C6], D = [0,1,1,0,1,1,1,1,0]. Both R and NR receive the same increment initially. Baseline conditions are the D=0 special case, not a separately fitted dataset. H0 is recovered at delta_red=0. The C2/C4+ eta split is not the first substantive H1; retain it only as a clearly named exploratory benchmark if needed. Use descriptive hypothesis names to avoid confusion with the older POP power-law H1 and the interrupted eta H1.
+
+Use saved H0 solutions with delta_red=0 as starts; refit all H1 free parameters jointly rather than freezing the H0 estimates. Define coefficient bounds and valid Ter/st support explicitly before fitting. A nonnegative increment tests an additional-time hypothesis; if delta=0 is a boundary, ordinary unconstrained likelihood-ratio reference distributions are not automatically applicable. A signed effect is a different, more general comparison. No final bound choice is imposed here.
+
+Implement the shift using each condition's Ter in the joint density before applying the existing RT selection normalization and interpolation. Keep the same nondecision-time convention as validated H0; separately audit the meaning of Ter and st in the existing shift/convolution code. Do not add delta only to plotted means. Derive predicted region probabilities, RT means, medians, and quantiles from the final convolved, RT-conditioned joint density used by the likelihood. A conditional median normalizes cumulative RT mass within the selected angle region, then finds its 0.5 quantile.
+
+Evaluate raw joint likelihood, complexity-adjusted fit, marginal accuracy and RT, regional conditional RT quantiles, and residuals. Bootstrap observed summaries within participant/condition where practical. An additive delay predicts approximately parallel shifts in RT quantiles and across error regions before RT truncation; conditioning on the 300–3000 ms interval can modify this signature. It cannot by itself create an extra within-condition tail-minus-central delay before selection. A successful Ter test therefore need not solve the slow-tail discrepancy.
+
+After this test, compare a same-complexity redundancy effect on mean drift (e.g., log v(p,c)=log v(p,S(c))-lambda(p)D(c)) if needed. Change one mechanism at a time. Do not initially add separate R/NR eta, drift, boundary, and timing effects together. Apparent Ter support should be assessed conditional on the existing S-specific drift structure, not inferred from mean RT alone.
+
+### Deferred extension: trial-level information couples direction and strength
+
+This is a documented future proposal, not an implemented model or an established derivation of the attention-weighted sample-size theory. Revisit only after the simple timing/drift tests.
+
+Introduce positive latent information Q(p,c,j) on each trial. Its mean is governed by a condition-level memory-allocation law; its dispersion has a parsimonious participant-level parameter. Conditional on Q, draw the latent direction from the selected front end and make expected drift strength increase with Q. For example, an implementable candidate is:
+
+    Q = Qbar(p,c) * exp(omega(p)*Z - omega(p)^2/2), Z ~ Normal(0,1)
+    gamma(Q) = gamma_ref(p) * (Q/Qref)^(-b)
+    mean_v(Q,c) = v(p,S(c)) * (Q/Qref)^d
+
+Here gamma is the team-Cauchy dispersion; b,d > 0 express improving direction and strength with information. These are candidate links requiring theoretical justification, not fixed published scaling laws. Anchor Qref and the scale of Q to avoid scale confounding. Do not freely estimate Q scale, both link exponents, and all condition precisions without identifying constraints. Residual radial drift variability eta0 may be retained initially, but distinguish it from the variation induced by Q and test whether both can be recovered. The omega=0 case removes trial-level information heterogeneity; exact nesting in a chosen baseline also requires compatible condition-level means/links.
+
+The joint prediction integrates over both Q and latent direction, using the SAME Q value in both mappings within each component. Independently mixing direction and drift would remove the intended coupling. Use positive quadrature weights (e.g., Gaussian quadrature over Z), normalize correctly, apply nondecision-time convolution, and condition on the observed RT interval only after assembling the full mixture. Do not condition each Q component separately and retain its original weight: selection changes component weights.
+
+Low Q can then produce uncertain directions and weak/slow decisions without making drift an arbitrary function of the realized response error. A Cauchy distribution conditional on Q generally becomes a non-Cauchy marginal mixture; describe it accordingly. Before data fitting, check normalization, limiting cases, qualitative slow-error predictions, numerical convergence, and parameter/model recovery at the actual trial counts. Compare the same coupling architecture across POP/Cauchy/JP if making front-end claims. Sparse empirical tails alone do not establish this mechanism.
+
+### Dispersion convention and future memory-allocation constraints
+
+Use the team-Cauchy parameter going forward. Its code name kappa denotes dispersion gamma in f(theta)=sinh(gamma)/(2*pi*(cosh(gamma)-cos(theta))). Larger gamma means broader directions. Avoid calling every rho a dispersion: the conventional wrapped-Cauchy resultant parameter rho=exp(-gamma) increases with concentration. The JP concentration K at psi=-1 satisfies rho=tanh(K/2). State the formula whenever switching notation. A power law in gamma is not generally a power law in K or rho.
+
+A possible coherent allocation scaffold is n_j=B(S,C)*m_j^w/sum_k(m_k^w), with colour multiplicity m_j. With one repeated colour m=S-C+1, n_R=B*m^w/(m^w+C-1), n_NR=B/(m^w+C-1); baseline gives B/S. This is illustrative and must be reconciled with the team's exact attention-weighted sample-size theory. Derive the link from effective samples to gamma and drift; do not assume the old POP amplitude exponent transfers unchanged. In particular, averaging independent ordinary Cauchy samples does not narrow their scale, so a sample-size account needs an explicit estimator or generative mechanism.
+
+### POP interpretation and historical fit claims
+
+Both inspected POP implementations normalize von Mises tuning plus a constant floor. This is linear Luce selection over positive weights and is a von-Mises/uniform mixture on the grid. Additive independent Gumbel noise on raw activation followed by argmax instead yields softmax of activation/noise-scale. Linear Luce can be represented with Gumbel-max on log weights, but these activation assumptions differ. Clarify the intended theory with the team before describing the current code as raw-activation Gumbel-max or maximum-likelihood decoding. Poorer fit alone does not establish double-counted decision noise. The older noise-partition diagnostic supports uncertain stage allocation/compensation; a Cauchy family likewise does not by itself identify memory-only variability.
+
+Reference: Oberauer (2023), Measurement models for visual working memory—A factorial model comparison, https://doi.org/10.1037/rev0000328. This paper distinguishes linear Luce and exponentially transformed/Gumbel selection.
+
+The newer saved JP and team-Cauchy NLLs are respectively AQ 2905.69/2929.74, ES 1029.60/1076.04, HC 1156.75/1136.66, PG 2774.62/2781.73, YL 2303.76/2330.51. These supersede broad claims that the historical Cauchy ranking necessarily holds in the newer package, but are not a newly validated comparison. Where free JP should nest Cauchy, test pointwise equivalence after parameter transformation and match bounds/penalties before interpreting an inferior JP optimum. Saved summaries and current partially edited sources have different provenance.
+
+### Latent-angle resolution: convergence first, refitting only if consequential
+
+The team core evaluates grtrot300 once for each latent direction. Increasing 21 directions to about 50 therefore increases this dominant part of an objective evaluation by about 50/21=2.38 times. Whole-fit runtime need not follow exactly: other costs and optimizer iteration counts also matter. This is a code-based estimate, not a measured benchmark. Latent quadrature count is independent of the 50 response-angle bins; matching the counts has no intrinsic justification.
+
+The existing midpoint grid theta_j=-pi+pi/n+j*2*pi/n includes zero for odd n (including 21), but not even n (including 50). Simply changing to 50 shifts the grid relative to a narrow target-centred peak. Prefer a convergence comparison using 21, 51, 101, and higher/adaptive resolution if needed, preserving target alignment; 51 alone is not proof of convergence. At saved H0 parameter vectors, compare raw NLL, mass, angle/RT predictions, and conditional tail RTs without optimization. Use separately named builds or isolated paths so the original MEX is preserved. If predictions and likelihood differences are immaterial for the planned inference, retain H0; if material, optimize under an adequately converged resolution using saved solutions as warm starts. Apply comparable numerical accuracy to all front ends in formal comparisons. No grid change or benchmark has been performed in this entry.

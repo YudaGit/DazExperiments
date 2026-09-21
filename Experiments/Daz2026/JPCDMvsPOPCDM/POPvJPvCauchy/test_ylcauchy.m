@@ -1,20 +1,33 @@
-function [ll, ll2, qaic, qbic, Pred] = test_ylcauchy(Pvar, Pfix, Sel, Data, trace)
+function [ll, ll2, qaic, qbic, Pred] = test_ylcauchy(Pvar, Pfix, Sel, Data, trace, hypothesisOrSpec)
 %TEST_YLCAUCHY Cauchy-CDM likelihood for one Re2024 participant.
-%   Baseline test wrapper, no category-bias layer.
-%
-%   P = [vnormS2:vnormS6, kappa1:kappa9, eta, a, Ter, st]
-%        1:3              4:12           13   14 15   16
+%   Parameter layouts are defined by re2024_cauchy_hypothesis_spec. The
+%   runner may also pass an already-built spec so its bounds and the wrapper
+%   interpretation are guaranteed to use the same parameter ordering.
 
-    if nargin < 5
+    if nargin < 5 || isempty(trace)
         trace = 0;
     end
-
     meta = local_meta();
-    np = 16;
-    [ll, ll2, qaic, qbic, Pred] = local_eval_model(Pvar, Pfix, Sel, Data, trace, np, meta);
+    if nargin < 6 || isempty(hypothesisOrSpec)
+        hypothesisOrSpec = "H0";
+    end
+    if isstruct(hypothesisOrSpec)
+        spec = hypothesisOrSpec;
+        if ~isfield(spec, 'condLevels') || ...
+                ~isequal(string(spec.condLevels), meta.condLevels)
+            error('test_ylcauchy:InvalidSpecification', ...
+                'The supplied specification does not match Re2024 conditions.');
+        end
+    else
+        spec = re2024_cauchy_hypothesis_spec( ...
+            hypothesisOrSpec, meta.condLevels);
+    end
+    np = numel(spec.P0);
+    [ll, ll2, qaic, qbic, Pred] = local_eval_model( ...
+        Pvar, Pfix, Sel, Data, trace, np, meta, spec);
 end
 
-function [ll, ll2, qaic, qbic, Pred] = local_eval_model(Pvar, Pfix, Sel, Data, trace, np, meta)
+function [ll, ll2, qaic, qbic, Pred] = local_eval_model(Pvar, Pfix, Sel, Data, trace, np, meta, spec)
     tau2 = 1.0;
     nCond = numel(meta.condLevels);
     Pred = [];
@@ -36,7 +49,10 @@ function [ll, ll2, qaic, qbic, Pred] = local_eval_model(Pvar, Pfix, Sel, Data, t
     P(Sel == 1) = Pvar;
     P(Sel == 0) = Pfix;
 
-    [lb, ub, plb, pub] = local_bounds();
+    lb = spec.lb;
+    ub = spec.ub;
+    plb = spec.plb;
+    pub = spec.pub;
     lbFree = lb(Sel == 1);
     ubFree = ub(Sel == 1);
     if any(Pvar < lbFree) || any(Pvar > ubFree)
@@ -55,12 +71,12 @@ function [ll, ll2, qaic, qbic, Pred] = local_eval_model(Pvar, Pfix, Sel, Data, t
         disp(penalty);
     end
 
-    vnorm = P(1:3);
-    kappa = P(4:12);
-    eta = P(13);
-    a = P(14);
-    Ter = P(15);
-    st = P(16);
+    vnorm = P(spec.index.vnorm);
+    kappa = P(spec.index.kappa);
+    eta = P(spec.index.eta);
+    a = P(spec.index.a);
+    Ter = P(spec.index.Ter);
+    st = P(spec.index.st);
     sigma = 1.0;
 
     llRaw = 0;
@@ -70,10 +86,11 @@ function [ll, ll2, qaic, qbic, Pred] = local_eval_model(Pvar, Pfix, Sel, Data, t
     N = 0;
 
     for c = 1:nCond
-        setIdx = meta.setIndexByCond(c);
-        Pc = [vnorm(setIdx), kappa(c), eta, sigma, a];
+        Pc = [vnorm(spec.vnormByCond(c)), kappa(spec.kappaByCond(c)), ...
+            eta(spec.etaByCond(c)), sigma, a];
+        TerC = Ter(spec.terByCond(c));
         [tc, gtmc, ftmc, thetac, pthetac, mthetac, mdthetac, ethetac, llc] = ...
-            local_condition_likelihood(Pc, Data{c}, Ter, st, meta);
+            local_condition_likelihood(Pc, Data{c}, TerC, st, meta);
 
         N = N + size(Data{c}, 1);
         llRaw = llRaw + sum(llc);
@@ -174,17 +191,9 @@ function meta = local_meta()
     meta.condLevels = ["S2C2NR", ...
         "S4C2NR", "S4C2R", "S4C4NR", ...
         "S6C2NR", "S6C2R", "S6C4NR", "S6C4R", "S6C6NR"];
-    meta.setIndexByCond = [1, 2, 2, 2, 3, 3, 3, 3, 3];
     meta.tmax = 3.0;
     meta.rtMin = 0.3;
     meta.noise = 1e-12;
     meta.nw = 50;
     meta.sz = 300;
-end
-
-function [lb, ub, plb, pub] = local_bounds()
-    lb = [2 * ones(1, 3), 0.001 * ones(1, 9), 0.02, 2.0, 0, 0];
-    ub = [12 * ones(1, 3), 80.0 * ones(1, 9), 8.0, 12.0, 1, 0.7];
-    plb = [2.5 * ones(1, 3), 0.01 * ones(1, 9), 0.05, 2.5, 0, 0.01];
-    pub = [11.5 * ones(1, 3), 70.0 * ones(1, 9), 7.0, 11.5, 0.8, 0.6];
 end
