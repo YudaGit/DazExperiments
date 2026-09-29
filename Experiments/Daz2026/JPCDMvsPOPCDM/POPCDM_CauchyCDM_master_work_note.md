@@ -1,688 +1,607 @@
-# CDM front-end comparison: master theory-testing work note
-
-**Project:** Redundancy 2024 visual working-memory continuous recall  
-**Models:** CDM with Jones--Pewsey, wrapped-Cauchy, and POP/Luce front ends
-**Participants:** AQ, ES, HC, PG, YL  
-**Conditions:** S2C2, S4C2NR, S4C2R, S4C4, S6C2NR, S6C2R, S6C4NR, S6C4R, S6C6  
-**Current data filter:** valid response error and response time from 300 to 3000 ms  
-**Last consolidated:** 21 August 2026
-
-This is the primary conceptual and empirical record for the front-end comparison project. It is designed to support continued model development and later conversion into manuscript Introduction, Model, Results, and Discussion sections. Route-specific notes remain the detailed implementation logs:
-
-- `POPCDM_Matlab/POPCDM_theory_testing.md`
-- `JPCDM_Matlab/JPCDM_theory_testing.md`
-- `CauchyJP/CauchyCDM_theory_testing.md`
-
-## 1. Research question
-
-This is a theoretical and empirical project comparing circular decision models for visual working-memory continuous recall. All candidate models retain the general circular diffusion model as the decision layer. The central question is which front end should feed the CDM so that the resulting joint model provides the best account of behavioural response-angle and response-time data.
-
-The central theoretical problem is not only which probability distribution fits best. It is how stochastic variability should be assigned to latent memory evidence, retrieval or directional selection, decision formation, and final response. The experimental data constrain the combined process strongly, but do not independently identify every stage of noise.
-
-The candidate front ends currently in scope are:
-
-1. **JPCDM:** a Jones--Pewsey directional front layer coupled to the CDM.
-2. **CauchyCDM:** the Jones--Pewsey special case with `psi=-1`, equivalent to a wrapped-Cauchy directional front layer.
-3. **POPCDM:** a von Mises population-code front end with Gumbel-max noise and maximum decoding, implemented through a Luce-choice transformation before the CDM.
-
-The working goal is to identify the best front-end specification for the general CDM, not to compare CDM against non-CDM response models.
-
-## 2. Evidence-status vocabulary
-
-To keep later manuscript claims disciplined, entries use these labels:
-
-- **Implemented:** present in the current code.
-- **Validated:** numerical or interface behaviour has been explicitly checked.
-- **Empirical result:** obtained from the current five-participant fits or diagnostics.
-- **Interpretation:** theoretically motivated reading of a result, not uniquely identified by the data.
-- **Open test:** required before a publication-level conclusion.
-
-## 3. Shared data and decision skeleton
-
-The current comparable POPCDM and CauchyCDM routes use participant-level joint likelihoods for response angle and RT over nine conditions. Current shared decisions include:
-
-- three drift norms grouped by set size, S2/S4/S6;
-- shared radial drift variability, boundary separation, nondecision time, and nondecision-time range;
-- tangential drift variability fixed at `exp(-6)`;
-- diffusion scale fixed at 1;
-- target-centred errors with no categorical phase bias;
-- 50 unique response-angle grid points;
-- 300 interior time points over a 3 s model horizon;
-- numerical conditioning on the behavioural RT-selection interval, 0.3--3.0 s;
-- 16 bounded `fmincon` starts with the interior-point algorithm and `1e-6` stopping tolerances.
-
-The models differ in their front-layer distribution, parameterization, hard boxes, and currently one likelihood-boundary convention described in Section 6. The older JPCDM fits are historically informative and have been superseded by the current JP H0a/H0b route for future formal comparisons.
-
-The historical POP-versus-JP comparison should not be discarded. POP and JP were previously compared under an older but broadly equivalent 3-vnorm/3-ter specification, and POP won that comparison. The later correction is that the older shared skeleton was not the best scientific skeleton for the current project. Subsequent RT diagnostics showed that drift norm should be grouped by set size rather than by cue type, redundancy route, or unique-colour count. This is why the current harmonized comparison uses S2/S4/S6 `vnorm` and shared timing parameters.
-
-## 4. POPCDM route
-
-### 4.1 Generative interpretation
-
-The current POPCDM composition is:
-
-```text
-memory activation
--> Gumbel-max/Luce directional selection
--> CDM accumulation and boundary crossing
--> response
-```
-
-The POP layer is based on the Oberauer population-code measurement model. In its standalone use, Gumbel-max noise and maximum-likelihood response selection are represented efficiently through Luce's choice rule. The fitted POP distribution can therefore represent variability arising from memory and response selection rather than a cleanly isolated encoding distribution.
-
-### 4.2 Current hypotheses
-
-**H0a: conditional amplitude**
-
-- one shared POP concentration `kappa`;
-- nine condition-specific amplitudes `alpha`;
-- 17 free parameters in total.
-
-**H0b: conditional concentration**
-
-- one shared `alpha`;
-- nine condition-specific `kappa` values;
-- 17 free parameters in total.
-
-**H1: power-law amplitude restriction**
-
-- one shared `kappa`;
-- estimated reference amplitude `A2`;
-- route-specific exponents `beta_U`, `beta_NR`, and `beta_R`;
-- 12 free parameters in total;
-- theoretically required exponent box `beta in [-1, 0]`.
-
-For unredundant and nonredundant routes,
-
-$$
-\alpha = A_2\left(\frac{N_c}{2}\right)^\beta.
-$$
-
-For redundant conditions with multiplicity term $m=S-C+1$,
-
-$$
-\alpha = A_2\left(\frac{N_c}{2}\right)^\beta m^{-\beta}.
-$$
-
-The theoretical single-item intercept is
-
-$$
-A_1=A_2 2^{-\beta},
-$$
-
-so $A_1 \geq A_2$ when $\beta \leq 0$.
-
-The equality
-
-$$
-\alpha_{S2C2}=\alpha_{S4C2NR}=\alpha_{S6C2NR}=A_2
-$$
-
-is an algebraic implication of H1, not an implementation error.
-
-### 4.3 Critical POPCDM implementation and specification changes
-
-**Implemented:**
-
-1. The original theory-testing stack was reorganized into H0a, H0b, and nested H1 specifications using explicit free/fixed parameter maps.
-2. Drift norm was changed from U/NR/R grouping to set-size S2/S4/S6 grouping. This matches the empirical RT load effect and prevents R/NR accuracy differences from being absorbed into separate CDM kernels.
-3. Radial variability, boundary, nondecision time, and nondecision-time range were made shared across conditions for the current comparison.
-4. Tangential variability was fixed at `exp(-6)` consistently in model expansion and the forward model.
-5. The drift and boundary boxes were widened from `[5,10]` to `[2,12]` after the narrower box pinned ES at its boundary and worsened fit.
-6. The amplitude upper bound was raised to 300 because the joint model requires much larger POP concentration than the standalone response-angle measurement model.
-7. H1 was implemented with route-specific exponents while retaining the theoretically required `[-1,0]` range.
-8. The likelihood was aligned to the JPCDM 50-by-300 interior grid by dropping POPCDM's final time column and conditioning density on retained RTs.
-9. The full fits use 16 explicit starts, parallel local optimization, 2,000 maximum iterations, and 20,000 maximum function evaluations.
-10. Dedicated diagnostics were added for POP-only versus CDM noise partition and for RT conditional on response-error region.
-
-The mathematical supervisor model `popcdm2` itself was deliberately not reparameterized. Identification changes were made through scientifically interpretable parameter grouping and constraints.
-
-### 4.4 POPCDM empirical results
-
-**Empirical result:** H0a generally outperformed H0b, although AQ and YL benefited from H0b. H1 was worse in NLL than its nesting model H0a for every participant. Only HC preferred H1 by BIC.
-
-| ID | H0a NLL | H0b NLL | H1 NLL | Preferred POP baseline |
-|---|---:|---:|---:|---|
-| AQ | 3123.02 | 3106.92 | 3180.57 | H0b |
-| ES | 1178.78 | 1291.93 | 1297.99 | H0a |
-| HC | 1333.16 | 1339.98 | 1343.46 | H0a |
-| PG | 2968.57 | 3123.37 | 3082.82 | H0a |
-| YL | 2622.98 | 2550.60 | 2726.03 | H0b |
-
-Four participants placed at least one H1 exponent at the lower bound `-1`. This is not evidence that the allowed theoretical range should be widened. H0a implies baseline amplitude reductions steeper than the admissible power law, and the shared `A2` restriction cannot reproduce unequal conditional amplitudes at `Nc=2` without affecting redundant conditions through the multiplicity term.
-
-### 4.5 POPCDM noise-partition result
-
-**Empirical result:** the fixed-direction CDM kernel is narrow, with approximately 8.7 degree circular SD and virtually no mass beyond 45 degrees. It mainly transfers central probability into the shoulder. The POP component fitted inside the joint model becomes narrower than a standalone POP fit, while the combined model recovers a similar aggregate final distribution.
-
-Mean partition across participants and conditions:
-
-| Stage | Central <=15 deg | Shoulder 15--45 deg | Tail >45 deg |
-|---|---:|---:|---:|
-| Observed | .674 | .230 | .096 |
-| POP-only refit | .655 | .251 | .094 |
-| POP component in H0a | .722 | .190 | .088 |
-| Fixed-direction CDM | .961 | .039 | <.001 |
-| Combined H0a | .652 | .256 | .092 |
-
-**Interpretation:** this is not simple uncompensated double-noise overdispersion. It is noise reallocation and weak stage identification. Shared `kappa` determines the basic POP shape; conditional `alpha` suppresses or restores the POP noise floor after the CDM has supplied shoulder dispersion. Large `alpha` values therefore do not provide a transparent scale of memory strength.
-
-The fitted `alpha` range is itself theoretically diagnostic. In the current POPCDM fits, `alpha` often needs a very large range, roughly from the low tens to well above 200. Raising `alpha` reduces the Gumbel/Luce noise floor and approximates high precision; lowering `alpha` restores far-tail mass by making the front-layer selection noisier and heavier-tailed. This makes `alpha` do more than scale memory strength. It becomes the main control over how much far-tail behavioural variability is assigned to the POP layer rather than to the CDM.
-
-The resulting concern is conceptual. The standalone POP layer was originally positioned as a VWM continuous-report behavioural measurement model. Its Gumbel/Luce noise term is therefore an umbrella behavioural noise term that can absorb variability introduced during encoding, maintenance or consolidation, retrieval, decision formation, and response selection. When that layer is placed before a CDM, a response-selection-like operation is followed by another response-selection or response-commitment operation. The two mechanisms are not identical, but the sequential composition risks duplicating decision-level noise unless the POP operation is reinterpreted as latent memory-evidence variability rather than final behavioural response selection.
-
-### 4.6 POPCDM RT-by-error result
-
-**Empirical result:** observed tail responses were 124 ms slower than central responses on average, but H0a predicted only 13 ms slowing.
-
-| Region | Observed mean RT | H0a mean RT |
-|---|---:|---:|
-| Central | 1.417 s | 1.435 s |
-| Shoulder | 1.450 s | 1.447 s |
-| Tail | 1.541 s | 1.448 s |
-
-The fitted model attributed approximately 93% of tail responses to a tail-region latent POP direction. Thus large directional errors are already generated in the front layer, but a badly directed selection retains roughly the same drift strength as a correct selection and can be executed too quickly.
-
-**Interpretation:** directional reliability and decision strength need a theoretically derived coupling. A weak latent evidence state should both increase directional uncertainty and reduce CDM drift strength. An arbitrary angle-dependent drift function would fit this signature but would not provide an adequate theory.
-
-The RT miss is manuscript-relevant rather than merely diagnostic. The model underpredicts far-tail RT by roughly 100 ms or more because far-tail responses are attributed mostly to badly directed POP selections whose CDM drift norm is still as strong as a near-target selection. The data imply that large directional errors are not only less accurate but also slower, so the process account must explain why error magnitude carries timing information even when mean RT effects across experimental conditions are relatively small.
-
-The 9-alpha/1-kappa and 9-kappa/1-alpha POP specifications also reveal a shape tradeoff. The 9-alpha/1-kappa route usually wins, suggesting that condition-specific amplitude is the stronger baseline degree of freedom. However, participants with larger cross-condition response-angle variability can favour the 9-kappa/1-alpha route. The current interpretation is that conditional `alpha` is better at allocating far-tail mass, whereas conditional `kappa` can better adjust the shoulder region. Neither parameterization is a fully satisfactory account of peak, shoulder, tail, and RT-by-error structure.
-
-## 5. CauchyCDM route
-
-### 5.1 Generative interpretation
-
-With Jones--Pewsey shape fixed at `psi=-1`, the front layer becomes a wrapped-Cauchy distribution over latent CDM drift direction:
-
-```text
-wrapped-Cauchy latent drift-direction variability
--> CDM accumulation and boundary crossing
--> response
-```
-
-Increasing Cauchy `kappa` narrows the latent direction distribution and reduces far-tail mass. Unlike the current POP layer, this front layer does not perform a separate Gumbel-max/Luce response-selection operation before diffusion.
-
-### 5.2 H0 specification
-
-Cauchy H0 has 16 free parameters:
-
-- three set-size drift norms;
-- shared radial variability;
-- shared boundary separation;
-- shared nondecision time;
-- shared nondecision-time range;
-- nine condition-specific wrapped-Cauchy `kappa` values.
-
-Fixed values are `psi=-1`, tangential variability `exp(-6)`, diffusion scale 1, and phase bias 0.
-
-### 5.3 Critical CauchyCDM model and implementation changes
-
-The supplied JP-CDM example was not used unchanged. The following alterations must be reported:
-
-1. **Compiled shape restriction:** `psi=-1` was specialized in `vjp300rot.c`, removed from the runtime MEX parameter vector, and made impossible to estimate accidentally.
-2. **Cauchy algebra:** the generic Jones--Pewsey evaluator was replaced by the algebraically equivalent wrapped-Cauchy density for `psi=-1`.
-3. **Tangential variability interface:** tangential variability became a runtime MEX argument; H0 fixes it at `exp(-6)` in MATLAB.
-4. **Memory safety:** the Bessel-switch loop now checks its array bound before indexing.
-5. **Computational cache:** 50 Bessel roots and corresponding J1 values are cached once per MEX process. This changes runtime, not predictions.
-6. **Removed example-specific machinery:** the supplied four-condition stimulus-phase and categorical-bias components are not used; the current model operates on target-centred errors.
-7. **Shared nondecision time:** condition-specific example nondecision times were replaced by the shared POP-comparison specification.
-8. **Condition mapping:** drift norm is grouped by set size and Cauchy concentration is free across nine conditions.
-9. **Matrix convolution:** row-wise uniform nondecision-time convolution was replaced by a single `conv2` operation over the angle-by-RT matrix. Maximum discrepancy from the row-wise reference was below `9e-16`.
-10. **Numeric hot path:** repeated objective evaluation uses direct numeric indexing rather than constructing condition tables. Labelled tables remain in the reporting path.
-11. **Build protection:** fitting and validation check whether the MEX is absent or older than its C source and rebuild when required.
-12. **Environment:** the MEX was compiled with Microsoft Visual C++ 2022 and statically linked GSL 2.8 libraries. Redistribution must comply with the GSL license.
-
-**Validated:** retained joint mass was approximately .9993, circular symmetry error was below `7e-16`, increasing `kappa` reduced tail mass, obsolete runtime `psi` input was rejected, matrix convolution matched the reference, and MATLAB Code Analyzer reported no issues in the optimized path.
-
-### 5.4 Parameter boxes
-
-The Cauchy boxes follow the supplied JP-CDM example rather than the wider POPCDM boxes:
-
-| Parameter | Lower | Upper |
-|---|---:|---:|
-| Drift norm | 0 | 7.5 |
-| Cauchy `kappa` | 0 | 7.5 |
-| Radial variability | 0.01 | 4 |
-| Boundary | 0.5 | 5 |
-| Nondecision time | 0 | 1.5 |
-| Nondecision-time range | 0 | 0.7 |
-
-The radial lower bound is 0.01 rather than the example's formal zero because the compiled forward model applies that numerical floor.
-
-### 5.5 Full Cauchy H0 results
-
-**Empirical result:** all 80 starts returned positive exit flags. Selected solutions all had exit flag 2 and no run reached the iteration limit.
-
-| ID | Trials | NLL under periodic likelihood | AIC | BIC |
-|---|---:|---:|---:|---:|
-| AQ | 4488 | 2947.04 | 5926.07 | 6028.62 |
-| ES | 4488 | 1005.32 | 2042.64 | 2145.19 |
-| HC | 4495 | 1137.66 | 2307.31 | 2409.88 |
-| PG | 4492 | 2780.45 | 5592.91 | 5695.47 |
-| YL | 4497 | 2314.65 | 4661.30 | 4763.88 |
-
-Only ES had two starts within one NLL unit of the selected solution. The other participants had one winning solution within that range. This does not invalidate the winners, but indicates that the best basin was not repeatedly recovered to within one NLL unit.
-
-**Boundary audit:** AQ and PG placed boundary separation effectively at the upper cap of 5. ES placed S2 drift norm at 7.472 on an upper bound of 7.5. HC and YL were comfortably interior. All fitted Cauchy concentration values were interior. These cases require sensitivity fits after likelihood harmonization; the primary fit was not silently widened.
-
-### 5.6 Cauchy diagnostics
-
-**Empirical result:** overall mean absolute observed-model proportion error was .0497 for angle bins and .0224 for RT bins.
-
-RT proportions were generally reproduced closely. Angle fits often assigned too much probability to the central region and too little to the 15--45 degree shoulder. The heavy-tailed layer nevertheless captured substantial far-tail mass in broad conditions such as YL S6C4NR and S6C6NR.
-
-**Interpretation:** a wrapped-Cauchy directional layer is useful, but a single symmetric shape does not fully reproduce the empirical combination of sharp peak, shoulder, and tail across all conditions.
-
-The theoretical advantage of the Cauchy route is that heavy tails are native to the memory-stage directional distribution. This makes the tail interpretable as latent memory variability while leaving response selection, timing, residual diffusion, and response commitment to the CDM. That division of labour is cleaner than the current POPCDM sequence, where a Gumbel/Luce response-selection-like operation precedes the CDM.
-
-## 6. Provisional empirical comparison
-
-### 6.1 Important likelihood mismatch
-
-**Open test / current limitation:** POPCDM was fitted with an angular interpolation grid open at `+pi`. CauchyCDM was fitted after periodically closing the grid. Between three and six retained trials per participant fell beyond the last open-grid angle. Under the POP convention these observations receive the likelihood floor rather than circular interpolation.
-
-The reported periodic Cauchy NLL, AIC, and BIC therefore must not be compared directly with the saved POP values in a publication table.
-
-As a conservative diagnostic, the fitted Cauchy solutions were reevaluated under the same open-grid convention as POPCDM, without refitting:
-
-| ID | Best POP NLL | POP model | Cauchy NLL under open grid | Provisional Cauchy advantage |
-|---|---:|---|---:|---:|
-| AQ | 3106.92 | H0b | 3013.83 | 93.09 |
-| ES | 1178.78 | H0a | 1076.99 | 101.79 |
-| HC | 1333.16 | H0a | 1248.58 | 84.58 |
-| PG | 2968.57 | H0a | 2925.02 | 43.55 |
-| YL | 2550.60 | H0b | 2433.17 | 117.43 |
-
-Cauchy H0 uses 16 parameters and the POP baselines use 17. The provisional advantage therefore survives a conservative common-convention evaluation and would also be favoured by information criteria. Nevertheless, the formal comparison requires periodic closure and refitting of both routes.
-
-### 6.2 Current empirical assessment
-
-**Interpretation supported by current evidence:** CauchyCDM is the stronger empirical baseline. It provisionally improves joint fit for every participant with one fewer parameter. This conclusion is strong but not yet publication-final because likelihood harmonization and refitting remain outstanding.
-
-The marginal diagnostics add nuance. POPCDM's aggregate angle partition was close to observed after internal noise reallocation. CauchyCDM shows a recurring central-versus-shoulder discrepancy. Its joint-likelihood advantage may therefore reflect fine-grained angle-by-RT structure rather than superiority in every marginal feature.
-
-Graphically, CauchyCDM can look acceptable even where the peak/shoulder/tail proportion split is not as close as POPCDM. Using the current saved diagnostics, POPCDM H0a has lower angle-bin mean absolute error than Cauchy H0 across the central/shoulder/tail bins: approximately .034 versus .050. The difference is largest for central and shoulder mass, where Cauchy tends to overpredict central responses and underpredict shoulder responses. The important point for now is that CauchyCDM wins the joint fit despite this marginal proportion-split disadvantage.
-
-## 7. Theoretical comparison
-
-### 7.1 Why CauchyCDM is currently cleaner
-
-The Cauchy route gives the two layers distinct formal jobs:
-
-- front layer: across-trial uncertainty in latent drift direction;
-- CDM: accumulation, timing, residual diffusion, and response commitment.
-
-It avoids placing a complete Gumbel-max/Luce response-selection mechanism before a second decision process. Its fitted concentration parameter is therefore easier to interpret as directional dispersion than POPCDM's conditional amplitude, which also regulates noise allocation between layers.
-
-### 7.2 Why POPCDM remains theoretically important
-
-POPCDM offers the more ambitious substantive memory theory. It links set size, colour structure, redundancy, population activation, and a theoretically constrained scaling law. Cauchy H0 currently estimates nine unconstrained condition concentrations and does not explain why those concentrations differ.
-
-The power-law failure is scientifically informative rather than a reason to discard POP theory. It shows that the standalone measurement-model scaling does not transfer straightforwardly into the current sequential POP-plus-CDM composition. The failure may reflect the duplicated role of response selection, weak identification at large amplitude, an incorrect scaling law, or some combination of these.
-
-For CauchyCDM to become more than a strong descriptive baseline, its condition-specific `kappa` values should be constrained by the same family of memory-capacity theories that motivated the POPCDM amplitude law. The relevant targets are Smith and colleagues' sample-size model, attention-weighted sample-size model, and related power-law formulations. If Cauchy `kappa` scales across conditions as these models predict, the Cauchy route would combine a cleaner process architecture with strict, theory-rooted constraints on memory-stage variability.
-
-### 7.3 Shared unresolved limitation
-
-Both current routes make latent directional deviation largely independent of drift strength. CauchyCDM removes the duplicate response-selection interpretation but still allows a distant drift direction to retain the same norm as a near-target direction. It may therefore share POPCDM's inability to generate sufficiently slow tail responses.
-
-**Open test:** run the same RT-by-error and latent-direction attribution diagnostic for CauchyCDM before claiming that it provides a better process account of joint angle and RT.
-
-### 7.4 Current theoretical judgement
-
-- **Better current process architecture:** CauchyCDM.
-- **Richer memory theory:** POPCDM.
-- **Better current empirical baseline:** provisionally CauchyCDM.
-- **Best complete theory:** not yet established.
-
-A defensible current manuscript statement is:
-
-> A wrapped-Cauchy directional front layer provides a more parsimonious and process-clean account than the present sequential population-code measurement model, while the population-code route retains the stronger substantive account of memory and redundancy. The remaining challenge is to derive a joint latent-evidence mechanism that couples directional reliability to decision strength.
-
-## 8. Publication-facing claims and cautions
-
-### Claims currently supported
-
-1. A front layer is required because fixed-direction CDM contributes almost no far-angle tail mass.
-2. The POP and CDM stages can reallocate central and shoulder variability while producing similar final angle marginals.
-3. Conditional POP amplitude is not a pure, directly interpretable memory-strength parameter in the joint model.
-4. The constrained POP power law is not supported as a general participant-level account in the present composition.
-5. Wrapped-Cauchy directional variability provides a strong and parsimonious empirical baseline.
-6. Response-error tails are behaviourally slower than central responses, requiring a connection between directional reliability and decision strength.
-7. In the harmonized current JP comparison, JP H0b outperforms POPCDM H0 for every participant, but the constrained Cauchy special case still outperforms JP H0b with one fewer parameter.
-
-### Claims not yet supported
-
-1. That CauchyCDM has publication-final lower AIC/BIC than POPCDM, pending harmonized refits.
-2. That the wrapped-Cauchy distribution is uniquely preferred over other theoretically defensible heavy-tailed directional families.
-3. That CauchyCDM explains RT conditional on error better than POPCDM.
-4. That fitted front-layer dispersion can be uniquely assigned to encoding, maintenance, retrieval, or response selection.
-5. That widening the Cauchy decision boxes would or would not alter the model comparison.
-6. That unrestricted JPCDM is the preferred JP-family account, because the current H0b result remains worse than Cauchy despite having one extra parameter.
-
-## 9. Prioritized next work
-
-1. **Harmonize the likelihood.** Periodically close both angular grids, retain identical 50-by-300 time coordinates, use the same RT conditioning and floor, validate pointwise equivalence of the likelihood wrapper, and refit POP H0a/H0b and Cauchy H0.
-2. **Run Cauchy RT-by-error diagnostics.** Compare observed and predicted central/shoulder/tail RT distributions and calculate posterior latent-direction attribution.
-3. **Run targeted Cauchy bound sensitivity.** After harmonization, widen boundary for AQ/PG and S2 drift norm for ES. Treat this as sensitivity analysis, not replacement of the original example-informed fit.
-4. **Compare models formally.** Report participant NLL, AIC, BIC, parameter count, start recovery, boundary contact, and diagnostic errors under the common likelihood.
-5. **Test an evidence-strength coupling.** Derive a latent evidence variable that jointly controls directional concentration and drift norm. Avoid an unconstrained angle-dependent drift patch.
-6. **Preserve the POP theory test.** Evaluate whether a revised memory-only POP representation, without a completed response-selection operation, permits the theoretically required power law to remain in `beta in [-1,0]`.
-7. **Consider constrained Cauchy structure.** Replace nine unrelated concentrations with a theoretically motivated condition law only after H0 establishes the descriptive target that such a law must reproduce.
-8. **Quantify peak/shoulder/tail tradeoffs across front ends.** Compare observed, POPCDM, JPCDM, and CauchyCDM region proportions under the same bins and likelihood convention.
-9. **Keep RT central in the model assessment.** Treat RT as a meaningful constraint on VWM continuous-recall models even when condition-level mean RT effects are modest.
-10. **Extend diagnostics to current JP H0b.** Run RT-by-error and region-proportion comparisons for JP H0b alongside POPCDM and CauchyCDM.
-
-## 10. Reproducibility map
-
-### POPCDM
-
-- Main note: `POPCDM_Matlab/POPCDM_theory_testing.md`
-- Forward model: `POPCDM_Matlab/popcdm2.m`
-- Theory models: `POPCDM_Matlab/pop_theory_models.m`
-- Joint likelihood: `POPCDM_Matlab/popcdm_nll_arrays.m`
-- Full fits: `POPCDM_Matlab/TheoryFits/`
-- Noise partition: `POPCDM_Matlab/Figures/NoisePartition/`
-- RT by error: `POPCDM_Matlab/Figures/RTByError/`
-
-### CauchyCDM
-
-- Main route note: `CauchyJP/CauchyCDM_theory_testing.md`
-- Compiled core: `CauchyJP/vjp300rot.c`
-- MATLAB wrapper: `CauchyJP/cauchycdm2.m`
-- Joint likelihood: `CauchyJP/cauchycdm_nll_arrays.m`
-- Model specification: `CauchyJP/cauchycdm_model.m`
-- Full fit: `CauchyJP/CauchyFits/cauchycdm_H0_full_results.mat`
-- Fit audit: `CauchyJP/CauchyFits/cauchycdm_H0_fit_audit.csv`
-- Parameter estimates: `CauchyJP/CauchyFits/cauchycdm_H0_parameter_estimates.csv`
-- Diagnostic summary: `CauchyJP/CauchyFits/cauchycdm_H0_diagnostic_summary.csv`
-- Figures: `CauchyJP/Figures/H0/`
-
-### JPCDM
-
-- Main route note: `JPCDM_Matlab/JPCDM_theory_testing.md`
-- Entry script: `JPCDM_Matlab/jp_fit_theory.m`
-- Forward model wrapper: `JPCDM_Matlab/jpcdm1.m`
-- Compiled core: `JPCDM_Matlab/vjp300rot.c`
-- Model specification: `JPCDM_Matlab/jpcdm_model.m`
-- Model expansion: `JPCDM_Matlab/jpcdm_expand_P.m`
-- Joint likelihood: `JPCDM_Matlab/jpcdm_nll.m`, `JPCDM_Matlab/jpcdm_nll_arrays.m`
-- Current fit runner: `JPCDM_Matlab/run_jpcdm_theory_fit.m`
-- Current diagnostics: `JPCDM_Matlab/jpcdm_diagnostics.m`
-- Current outputs: `JPCDM_Matlab/JPFits/`, `JPCDM_Matlab/Figures/H0a/`, `JPCDM_Matlab/Figures/H0b/`
-- Historical fits: `JPCDM_Matlab/jp_fit_9p3v3ter_results.mat`, `JPCDM_Matlab/jp_fit_9k3v3ter_results.mat`
-- Historical grouped fits: `JPCDM_Matlab/jp_fit_freePsi_groupedVnorm_results.mat`, `JPCDM_Matlab/jp_fit_freeKappa_groupedVnorm_results.mat`
-- Parameter exports: `JPCDM_Matlab/condFitTable.xlsx`, `JPCDM_Matlab/condFit_rounded.xlsx`
-- Current limitation: the comparable JP route has been implemented, but new H0a/H0b full-fit results have not yet been recorded in this master note.
-
-## 11. Append-only research log template
-
-Add future work below using this structure. Do not overwrite earlier entries when an interpretation changes; mark it superseded and link the new evidence.
-
-### 2026-08-21: project framing and current front-end comparison
-
-**Question:**
-What is the project-level purpose of the JPCDM, CauchyCDM, and POPCDM comparisons?
-
-**Status:**
-Interpretation / empirical result.
-
-**Model and code changes:**
-
-- No code change.
-- The master work note was reframed from a two-route POPCDM versus CauchyCDM record into a general CDM front-end comparison record.
-- Candidate front ends are Jones--Pewsey, wrapped-Cauchy as the `psi=-1` Jones--Pewsey special case, and von Mises population coding with Gumbel-max/Luce maximum decoding.
-
-**Fit specification:**
-
-- Existing baseline-spec comparisons and diagnostics remain as recorded above.
-
-**Results:**
-
-- Superseded by the 2026-08-21 harmonized JP H0a/H0b results below.
-- Historical saved baseline comparisons showed POPCDM won against JPCDM within the older 3-vnorm/3-ter comparison skeleton. That result remains valid for that older specification, but the skeleton itself was later superseded because RT evidence favoured set-size `vnorm` grouping and shared timing.
-- The Jones--Pewsey route still needs constraints for theoretical interpretability; the Cauchy special case at `psi=-1` is currently the strongest JP-family route.
-
-**Interpretation:**
-The research question is not whether a CDM is needed, but which latent directional front end should be paired with the general CDM for continuous-recall VWM data. The historical POP-versus-JP comparison has been superseded by the harmonized JP H0b result, which beats POPCDM H0 but still loses to Cauchy. The unrestricted JP family should be treated cautiously because extra shape flexibility improves descriptive freedom without beating the constrained Cauchy special case.
-
-**Manuscript consequence:**
-The Introduction and Model Comparison framing should present all candidates as CDM variants with different front-end assumptions. Claims about JP should distinguish the general Jones--Pewsey family from the theoretically restricted Cauchy case.
-
-**Next decision:**
-Use the harmonized JP H0b result in the common baseline comparison table and decide whether unrestricted JP should be retained as a flexibility benchmark or omitted from the main theoretical comparison.
-
-### 2026-08-21: POPCDM limitations, Cauchy rationale, and RT agenda
-
-**Question:**
-What deeper theoretical and diagnostic lessons follow from the POPCDM, JPCDM, and CauchyCDM comparisons?
-
-**Status:**
-Interpretation / empirical result / open test.
-
-**Model and code changes:**
-
-- No code change.
-- The master note was extended to record the POPCDM noise-allocation concern, the CauchyCDM theoretical rationale, and the RT-focused modelling agenda.
-
-**Fit specification:**
-
-- POPCDM: current baseline results include 9-alpha/1-kappa and 9-kappa/1-alpha variants.
-- CauchyCDM: fitted to the same Redundancy 2024 data with a procedure designed to be comparable to the POP route, with one fewer parameter in the baseline specification.
-- RT structure: current evidence favours grouping `vnorm` by set size rather than by number of unique colours or cue type.
-
-**Results:**
-
-- POPCDM requires a large `alpha` range, approximately low tens to above 200, to manage far-tail mass and the Gumbel/Luce noise floor.
-- Increasing `alpha` suppresses the front-layer noise floor and approximates high precision; decreasing `alpha` restores far-tail mass.
-- The 9-alpha/1-kappa POP specification usually beats 9-kappa/1-alpha, but individuals with greater cross-condition response-angle variability can favour 9-kappa/1-alpha.
-- The two POP specifications appear to capture different parts of the distribution: 9-alpha/1-kappa is better for far-tail mass, whereas 9-kappa/1-alpha can better adjust shoulder mass.
-- POPCDM misses far-tail RT by roughly 100 ms or more, so the reason for this failure should be explicitly addressed in the manuscript.
-- CauchyCDM wins the current comparison with one fewer parameter and better fit on nearly all evaluated metrics.
-- POPCDM may capture the peak/shoulder/tail proportion split better than CauchyCDM in some summaries, but the size of that advantage still needs formal quantification because Cauchy looks acceptable graphically.
-- Set-size grouping of `vnorm` is empirically preferable to grouping drift norm by unique colour count or cue type.
-
-**Interpretation:**
-POPCDM's main conceptual issue is that the POP layer carries an umbrella behavioural noise term inherited from its role as a standalone continuous-report measurement model. That umbrella term can include encoding, maintenance, retrieval, decision, and response-selection variability. When placed before a CDM, the Gumbel/Luce operation and the CDM both contribute response-selection-like variability, creating a possible duplication of decision-level noise. CauchyCDM is cleaner because the heavy tail belongs naturally to latent memory-stage directional variability, while the CDM retains the response-selection and timing role.
-
-The empirical RT result strengthens this concern. Large response errors are slower, but POPCDM makes them too fast because a badly selected POP direction can still be passed to CDM with normal drift strength. This suggests that future models need a latent evidence variable that jointly controls directional reliability and decision strength.
-
-The larger research goal is to determine whether CauchyCDM can outperform or at least match other CDM front-end specifications across additional datasets. If it can, and if its `kappa` parameter scales across conditions according to the sample-size, attention-weighted sample-size, or related power-law models from Smith and colleagues, then it would provide a theoretically sound and strongly constrained CDM account for VWM continuous recall.
-
-**Manuscript consequence:**
-RT should be presented as an important constraint on VWM continuous-recall modelling even when experimental-condition mean RT effects are not large. The manuscript should argue that response-angle fits alone are insufficient because they can hide stage-allocation problems that RT-by-error reveals.
-
-**Next decision:**
-Quantify the Cauchy versus POP peak/shoulder/tail differences; run RT-by-error diagnostics for CauchyCDM; and develop a constrained Cauchy `kappa` law based on sample-size, attention-weighted sample-size, and power-law predictions.
-
-### 2026-08-21: consistency audit against saved fits
-
-**Question:**
-Do the saved fit artifacts contradict the current master-note claims?
-
-**Status:**
-Validated / caveat / open test.
-
-**Model and code changes:**
-
-- No code change.
-- Saved `.mat`, `.csv`, and `.xlsx` artifacts were checked against the master-note claims.
-
-**Fit specification:**
-
-- Current POP theory fits: `POPCDM_Matlab/TheoryFits/pop_theory_H0a_full_results.mat`, `pop_theory_H0b_full_results.mat`, and `pop_theory_H1_full_results.mat`.
-- Current Cauchy H0 fit: `CauchyJP/CauchyFits/cauchycdm_H0_full_results.mat`.
-- Historical JP fits: `JPCDM_Matlab/jp_fit_9p3v3ter_results.mat`, `jp_fit_9k3v3ter_results.mat`, `jp_fit_freePsi_groupedVnorm_results.mat`, and `jp_fit_freeKappa_groupedVnorm_results.mat`.
-
-**Results:**
-
-- Current POP H0a/H0b/H1 NLLs match the master table.
-- Current Cauchy H0 periodic-likelihood NLLs match the master table and remain lower than the current best POP baseline for every participant.
-- Historical JPCDM NLLs are much worse than current POP and Cauchy fits, but those JP fits are not a clean current-baseline comparison because their parameter groupings and decision skeleton differ from the current POP/Cauchy specification.
-- POPCDM H0a has better current central/shoulder/tail angle-bin MAE than Cauchy H0, approximately .034 versus .050, despite Cauchy winning the joint likelihood.
-- Cauchy H0 angle-bin error is concentrated in central and shoulder mass: it tends to overpredict central responses and underpredict shoulder responses. Tail-bin MAE is smaller for both models.
-
-**Interpretation:**
-No direct contradiction was found in the saved POPCDM and CauchyCDM numbers. The main correction is evidential status: claims about unrestricted JPCDM should be framed as historical and provisional until JP is refitted under the current harmonized front-end comparison design. The POP-versus-Cauchy story also needs to hold two facts together: Cauchy is the stronger current joint-likelihood baseline, while POP currently reproduces coarse angle-region proportions better.
-
-**Manuscript consequence:**
-Do not present the old JP numbers as a formal model-comparison table beside current POPCDM and CauchyCDM. If JP is included, either refit it under the harmonized specification or label it as a historical flexibility benchmark. Also report marginal angle-bin diagnostics separately from joint likelihood so readers can see that Cauchy's likelihood advantage does not mean it wins every descriptive summary.
-
-**Next decision:**
-Decide whether unrestricted JPCDM remains a main manuscript model. If yes, run a harmonized JPCDM refit; if no, position the Jones--Pewsey family through the constrained Cauchy special case and discuss unrestricted JP only as a prior exploratory benchmark.
-
-### 2026-08-21: current comparable JPCDM H0a/H0b route
-
-**Question:**
-How should unrestricted JP-CDM be brought up to date with the current POPCDM and CauchyCDM routes?
-
-**Status:**
-Implemented / open test.
-
-**Model and code changes:**
-
-- Added `JPCDM_Matlab/JPCDM_theory_testing.md` as the JP route log.
-- Added `jpcdm_model.m`, `jpcdm_expand_P.m`, `jpcdm_nll.m`, `run_jpcdm_theory_fit.m`, `jpcdm_diagnostics.m`, and `jp_fit_theory.m`.
-- Updated `jpcdm1.m`, `vjp300rot.m`, and `vjp300rot.c` so tangential variability is passed at runtime.
-- Updated `jpcdm_nll_arrays.m` to use periodic angular closure before interpolation.
-- Older JP grouped-vnorm runners and saved fits are retained as historical artifacts.
-
-**Fit specification:**
-
-- JP H0a: one shared `kappa`, nine condition-specific `psi` values, 17 free parameters.
-- JP H0b: one shared `psi`, nine condition-specific `kappa` values, 17 free parameters.
-- Shared skeleton: set-size `vnorm`; shared `eta1`, `a`, `ter`, and `st`; `eta2=exp(-6)`; `phi=0`; diffusion scale 1; RT conditioning 0.3--3.0 s; 50 angle grid points; 300 time points over `tmax=3`; 16 `fmincon` starts for full fits.
-
-**Results:**
-
-- JP H0a and H0b full fits completed for all five participants.
-- JP H0b beat JP H0a for every participant.
-- JP H0b beat the best POP H0 baseline for every participant.
-- Cauchy H0 beat JP H0b for every participant despite using one fewer parameter.
-
-| ID | Best POP H0 NLL | JP H0a NLL | JP H0b NLL | Cauchy H0 NLL |
-|---|---:|---:|---:|---:|
-| AQ | 3106.92 | 3089.14 | 2949.65 | 2947.04 |
-| ES | 1178.78 | 1237.58 | 1017.30 | 1005.32 |
-| HC | 1333.16 | 1211.73 | 1147.12 | 1137.66 |
-| PG | 2968.57 | 3081.45 | 2800.08 | 2780.45 |
-| YL | 2550.60 | 2550.99 | 2344.38 | 2314.65 |
-
-**Interpretation:**
-JP remains an unrestricted shape-family benchmark. It does not need a POP-style H1 amplitude law in the current project logic because the constrained Cauchy special case already beats the best unrestricted JP H0 route. The useful JP degree of freedom is condition-specific `kappa`, not condition-specific `psi`, but estimating a shared `psi` does not improve enough over fixing `psi=-1`.
-
-**Manuscript consequence:**
-If unrestricted JP is included in the manuscript, use the new current H0a/H0b route rather than the historical JP result files. The current result supports treating unrestricted JP as a flexibility benchmark rather than a main theoretical account, because Cauchy is better and more parsimonious.
-
-**Next decision:**
-Add current JP H0b to the cross-model diagnostic suite, especially RT-by-error, then update the formal comparison table with NLL/AIC/BIC, convergence, boundary, and proportion diagnostics.
-
-### YYYY-MM-DD: short title
-
-**Question:**  
-What theoretical or empirical issue was tested?
-
-**Status:**  
-Implemented / validated / empirical result / interpretation / open test.
-
-**Model and code changes:**
-
-- File and function changed.
-- Mathematical or computational change.
-- Whether predictions changed or only runtime changed.
-- Whether recompilation was required.
-
-**Fit specification:**
-
-- Participants and exclusions.
-- Parameterization and bounds.
-- Starts, optimizer, stopping criteria, and random seed.
-- Likelihood and grid convention.
-
-**Results:**
-
-- NLL, AIC, BIC, convergence, boundary contact, and diagnostics.
-- Links to machine-readable outputs and figures.
-
-**Interpretation:**  
-What the result supports, what it does not identify, and plausible alternatives.
-
-**Manuscript consequence:**  
-Candidate sentence, figure, table, or section affected.
-
-**Next decision:**  
-The specific follow-up that would distinguish competing explanations.
-
-## 2026-09-14: staged H1 plan following review of the team-core fits
-
-**Status:** Descriptive data check / interpretation / agreed development sequence / open tests. No model code changed and no fits rerun for this entry. This entry updates the next-step priorities above; historical fits and their original specifications remain part of the record.
-
-### Current scope and H0 provenance
-
-The active implementation is now the `POPvJPvCauchy` team-core package. H0 has already been fitted. The current runner and wrappers contain an interrupted H1 edit: the runner passes a hypothesis argument to wrappers that do not all accept it, and the team-Cauchy wrapper applies a two-group eta index even when H0 supplies scalar eta. These current interface failures do NOT establish that the earlier saved H0 fits were computed incorrectly. The earlier review's instruction to “repair and reproduce H0” should mean restoring a runnable H0 evaluation path and checking saved solutions, not automatically repeating optimization.
-
-Preserve saved H0 parameters, predictions, summaries, and available source/version provenance. Restore the original H0 mapping, then evaluate each saved parameter vector once with the appropriate original specification. Compare raw NLL (minus2LL/2), penalized objective, and joint predictions separately: the saved NLL field may include a soft-bound penalty. Check that the restored path reproduces the saved values within numerical tolerance. A successful check supports reuse of H0 without refitting. If the exact original source is unavailable, report that reproducibility limitation rather than attributing present edits to historical runs.
-
-Refitting is justified only if a consequential change affects the fitted likelihood or parameter space, or an optimization problem is established: e.g., a material quadrature correction, wrong parameter mapping actually used in H0, changed RT conditioning, corrected joint-density computation, or failure to recover a known nested solution. Correcting a plotting-only median or a marginal diagnostic does not by itself require refitting. No automatic H0 refit is scheduled by this note.
-
-### Separate overall slowing from slow-tail behaviour
-
-A descriptive recheck of DazPreprocessed.csv used the existing five participants and 300–3000 ms RT filter. S6C4NR and S6C4R mean RTs exceed S4C4 for every participant (approximately 3–128 ms and 65–191 ms, respectively). This holds C fixed but changes both S and redundancy. It therefore supports an effect beyond colour count alone, not a uniquely identified redundancy cost at fixed total cognitive load. Existing S-specific drift norms already accommodate some item-load slowing.
-
-S6C2R mean RT also exceeds S2C2 for every participant despite only 0.6–2.4% tail responses. This motivates testing an additive retrieval/nondecision delay first: slowing need not be accompanied by many large errors. It does not rule out lower drift, because memory precision and decision parameters can compensate in the joint model. Nor does it establish that most observed tail responses originate in latent directional errors; that attribution requires the fitted latent model. The older POP decomposition is model-dependent evidence for that attribution.
-
-Tail frequency P(|error| > 45 degrees) and conditional tail slowing are distinct outcomes. Sparse tails imply uncertain conditional RT estimates, not necessarily absent slow errors. For example, ES S2C2 has six tail observations, with a mean tail-minus-central difference around 171 ms; YL S4C2R has no tail observations under this filter. Report tail counts and uncertainty, and do not impute an observed tail mean when its count is zero. Regional comparisons should be computed within participant and condition before pooling.
-
-### First H1: shared redundancy increment in Ter
-
-Prioritize the team wrapped-Cauchy core. Fit all nine conditions jointly, preserving the H0 memory parameters, three S-specific mean drift norms, shared eta, boundary, and st. Add one participant-specific coefficient delta_red:
-
-    Ter(p,c) = Ter0(p) + delta_red(p) * D(c)
-    D(c) = 1 when S(c) > C(c), otherwise 0.
-
-In the current condition order [S2C2, S4C2NR, S4C2R, S4C4, S6C2NR, S6C2R, S6C4NR, S6C4R, S6C6], D = [0,1,1,0,1,1,1,1,0]. Both R and NR receive the same increment initially. Baseline conditions are the D=0 special case, not a separately fitted dataset. H0 is recovered at delta_red=0. The C2/C4+ eta split is not the first substantive H1; retain it only as a clearly named exploratory benchmark if needed. Use descriptive hypothesis names to avoid confusion with the older POP power-law H1 and the interrupted eta H1.
-
-Use saved H0 solutions with delta_red=0 as starts; refit all H1 free parameters jointly rather than freezing the H0 estimates. Define coefficient bounds and valid Ter/st support explicitly before fitting. A nonnegative increment tests an additional-time hypothesis; if delta=0 is a boundary, ordinary unconstrained likelihood-ratio reference distributions are not automatically applicable. A signed effect is a different, more general comparison. No final bound choice is imposed here.
-
-Implement the shift using each condition's Ter in the joint density before applying the existing RT selection normalization and interpolation. Keep the same nondecision-time convention as validated H0; separately audit the meaning of Ter and st in the existing shift/convolution code. Do not add delta only to plotted means. Derive predicted region probabilities, RT means, medians, and quantiles from the final convolved, RT-conditioned joint density used by the likelihood. A conditional median normalizes cumulative RT mass within the selected angle region, then finds its 0.5 quantile.
-
-Evaluate raw joint likelihood, complexity-adjusted fit, marginal accuracy and RT, regional conditional RT quantiles, and residuals. Bootstrap observed summaries within participant/condition where practical. An additive delay predicts approximately parallel shifts in RT quantiles and across error regions before RT truncation; conditioning on the 300–3000 ms interval can modify this signature. It cannot by itself create an extra within-condition tail-minus-central delay before selection. A successful Ter test therefore need not solve the slow-tail discrepancy.
-
-After this test, compare a same-complexity redundancy effect on mean drift (e.g., log v(p,c)=log v(p,S(c))-lambda(p)D(c)) if needed. Change one mechanism at a time. Do not initially add separate R/NR eta, drift, boundary, and timing effects together. Apparent Ter support should be assessed conditional on the existing S-specific drift structure, not inferred from mean RT alone.
-
-### Deferred extension: trial-level information couples direction and strength
-
-This is a documented future proposal, not an implemented model or an established derivation of the attention-weighted sample-size theory. Revisit only after the simple timing/drift tests.
-
-Introduce positive latent information Q(p,c,j) on each trial. Its mean is governed by a condition-level memory-allocation law; its dispersion has a parsimonious participant-level parameter. Conditional on Q, draw the latent direction from the selected front end and make expected drift strength increase with Q. For example, an implementable candidate is:
-
-    Q = Qbar(p,c) * exp(omega(p)*Z - omega(p)^2/2), Z ~ Normal(0,1)
-    gamma(Q) = gamma_ref(p) * (Q/Qref)^(-b)
-    mean_v(Q,c) = v(p,S(c)) * (Q/Qref)^d
-
-Here gamma is the team-Cauchy dispersion; b,d > 0 express improving direction and strength with information. These are candidate links requiring theoretical justification, not fixed published scaling laws. Anchor Qref and the scale of Q to avoid scale confounding. Do not freely estimate Q scale, both link exponents, and all condition precisions without identifying constraints. Residual radial drift variability eta0 may be retained initially, but distinguish it from the variation induced by Q and test whether both can be recovered. The omega=0 case removes trial-level information heterogeneity; exact nesting in a chosen baseline also requires compatible condition-level means/links.
-
-The joint prediction integrates over both Q and latent direction, using the SAME Q value in both mappings within each component. Independently mixing direction and drift would remove the intended coupling. Use positive quadrature weights (e.g., Gaussian quadrature over Z), normalize correctly, apply nondecision-time convolution, and condition on the observed RT interval only after assembling the full mixture. Do not condition each Q component separately and retain its original weight: selection changes component weights.
-
-Low Q can then produce uncertain directions and weak/slow decisions without making drift an arbitrary function of the realized response error. A Cauchy distribution conditional on Q generally becomes a non-Cauchy marginal mixture; describe it accordingly. Before data fitting, check normalization, limiting cases, qualitative slow-error predictions, numerical convergence, and parameter/model recovery at the actual trial counts. Compare the same coupling architecture across POP/Cauchy/JP if making front-end claims. Sparse empirical tails alone do not establish this mechanism.
-
-### Dispersion convention and future memory-allocation constraints
-
-Use the team-Cauchy parameter going forward. Its code name kappa denotes dispersion gamma in f(theta)=sinh(gamma)/(2*pi*(cosh(gamma)-cos(theta))). Larger gamma means broader directions. Avoid calling every rho a dispersion: the conventional wrapped-Cauchy resultant parameter rho=exp(-gamma) increases with concentration. The JP concentration K at psi=-1 satisfies rho=tanh(K/2). State the formula whenever switching notation. A power law in gamma is not generally a power law in K or rho.
-
-A possible coherent allocation scaffold is n_j=B(S,C)*m_j^w/sum_k(m_k^w), with colour multiplicity m_j. With one repeated colour m=S-C+1, n_R=B*m^w/(m^w+C-1), n_NR=B/(m^w+C-1); baseline gives B/S. This is illustrative and must be reconciled with the team's exact attention-weighted sample-size theory. Derive the link from effective samples to gamma and drift; do not assume the old POP amplitude exponent transfers unchanged. In particular, averaging independent ordinary Cauchy samples does not narrow their scale, so a sample-size account needs an explicit estimator or generative mechanism.
-
-### POP interpretation and historical fit claims
-
-Both inspected POP implementations normalize von Mises tuning plus a constant floor. This is linear Luce selection over positive weights and is a von-Mises/uniform mixture on the grid. Additive independent Gumbel noise on raw activation followed by argmax instead yields softmax of activation/noise-scale. Linear Luce can be represented with Gumbel-max on log weights, but these activation assumptions differ. Clarify the intended theory with the team before describing the current code as raw-activation Gumbel-max or maximum-likelihood decoding. Poorer fit alone does not establish double-counted decision noise. The older noise-partition diagnostic supports uncertain stage allocation/compensation; a Cauchy family likewise does not by itself identify memory-only variability.
-
-Reference: Oberauer (2023), Measurement models for visual working memory—A factorial model comparison, https://doi.org/10.1037/rev0000328. This paper distinguishes linear Luce and exponentially transformed/Gumbel selection.
-
-The newer saved JP and team-Cauchy NLLs are respectively AQ 2905.69/2929.74, ES 1029.60/1076.04, HC 1156.75/1136.66, PG 2774.62/2781.73, YL 2303.76/2330.51. These supersede broad claims that the historical Cauchy ranking necessarily holds in the newer package, but are not a newly validated comparison. Where free JP should nest Cauchy, test pointwise equivalence after parameter transformation and match bounds/penalties before interpreting an inferior JP optimum. Saved summaries and current partially edited sources have different provenance.
-
-### Latent-angle resolution: convergence first, refitting only if consequential
-
-The team core evaluates grtrot300 once for each latent direction. Increasing 21 directions to about 50 therefore increases this dominant part of an objective evaluation by about 50/21=2.38 times. Whole-fit runtime need not follow exactly: other costs and optimizer iteration counts also matter. This is a code-based estimate, not a measured benchmark. Latent quadrature count is independent of the 50 response-angle bins; matching the counts has no intrinsic justification.
-
-The existing midpoint grid theta_j=-pi+pi/n+j*2*pi/n includes zero for odd n (including 21), but not even n (including 50). Simply changing to 50 shifts the grid relative to a narrow target-centred peak. Prefer a convergence comparison using 21, 51, 101, and higher/adaptive resolution if needed, preserving target alignment; 51 alone is not proof of convergence. At saved H0 parameter vectors, compare raw NLL, mass, angle/RT predictions, and conditional tail RTs without optimization. Use separately named builds or isolated paths so the original MEX is preserved. If predictions and likelihood differences are immaterial for the planned inference, retain H0; if material, optimize under an adequately converged resolution using saved solutions as warm starts. Apply comparable numerical accuracy to all front ends in formal comparisons. No grid change or benchmark has been performed in this entry.
+# CDM front-end comparison: master work note and manuscript plan
+
+Updated: 23 September 2026. Scope: Redundancy 2024; AQ, ES, HC, PG, YL.
+Current status: Cauchy H0/H1/H2 fitted; matched final POP/JP comparisons and
+memory-allocation constraints remain open.
+
+### Boundary between the two projects
+
+- **This project:** empirical and theoretical comparison of POP, JP, and
+  Cauchy CDMs on Re2024; development and testing of memory/decision parameter
+  structure, context-sensitive RT, individual differences, and allocation
+  constraints. Its manuscript reports this project's analyses and evidence.
+- **Separate team theory publication:** cau26.pdf develops the proposed
+  consolidation mechanism and its mathematical foundations using other
+  datasets. It is an external theoretical source for this project. We may
+  apply and test its predictions with attribution; we do not claim its
+  derivations, experiments, or findings as contributions of Re2024.
+- Questions about that draft are source-clarification notes for discussion
+  with its authors, not defects in this project's fits or assignments to
+  revise the other manuscript. Completion of that publication is not a
+  prerequisite for our independent diagnostics or model comparisons.
+- Before adopting a scaling constraint here, specify and justify the exact
+  law being tested. Clarify an external derivation only when relying on it
+  for that law. Our implementation audits concern the code used for Re2024;
+  they do not establish anything about the other publication's analyses.
+
+## 1. How to use these notes
+
+- This master is the current conceptual record, manuscript outline, and ordered
+  work plan. Sections 2-3 support drafting; Sections 4-6 govern remaining work.
+- [Current stage note](POPvJPvCauchy/POPCDM_stage_work_note.md): runnable assets,
+  canonical results, and brief operational updates.
+- [Previous master, preserved in full](POPvJPvCauchy/Notes/CDM_master_history_through_20260923.md):
+  historical arguments, numerical results, earlier priorities, and the first
+  milestone synthesis. Its claims and route names are historical.
+- [Stage development history](POPvJPvCauchy/Notes/POPCDM_stage_history_20260914-15.md):
+  implementation history, rejected redundancy-Ter test, warm starts, and renaming.
+- Older route notes in POPCDM_Matlab, JPCDM_Matlab, and CauchyJP document their
+  respective implementations. Do not equate their H0/H1 labels with current ones.
+- Consult archived fit files and Examples only for a specific historical or
+  implementation question. Canonical fits remain at their existing paths.
+- Evidence labels: **recorded result** = saved fit/diagnostic; **code finding** =
+  source inspection; **interpretation** = psychological account; **open test** =
+  work needed. A source inspection is not validation of the compiled MEX.
+- This reorganization changes documentation only. It does not authorize the
+  previously deferred production C-core changes or initiate new fits.
+
+## 2. Introduction outline
+
+### A. Background: continuous recall and the source of error
+
+- Continuous-report tasks reveal both sharply concentrated responses and
+  substantial far-angle errors; increasing load changes the distribution.
+- Competing accounts assign these errors to different mechanisms: limited
+  storage, variable precision, nontarget reports, or noisy population codes.
+- Literature: Zhang and Luck (2008) [L1]; Bays, Catalao, and Husain (2009)
+  [L2]; van den Berg et al. (2012) [L3]; Bays (2014) [L4].
+- These are established observations and theoretical alternatives. The new
+  contribution is not discovering heavy tails at high load or labelling them
+  as guessing/swaps, and the present C2/C4/C6 design cannot establish a sharp
+  four-colour capacity threshold.
+
+### B. Gap: error distributions alone do not locate variability
+
+- A behavioural distribution combines variability in memory evidence,
+  retrieval/decision formation, and response production.
+- Distinct internal allocations can generate similar final angle distributions.
+  Activation assumptions and response-selection rules must therefore be explicit.
+- Oberauer (2023) [L5] supplies a framework for distinguishing measurement-model
+  activation functions and selection rules. Do not treat all population models
+  as equivalent to this project's POP implementation.
+- Research gap: compare latent directional front ends under a common decision
+  process and ask which provides an interpretable account of joint error and RT.
+
+### C. Why a joint CDM account
+
+- CDM links the report angle and decision time through an accumulation process;
+  across-trial drift direction, drift magnitude, and within-trial diffusion make
+  distinct formal contributions.
+- Smith (2016) [L6] provides the circular diffusion foundation. Fennell and
+  Ratcliff (2023) [L7] supplies relevant continuous-report VWM RT modelling context.
+- RT quantiles conditional on error provide constraints beyond mean RT and
+  marginal angle fit, even when condition-level mean RT differences are small.
+- Distinguish operational components from inferred stages: eta is across-trial
+  radial drift variability, not within-trial diffusion noise. Its psychological
+  origin could include fluctuations in memory/attention as well as decision input.
+- Avoid claiming the first joint RT/accuracy account or that CDM uniquely
+  identifies consolidation, retrieval, or motor execution.
+
+### D. Candidate front ends and theoretical rationale
+
+- POP: von Mises tuning plus the response-selection rule actually implemented.
+  Test the concern that a behavioural measurement layer reallocates variability
+  already accommodated by CDM; assess amplitude/noise-floor trade-offs (R6).
+- JP: Jones and Pewsey (2005) [L8] offers flexible directional shape; free psi
+  tests the cost/benefit of departing from the wrapped-Cauchy special case.
+  JP-CDM retains a mechanistic decision process; its free shape is currently
+  less constrained by a specific memory-generation theory.
+- Cauchy: the separate team theory publication [D1] proposes a derivation of
+  wrapped-Cauchy latent direction from stochastic encoding/consolidation.
+  Cite it as an external rationale; our contribution is comparative testing
+  and application to redundancy and joint error/RT behaviour.
+- The consolidation account is a theoretical hypothesis. A Cauchy marginal
+  alone does not establish its generating process.
+- Compare all candidates fairly; do not write the Introduction as if POP/JP
+  have already been excluded or Cauchy superiority is guaranteed.
+
+### E. Memory allocation and the redundancy manipulation
+
+- Sample-size and attention-weighted accounts constrain how available evidence
+  is allocated: Sewell et al. (2014) [L9], Smith et al. (2016) [L10], and
+  Smith et al. (2018) [L11].
+- Distinguish total items S, unique colours C, and repeated-colour multiplicity
+  m = S - C + 1. Baseline means S = C, even where stored labels end in NR.
+- The current design allows matched R versus NR comparisons at identical S/C;
+  S contrasts at fixed C also change multiplicity/configuration. It is not a
+  complete factorial separation of every load and context factor.
+- Test whether memory dispersion follows allocation theory while additional
+  timing/evidence parameters explain the response demands of context.
+- Derive the mapping from effective samples to dispersion first (R5). The
+  draft's set-size law does not automatically become a unique-colour law.
+
+### F. Aims and planned narrative
+
+- Aim 1: compare POP, JP, and Cauchy front ends under matched numerical,
+  likelihood, and decision-stage assumptions.
+- Aim 2: use Cauchy H0, single-component H1 audits, and restricted H2 models to
+  ask how condition effects divide between memory dispersion, evidence strength,
+  and timing. H_satDecision establishes descriptive headroom.
+- Aim 3: test sample-size/power-law and attention-weighted constraints on the
+  memory front end while estimating decision parameters jointly.
+- Aim 4: assess individual strategies and unresolved slow errors using
+  conditional RT and independent task information.
+- Planned Results sequence: matched front-end benchmark -> H0/H1 component
+  diagnosis -> H2 context-timing account -> memory scaling -> validation.
+  Label the H1-to-H2 development as exploratory; validation supplies the next
+  evidential step. Generalize across datasets before claiming a broadly best model.
+
+## 3. Current evidence and claim limits
+
+### Canonical models
+
+All current Cauchy routes have nine cellwise kappa_mu values and shared a/st.
+
+| Route | Free parameters | vnorm | eta | Ter |
+|---|---:|---|---|---|
+| H0 | 14 | Shared | Shared | Shared |
+| H1_eta | 22 | Shared | Cellwise | Shared |
+| H1_vnorm | 22 | Cellwise | Shared | Shared |
+| H1_ter | 22 | Shared | Shared | Cellwise |
+| H_satDecision | 38 | Cellwise | Cellwise | Cellwise |
+| H2_factorial | 20 | S2/S4/S6 | C2/C4/C6 | Base/R/NR |
+| H2_tsensitive | 20 | S2/S4/S6 | Shared | C2/C4/C6 plus R/NR offsets |
+
+H2 timing law: Ter(c) = Ter_C(c) + delta_R I_R(c) + delta_NR I_NR(c).
+Offsets are signed; fitted condition Ter values are constrained to [0,1] s.
+C2/C4/C6 baselines are categorical values, not a fitted smooth complexity law.
+
+### H2 milestone
+
+Values below were checked against the current route summary CSVs on 23 September.
+Delta is H2_tsensitive minus the best H1; negative favours H2.
+
+| ID | Best H1 | H1 NLL | H2 NLL | Delta NLL | H1 BIC | H2 BIC | Delta BIC |
+|---|---|---:|---:|---:|---:|---:|---:|
+| AQ | H1_ter | 2905.42 | 2900.81 | -4.61 | 5995.84 | 5969.80 | -26.04 |
+| ES | H1_vnorm | 889.88 | 925.80 | +35.92 | 1964.76 | 2019.78 | +55.02 |
+| HC | H1_ter | 1064.84 | 1071.07 | +6.24 | 2314.71 | 2310.36 | -4.35 |
+| PG | H1_ter | 2747.50 | 2751.87 | +4.38 | 5680.02 | 5671.95 | -8.07 |
+| YL | H1_vnorm | 2233.88 | 2232.55 | -1.33 | 4652.80 | 4633.33 | -19.47 |
+
+- **Recorded result:** H2_tsensitive leads BIC for four participants and
+  outperforms H2_factorial for all five. Only AQ/YL beat their best H1 in
+  both NLL and BIC. HC's BIC advantage is relatively small.
+- H2 and the single-component H1s are not generally nested in one another:
+  H2 gains set-size drift and structured timing simultaneously.
+- C2/C4/C6 baseline Ter increases in all five fitted H2_tsensitive solutions.
+  This is an estimated pattern, not an imposed monotonic constraint.
+- Cellwise eta fails to earn its parameter cost for most participants; ES is an
+  exception relative to H0, but still favours H1_vnorm. Eta can affect angle
+  shape and the whole joint distribution, not only tail RT.
+- H_satDecision improves NLL/AIC over the best H1 for every participant but
+  loses BIC throughout. Broad parameter movement is evidence of trade-offs,
+  not a direct map of selective psychological influence.
+- The earlier uniform nonnegative redundancy-Ter increment was effectively zero.
+  That test differed from the current colour-dependent baselines and signed
+  R/NR offsets; its rejection does not contradict H2.
+- ES has long fitted Ter and marked vnorm contrasts. Its reported R/NR reversal
+  strategy is an independent lead. Small between-condition Ter variation does
+  not itself demonstrate stable trial-level responding; inspect st, RT spread,
+  practice/block effects, and task records.
+- **Interpretation:** context-sensitive timing is a useful parsimonious account.
+  Ter does not by itself distinguish retrieval, spatial mapping, motor time,
+  or the duration of pre-probe consolidation.
+- **Open:** current conditional-tail and marginal summaries need the diagnostic
+  audit below. Historical numerical summaries must not be promoted to final
+  manuscript evidence before their density provenance is checked.
+
+## 4. Seven retained issues: argument, action, decision
+
+### R1. POP can fit coarse angle regions better
+
+- **Argument:** historical angle-region MAE was approximately .034 for POP
+  versus .050 for JP-Cauchy, despite the latter's stronger joint likelihood.
+  These are historical models/conventions, not a current team-Cauchy comparison.
+  Region proportions and joint likelihood measure different features.
+- **Action (diagnostic coding):** from one final RT-conditioned joint density,
+  compute central |error| <= 15 degrees, shoulder 15 < |error| <= 45, and tail
+  |error| > 45 probabilities per participant/condition. Integrate fractional
+  angular-bin overlaps at boundaries. Export signed residuals and MAE for each
+  region, participant summaries, and matched front-end comparisons.
+- Decompose joint NLL into angle NLL plus conditional RT-given-angle NLL,
+  using a consistent interpolated density and integration convention.
+- **Decision:** retain any reproducible POP angle advantage in Results even if
+  Cauchy wins information criteria. New fits are needed only for the harmonized
+  comparison, not for computing these diagnostics at existing parameters.
+
+### R2. Slow-tail RT remains a distinct target
+
+- **Argument:** an additive Ter shift translates all error-conditional RT
+  distributions before RT selection. It cannot alone generate extra tail
+  slowing within a condition. Truncation can alter the observed shift.
+  Better global fit therefore need not repair slow errors.
+- Historical POP showed about 124 ms observed versus 13 ms predicted
+  tail-minus-central mean slowing. This is a historical diagnostic, not an H2 result.
+- **Action (diagnostics and simulation first):** recompute regional RT quantiles
+  and tail-minus-central differences from the selected joint density; retain
+  signed-error equal-mass QVWM figures. Compare model bin-integrated quantiles
+  at the empirical bin boundaries, alongside the conventional pointwise curves.
+- Hold parameters fixed and vary eta, vnorm, and Ter separately, then examine
+  joint changes in angle probabilities and RT quantiles. Use simulations and
+  recovery before fitting further mechanisms.
+- **Conditional extension:** if a substantial residual survives validation,
+  test a shared latent information state linking directional dispersion and
+  drift strength. Integrate the same latent state through both links, then
+  apply RT selection to the full mixture. First establish identifiability.
+- **Decision:** a supported residual can be reported as a limitation; it does
+  not force an indefinitely expanding model before manuscript completion.
+
+### R3. Sparse tails and individual-level uncertainty
+
+- **Argument:** low tail frequency reduces precision of tail RT estimates.
+  Zero observed tails provides no empirical conditional tail RT. Equal-mass
+  bins stabilize counts but have different angular widths across cells.
+- **Action (diagnostic coding):** export trial/bin counts, tail proportions,
+  regional quantiles, and uncertainty for all 45 cells. Bootstrap trials within
+  cells; use blocks/sessions when dependence is relevant and recorded.
+  Recompute empirical equal-mass edges within bootstrap samples.
+- Predefine and report a reliability flag for sparse tail cells; do not select
+  only cells showing large slow-error effects. Include point estimates with
+  their count/uncertainty, and leave empty-cell RT undefined.
+- **Decision:** primary interpretation stays within participant and condition.
+  Pooled plots are supplemental. There is no refit requirement for this step.
+
+### R4. Comparable likelihoods, fits, and predictions
+
+- **Argument:** historical open versus periodic angular interpolation gave some
+  near-pi responses different likelihood treatment. Shared file names, parameter
+  counts, or optimizer exit flags do not establish numerical comparability.
+- **Action (validation coding):** create one manifest recording retained trial
+  IDs/order, radians/seconds, 300-3000 ms inclusion, condition order, source/MEX
+  hashes, resolved MEX paths, grids, floors, RT convolution, normalization,
+  parameter names/bounds, penalty, seeds, starts, and optimizer settings.
+- Re-evaluate saved parameter vectors without optimization first. Compare
+  raw NLL, penalty, joint density, and all derived predictions separately.
+  Current runner stores Pvar, Pfit, Sel, paramNames, bestNLL/bestObj, ll2,
+  qaic/qbic; participant keys are e.g. AQ_cauchy. Pfit is the full reconstructed
+  vector; Pvar contains only free entries. Earlier extraction examples that
+  guessed AQ.Pest or AQ.parameterNames should not be reused.
+- Current wrapper uses abs(llRaw); raw continuous-density NLL can be negative.
+  Verify whether this ever activates, then use signed NLL in a validated future
+  likelihood. AIC = 2*NLL + 2*k; BIC = 2*NLL + k*log(n), excluding penalties.
+  Saved CSV NLL currently labels the optimization objective; verify equality
+  with ll2/2 and record penalty explicitly.
+- Audit soft bounds as well as hard bounds, especially after parameter
+  transformations: penalties can defeat apparent nesting/equivalence.
+- **Decision:** display-only fixes require prediction regeneration; changes to
+  the fitted density/support/objective require reevaluation and affected refits.
+  No blanket refit until impact is measured.
+
+### R5. Parameterization and scaling theory
+
+- **Established algebra:** team-Cauchy dispersion gamma = kappa_mu > 0;
+  rho = exp(-gamma); circular SD = sqrt(2*gamma). JP at psi = -1 has
+  rho = tanh(K/2), where K is its concentration. Different numeric kappas can
+  therefore describe exactly the same distribution.
+- If gamma(C) = gamma_2*(C/2)^beta, beta > 0, then
+  rho(C) = rho_2^((C/2)^beta), and rho_1 = rho_2^(2^(-beta)) < 1.
+  A direct power law rho_2*(C/2)^(-beta) is a different hypothesis.
+  Its impossible extrapolated C1 does not prove invalid free-kappa estimates.
+- An exponent beta on gamma implies beta/2 on circular SD. Specify which
+  quantity has the theoretical inverse-square-root precision relationship.
+- **External source-clarification question [D1]:** p.19 gives gamma_a = gamma/c_a and
+  gamma_u = gamma/c_u, whereas Appendix A, p.27, derives
+  gamma_m = sqrt(m)*gamma_1 by averaging Brownian processes before subordination.
+  Equal allocation c = 1/m gives gamma_m = m*gamma_1 under p.19.
+  These differ by a square root and imply different circular-SD exponents.
+  The p.27 sentence identifying kappa_mu with circular SD also appears
+  inconsistent with Eqs.9-11. Clarify the intended definitions with the authors
+  if adopting this derivation. These observations concern an incomplete,
+  separate manuscript; resolving or editing it is outside this project's
+  work plan and does not establish an error in the free-cell Re2024 fits.
+- Infinite divisibility alone does not imply square-root precision scaling.
+  Averaging independent completed Cauchy variables differs from averaging
+  Brownian evidence processes before applying the random consolidation time.
+- **Action (theory before coding):** agree the dispersion/SD/resource mapping;
+  then specify allocation by S, C, and multiplicity. Preserve normalized
+  resources if R gains evidence at NR's expense. Derive the C law from the
+  redundancy task, not simply from substituting C for the draft's set size.
+- **Action (then simulation/fitting):** compare fixed sample-size exponent,
+  free positive beta, and an attention-weighted allocation model against free
+  cellwise gamma. Fit decision parameters jointly. Estimate the C1 intercept
+  from all cells rather than treating the observed C2 estimate as error-free.
+- **Decision:** begin constrained fits once this project's chosen law and
+  parameter definitions are explicit and justified. Do not make completion
+  or revision of the separate draft a general dependency. Use matched
+  transformed bounds and Cauchy-to-JP warm starts.
+
+### R6. POP selection rule and amplitude versus Xi
+
+- **Code finding:** old popcdm2.m forms alpha*VM(theta;k)+c0 with
+  c0 = 0.5772156649, then divides by the sum across directions. The team
+  vpop300rot.c forms VM(theta;k)+c0*xi and normalizes the same way.
+  The floor is the named Gumbel mean; adding it is not equivalent to integrating
+  random Gumbel perturbations through an argmax.
+- **Algebra for matched grids and k:** dividing the old weights by alpha gives
+  VM+c0/alpha. Thus xi = 1/alpha gives identical normalized front-end weights.
+  Large alpha and small xi can describe the same family. In continuous form,
+  normalized alpha*VM+c0 is a VM/uniform mixture with uniform weight
+  2*pi*c0/(alpha+2*pi*c0).
+- Historical cores use different angular mixing implementations/grids, so this
+  front-end identity does not yet establish identity of their complete CDMs.
+  Priors, soft penalties, bounds, and constrained scaling also need mapping.
+- **Selection distinction:** linear Luce uses w_j/sum(w). Independent additive
+  Gumbel noise of scale s on raw activation A_j with max decoding gives
+  exp(A_j/s)/sum(exp(A/s)). Linear Luce is representable with Gumbel noise on
+  log weights, which changes the assumed activation scale. Oberauer [L5]
+  explicitly distinguishes the response rules; our POP label must identify ours.
+- **Action (algebra/unit tests):** compare normalized alpha/Xi weights on the
+  same grids; compare complete predictions with one common CDM implementation;
+  transform all bounds and penalties; map saved Xi estimates to amplitude as a
+  reproducibility check. This test requires no optimization.
+- **Action (team clarification):** supply the exact implemented equations and
+  ask whether the intended comparator is linear Luce over positive tuning plus
+  floor, or raw-activation Gumbel-max/softmax. Keep these as named alternatives
+  if both are scientifically relevant; do not silently replace one with another.
+- **Action (matched fits):** implement the requested amplitude route using the
+  agreed rule and common decision structure. Use mapped Xi and historical
+  amplitude solutions as starts. Compare scaling constraints and a profile of
+  amplitude/floor trade-offs. Do not freely estimate amplitude and floor scale
+  together when only their ratio is identified.
+- **Decision:** an unconstrained amplitude fit should match its Xi equivalent
+  under identical numerics/bounds/objective. Failure points to optimization or
+  implementation differences. Large alpha alone is not evidence against POP;
+  the evidence must be failure of a specified theory constraint, poorer
+  predictive fit, or unresolved stage identification. General criticism of all
+  neural population codes would be unsupported.
+
+### R7. C-core and diagnostic numerical validity
+
+#### R7a. Total-mass stride and its propagation
+
+- **Code finding in all three C files:** Gt has 51 stored angle rows per time
+  column, is written at (nw+1)*k+i, and totalmass reads nw*k+i.
+  Excluding the duplicate endpoint with i<nw does not change the stored
+  column stride. The indexing inconsistency is clear; its numerical impact
+  on fits is a separate question.
+- In the inspected grtrot300, totalmass divides Ptheta; it does not divide Gt.
+  For one component, Mt's totalmass factors cancel algebraically through its
+  Ptheta denominator. In the outer mixture, altered component Ptheta weights
+  can still affect mixed Ptheta and Mt. Do not claim all outputs or the
+  fitted likelihood necessarily change equally.
+- test_ylcauchy normalizes Gt separately over retained RTs for likelihood, but
+  exports C-returned Ptheta/Mt for some summaries. The marginal plotting
+  helper reads that Ptheta. Thus angular PDF and likelihood may have different
+  normalization/selection provenance.
+- **Action:** in isolated diagnostic builds compare old/correct-stride mass,
+  Gt, Ptheta, Mt, final conditioned PDFs, and per-cell/raw NLL at saved fitted
+  parameters. Include rotated drifts, narrow/broad directions, and large eta.
+  Use a separate name/path; preserve the production core and record hashes.
+- **Team explanation:** "The wrap row closes interpolation; i<nw excludes
+  its duplicate probability. Each stored column still has nw+1 entries.
+  The audit will show which returned outputs depend on the mismatched stride."
+- **Decision:** if joint likelihood is unchanged and only summaries differ,
+  regenerate affected summaries/figures. Refit only routes whose fitted
+  objective changes materially, after agreement on the core correction.
+
+#### R7b. Other source findings to test before final figures/fits
+
+- The outer mixtures close Ptheta and Mt, but do not explicitly copy the final
+  Gt row from the first after mixing unique rows. The MEX output is zero
+  initialized, and the wrapper floors Gt and interpolates all 51 rows.
+  Verify the actual compiled output at +/-pi. This potential seam can affect
+  likelihood, unlike a purely Ptheta-normalization defect.
+- The while expression reads Gth[i] before checking i<sz. Comparing the tiny
+  density threshold with the number of time bins does not establish safety.
+  Test no-threshold-crossing input and change the check order in a separately
+  validated correction when C edits are agreed.
+- Saved median-by-angle code compares unnormalized angle-row cumulative mass
+  with .5; a conditional median requires dividing by that row's retained mass.
+- qvwm_ydl26 normalizes each row, but currently accumulates the full shifted
+  time array, whereas empirical RTs are selected to 0.3-3 s. Mask the same
+  interval for both. Preserve the conventional signed-error figure and add
+  model bin-integrated quantiles for an exact like-for-like diagnostic.
+- Ptheta and model RT means must be derived from the same convolved,
+  RT-conditioned joint density as likelihood. Test mass=1, marginals,
+  conditional moments, periodic endpoints, and density-unit consistency.
+- Audit Ter/st with a known input density: shifting time by Ter+st/2 and then
+  applying a causal boxcar also adds the boxcar's mean delay. Establish the
+  intended Ter convention and account for discrete convolution rounding and
+  truncation. Shared st cannot itself explain condition contrasts, but it
+  affects interpretation of absolute Ter and predictive summaries.
+- **Decision:** report source findings as unvalidated impact until compiled
+  comparisons run. Existing fit rankings remain recorded historical outputs,
+  with final manuscript diagnostics pending this audit.
+
+#### R7c. Latent-angle quadrature
+
+- The 21 latent directions are deterministic mixture points, separate from
+  50 response-angle bins and 300 time samples. Their spacing is about 0.299 rad.
+  Narrow fitted front ends can be poorly resolved; forcing weights to sum
+  to one does not prove accurate quadrature.
+- **Action:** compare target-centred 21, 51, 101, then 201/higher if needed at
+  saved estimates and relevant parameter boundaries. Keep odd grids so zero
+  remains represented. Check likelihood, peak/shoulder/tail mass, RT quantiles,
+  and parameter sensitivity; assess response/time-grid convergence separately.
+- Prefer an adaptive or analytic-bin integration reference if uniform-grid
+  convergence is slow. Compare equal numerical accuracy across front ends,
+  not just equal node counts.
+- **Proposed acceptance targets (set before refitting):** successive validated
+  resolutions change participant raw NLL by <0.1, regional probabilities by
+  <.001 absolute, and well-supported RT quantiles by <1 ms, with no ranking
+  change. These are project tolerances, not universal guarantees; refine them
+  if inference depends on smaller differences.
+- Benchmark runtime at fixed vectors first. If accuracy requires a new grid,
+  refit affected routes from old estimates under the verified scheme.
+  Bessel-root caching remains optional and deferred.
+
+## 5. Ordered work plan
+
+No new fits are required merely by updating this note. Proposed outputs below
+are future deliverables, not files already produced.
+
+| Step | Work and dependency | Deliverable / completion criterion |
+|---|---|---|
+| M0 | Freeze current fits and source provenance; verify saved vectors and objective components (R4). | Canonical manifest and reproduction table for all participants/routes. |
+| M1 | Audit stride propagation, circular endpoints, RT selection/convolution, and quadrature (R7). | Numerical audit, isolated variants, measured impact; team resolves core decisions. |
+| M2 | Recompute marginal/regional/equal-mass diagnostics with counts and uncertainty (R1-R3). Depends on M1. | One consistent diagnostic export and refreshed figures; distinguish plot-only corrections from refit triggers. |
+| M3 | Validate the H2 timing interpretation after any necessary numerical refits. | Parameter contrasts, interval estimates, factor ablations, and simulation/recovery evidence. |
+| M4 | Agree POP rule and amplitude/Xi equivalence; harmonize POP/JP/Cauchy (R4/R6). | Matched baseline and final-decision comparisons with raw NLL/AIC/BIC and diagnostics. |
+| M5 | Specify and justify the Re2024 allocation-to-dispersion law; clarify external derivations only as needed, then simulate and fit (R5). | Free-cell versus sample-size, free-beta, and attention-weighted comparison; recovered parameters and predictive checks. |
+| M6 | Validate generalization and remaining slow-error/strategy interpretations. | Independent dataset and/or held-out sessions; residual report; justified decision on further coupling. |
+| M7 | Assemble manuscript evidence and reproducibility package. | Final tables/figures linked to exact data, code, results, and supported claims. |
+
+### M3: specific RT models and inference
+
+- Treat H2_tsensitive as the leading candidate pending audit; retain ES's
+  H1_vnorm advantage as evidence to explain.
+- Suggested nested ablations of H2: shared Ter (16 parameters); C-specific
+  Ter with zero cue offsets (18); Base/R/NR Ter with shared eta (18);
+  full H2_tsensitive (20). Existing H2_factorial remains an equal-complexity
+  competing allocation. These proposed routes are not yet implemented.
+- Test a different allocation of vnorm only if residual contrasts and task
+  rationale motivate it. All candidates use the same nine memory dispersions.
+- H2 was chosen after inspecting the data. Its BIC gain is useful but does not
+  remove exploratory selection; use session/block validation or an independent
+  dataset for stronger claims.
+- Simulate recovery using actual condition counts and parameter ranges.
+  Ask whether vnorm and Ter effects can be distinguished, and whether memory
+  gamma is stable across plausible decision structures.
+- A known individual strategy can motivate a common candidate variant.
+  Estimate values separately per person; do not equate different BIC winners
+  with proof that each person has a different psychological architecture.
+
+### M4-M6: fit discipline and stopping decisions
+
+- Preserve a common decision architecture for final front-end comparisons;
+  selecting a different structure for each front end confounds the comparison.
+  Examine a small common set of architectures if rankings are sensitive.
+- For every truly nested model, include exact smaller-model seeds, keep the
+  seed if optimization worsens, and report reproduced initial NLL. Include
+  mapped Cauchy seeds in JP at psi=-1 after testing identity and bounds.
+- Use multiple local perturbations plus broad starts and report basin recovery,
+  convergence, boundaries, and function counts. More starts do not fix an
+  incorrect density, nondifferentiable numerical step, or parameter mapping.
+- Bounds define admissible models; widening them merely to remove flags is
+  not a goal. Profile plausible boundary solutions and test identifiable ranges.
+- If an audit changes likelihood, evaluate every canonical vector first, then
+  refit affected routes using a versioned output folder. Preserve old results.
+- Keep scaling intercepts and decision parameters free during constrained
+  fits. If a theoretical restriction fails, report that outcome rather than
+  transform parameters post hoc until plots resemble the expected curve.
+- Define a minimum completion path: validated numerics, matched front ends,
+  interpretable RT comparison, a clearly specified scaling test, uncertainty/
+  recovery evidence, and honest residuals. Direction-strength coupling and
+  explicit swap models are conditional extensions, not automatic prerequisites.
+- To claim broad applicability across VWM paradigms, include another dataset.
+  Otherwise scope conclusions to these five intensively measured participants.
+  Prefer independent validation; post hoc splits cannot undo all prior exposure.
+
+## 6. Manuscript evidence map and open decisions
+
+| Claim or question | Required evidence | Planned exhibit |
+|---|---|---|
+| Why joint RT and angle matter | Same angle fit can conceal conditional RT residuals | Architecture figure and empirical/predicted RT-by-error panels |
+| Cauchy is competitive with POP/JP | Matched architecture, likelihood, numerical accuracy, complexity | Participant model-comparison table plus angle-region residuals |
+| Context affects timing | H2 versus H1/ablations; recoverable Ter contrasts | Ter by C with cue offsets; vnorm by S; uncertainty |
+| Individuals express effects differently | Independent strategy records and conditional predictions | ES case study alongside all participant results |
+| Memory follows allocation theory | Agreed equation, constrained joint fits, predictive validation | Dispersion/resource curves and free-versus-constrained table |
+| Remaining slow errors are meaningful | Matched density diagnostics with counts and uncertainty | Residual panel, including sparse/empty-tail flags |
+| Implementation is reproducible | Saved-vector checks, core/grid tests, source manifest | Supplementary audit and numerical convergence tables |
+
+Project decisions and targeted source clarifications:
+
+- Which POP selection equation is the intended theoretical comparator?
+- Which resource-to-kappa/CSD law will this project test, and on what
+  theoretical basis? If relying on D1, ask its authors which formulation
+  is intended; revising their manuscript remains their separate work.
+- Does the team accept the stored-column stride correction after the isolated
+  output audit, and what is the intended Ter/st support convention?
+- Which independent dataset or unused sessions support validation?
+
+Do not claim yet: unique memory/decision stage identification; proof of swaps;
+proof of consolidation from gamma or Ter alone; Cauchy superiority across
+datasets; a new four-item threshold; or a complete solution to slow errors.
+
+## 7. Literature and theoretical sources
+
+Primary-source references checked online on 23 September 2026; descriptions
+state their role in this project, not a claim that they establish our results.
+
+- **L1:** Zhang, W., & Luck, S. J. (2008). Discrete fixed-resolution
+  representations in visual working memory. Nature, 453, 233-235.
+  [Paper](https://doi.org/10.1038/nature06860). Slot/mixture-model background.
+- **L2:** Bays, P. M., Catalao, R. F. G., & Husain, M. (2009). The precision
+  of visual working memory is set by allocation of a shared resource.
+  Journal of Vision, 9(10), 7. [Paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC3118422/).
+  Resource and nontarget-error alternative.
+- **L3:** van den Berg, R., Shin, H., Chou, W.-C., George, R., & Ma, W. J.
+  (2012). Variability in encoding precision accounts for visual short-term
+  memory limitations. PNAS, 109, 8780-8785.
+  [Paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC3365149/).
+  Across-item/trial variability as an alternative origin of heavy errors.
+- **L4:** Bays, P. M. (2014). Noise in neural populations accounts for errors
+  in working memory. Journal of Neuroscience, 34, 3632-3645.
+  [Paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC3942580/).
+  Population coding theory; not identical to our linear-Luce POP.
+- **L5:** Oberauer, K. (2023; online 2021). Measurement models for visual
+  working memory: A factorial model comparison. Psychological Review, 130,
+  841-852. [Author PDF](https://www.psychologie.uzh.ch/dam/jcr:667a12fd-7a78-4163-911d-05ebd7c2c8a9/Oberauer.PsychReview.2023.pdf).
+  Activation versus selection assumptions, including linear Luce and
+  signal-detection response rules; useful for defining the comparator correctly.
+- **L6:** Smith, P. L. (2016). Diffusion theory of decision making in continuous
+  report. Psychological Review, 123, 425-451.
+  [Paper record](https://pubmed.ncbi.nlm.nih.gov/26949831/).
+  Foundational joint circular-outcome/decision-time theory.
+- **L7:** Fennell, A., & Ratcliff, R. (2023). A spatially continuous diffusion
+  model of visual working memory. Cognitive Psychology, 145, 101595.
+  [Paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC10546276/).
+  Existing joint VWM RT/error account; relevant context for novelty.
+- **L8:** Jones, M. C., & Pewsey, A. (2005). A family of symmetric distributions
+  on the circle. JASA, 100, 1422-1428.
+  [Publisher](https://www.tandfonline.com/doi/abs/10.1198/016214505000000286).
+  Directional family and wrapped-Cauchy special case; no independent VWM theory.
+- **L9:** Sewell, D. K., Lilburn, S. D., & Smith, P. L. (2014). An information
+  capacity limitation of visual short-term memory. JEP: Human Perception and
+  Performance, 40, 2214-2242. [Paper record](https://pubmed.ncbi.nlm.nih.gov/25222469/).
+  Sample-size evidence in VSTM.
+- **L10:** Smith, P. L., Lilburn, S. D., Corbett, E. A., Sewell, D. K., &
+  Kyllingsbaek, S. (2016). The attention-weighted sample-size model of visual
+  short-term memory: Attention capture predicts resource allocation and memory
+  load. Cognitive Psychology, 89, 71-105.
+  [Publisher](https://www.sciencedirect.com/science/article/pii/S0010028516300809).
+  Attention-based resource allocation and diffusion predictions.
+- **L11:** Smith, P. L., Corbett, E. A., Lilburn, S. D., & Kyllingsbaek, S.
+  (2018). The power law of visual working memory characterizes attention
+  engagement. Psychological Review, 125, 435-451.
+  [DOI](https://doi.org/10.1037/rev0000098).
+  Supports investigating a psychologically motivated exponent; does not
+  determine which transformed Cauchy parameter should follow that law.
+- **D1 (private incomplete draft):** Smith, Garrett, Saber, Qian, and
+  Surette-Ferguson, cau26.pdf. [Local manuscript](/Users/prefabteam_ysl/Downloads/cau26.pdf).
+  Separate theory-publication project; cited here as background and a source
+  of candidate predictions, not as a Re2024 result or manuscript deliverable.
+  Record the final title/date/status with the team before formal citation.
+  Relevant pages: 12-14 parameterization; 14-16 consolidation; 17-19
+  allocation; 26-27 derivation. R5 records unresolved internal equations.
+  Do not treat unpublished draft results as results from Re2024.
+
+## 8. Reproducibility and maintenance
+
+- Active root: POPvJPvCauchy. Active specification:
+  re2024_cauchy_hypothesis_spec.m; runner: test_fit_re2024.m; wrapper:
+  test_ylcauchy.m. Current conditions and result paths are in the stage note.
+- Prepared data: Re2024_POPvJPvCauchy_prepared.mat; participant-by-condition
+  cells, response errors in radians, RT in seconds, five named participants.
+- Current result key example: allResults.AQ_cauchy. Export parameters by saved
+  paramNames, reconstruct full Pfit using Sel/Pfix when required, and expand
+  groupings only for presentation.
+- Exact H2 source files:
+  TestFits/H2_tsensitive/H2_tsensitive_20260922_152336.mat and
+  TestFits/H2_factorial/H2_factorial_20260922_143302.mat.
+- Current QVWM and best-H1/H2 marginal figures are exploratory until R7
+  validates prediction provenance; retain them as the development record.
+- Future updates: update the relevant issue/step with dated evidence, output
+  path, decision, and next action. Archive lengthy run logs rather than append
+  conflicting current-state narratives to this master.

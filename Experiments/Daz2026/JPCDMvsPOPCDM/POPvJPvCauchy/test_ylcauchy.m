@@ -89,6 +89,9 @@ function [ll, ll2, qaic, qbic, Pred] = local_eval_model(Pvar, Pfix, Sel, Data, t
         Pc = [vnorm(spec.vnormByCond(c)), kappa(spec.kappaByCond(c)), ...
             eta(spec.etaByCond(c)), sigma, a];
         TerC = Ter(spec.terByCond(c));
+        if isfield(spec, 'terOffsetByCond') && spec.terOffsetByCond(c) > 0
+            TerC = TerC + Ter(spec.terOffsetByCond(c));
+        end
         [tc, gtmc, ftmc, thetac, pthetac, mthetac, mdthetac, ethetac, llc] = ...
             local_condition_likelihood(Pc, Data{c}, TerC, st, meta);
 

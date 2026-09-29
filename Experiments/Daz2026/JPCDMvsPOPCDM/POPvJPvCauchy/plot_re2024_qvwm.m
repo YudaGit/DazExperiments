@@ -1,8 +1,8 @@
 function output = plot_re2024_qvwm()
-%PLOT_RE2024_QVWM Export participant-level QVWM plots for Cauchy H0/H1s.
+%PLOT_RE2024_QVWM Export participant-level QVWM plots for Cauchy H0/H1/H2.
 %   Uses saved Pred fields, so no model likelihoods are recomputed. Outputs
-%   H0_AQ.png, H1_eta_AQ.png, H1_vnorm_AQ.png, and H1_ter_AQ.png (and the
-%   corresponding files for the other participants).
+%   H0_AQ.png, H1_eta_AQ.png, H1_vnorm_AQ.png, H1_ter_AQ.png, and
+%   H2_tsensitive_AQ.png (and corresponding participant files).
 
     thisDir = fileparts(mfilename('fullpath'));
     addpath(thisDir, '-begin');
@@ -18,11 +18,11 @@ function output = plot_re2024_qvwm()
     condLevels = string(prepared.condLevels);
 
     routes = struct( ...
-        'tag', {"H0", "H1_eta", "H1_vnorm", "H1_ter"}, ...
+        'tag', {"H0", "H1_eta", "H1_vnorm", "H1_ter", "H2_tsensitive"}, ...
         'folder', {"H0_kappaCell_sharedDecision", "H1_eta", ...
-                   "H1_vnorm", "H1_ter"}, ...
+                   "H1_vnorm", "H1_ter", "H2_tsensitive"}, ...
         'pattern', {"H0_kappaCell_sharedDecision_*.mat", "H1_eta_*.mat", ...
-                    "H1_vnorm_*.mat", "H1_ter_*.mat"});
+                    "H1_vnorm_*.mat", "H1_ter_*.mat", "H2_tsensitive_*.mat"});
 
     figureFiles = strings(0, 1);
     for r = 1:numel(routes)

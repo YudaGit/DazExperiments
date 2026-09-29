@@ -1,7 +1,6 @@
 function output = simulate_cauchy_eta_rt_by_error(resultFile, uid, condName, etaGrid)
 %SIMULATE_CAUCHY_ETA_RT_BY_ERROR Inspect eta's RT-by-error consequences.
-%   This is a pre-fit sensitivity diagnostic. It holds one fitted
-%   H1_vnorm_sn Cauchy
+%   This is a pre-fit sensitivity diagnostic. It holds one fitted H0 Cauchy
 %   parameter vector fixed, varies only radial drift variability (eta), and
 %   reproduces the wrapper's timing convolution and RT-window normalization.
 %
@@ -10,8 +9,9 @@ function output = simulate_cauchy_eta_rt_by_error(resultFile, uid, condName, eta
 
     thisDir = fileparts(mfilename('fullpath'));
     if nargin < 1 || isempty(resultFile)
-        resultFile = fullfile(thisDir, 'TestFits', 'H1_vnorm_sn', ...
-            'H1_vnorm_sn_20260914_114254.mat');
+        resultFile = fullfile(thisDir, 'TestFits', ...
+            'H0_kappaCell_sharedDecision', ...
+            'H0_kappaCell_sharedDecision_20260915_130513.mat');
     end
     if nargin < 2 || isempty(uid)
         uid = "ES";
@@ -49,13 +49,11 @@ function output = simulate_cauchy_eta_rt_by_error(resultFile, uid, condName, eta
     end
 
     p = result.Pfit;
-    vnorm = p(1:3);
-    kappa = p(4:12);
-    a = p(14);
-    Ter = p(15);
-    st = p(16);
-    setIndexByCond = [1, 2, 2, 2, 3, 3, 3, 3, 3];
-    v = vnorm(setIndexByCond(condIdx));
+    v = p(1);
+    kappa = p(2:10);
+    a = p(12);
+    Ter = p(13);
+    st = p(14);
     kappaMu = kappa(condIdx);
 
     meta = struct('tmax', 3.0, 'rtMin', 0.3, 'noise', 1e-12, ...

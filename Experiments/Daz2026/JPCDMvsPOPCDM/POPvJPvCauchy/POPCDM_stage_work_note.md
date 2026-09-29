@@ -1,191 +1,195 @@
-# POPvJPvCauchy Stage Work Note
-
-## Project Stage
-
-This folder contains a new team-provided model asset package for comparing POP, Jones-Pewsey, and Cauchy front ends attached to a circular diffusion model (CDM) core. The immediate goal is to understand the provided fitting assets, learn the wrapper/fitting workflow, and then implement comparable wrappers for the Daz VWM continuous recall dataset.
-
-For now, the C cores are left as provided, except that `vjp300rot.c` has already been updated manually to use `atan2` for the drift-angle vector function. Further C-core edits should wait until the total-mass indexing issue is clarified with the team.
-
-## Contents And Roles
-
-- `vpop300rot.c`: POP / population-code front end with fixed amplitude and Gumbel noise parameter `xi`.
-- `vjp300rot.c`: Jones-Pewsey front end with free `psi`.
-- `vcau300rot.c`: Wrapped Cauchy front end.
-- `pgpop1.m`: POP likelihood wrapper for small range, `M = [1, 2, 3, 4]`.
-- `pgpop1a.m`: POP likelihood wrapper for large range, `M = [1, 2, 4, 6]`.
-- `vwmjp61.m`: JP likelihood wrapper for small range, `M = [1, 2, 3, 4]`.
-- `vwmjp61a.m`: JP likelihood wrapper for large range, `M = [1, 2, 4, 6]`.
-- `mvwm23.m`, `mvwm23a.m`: Marginal angle and RT plotting for four-condition fits.
-- `qvwm23.m`: RT quantile-by-error diagnostic plot.
-- `pgcomp26.m`: Comparison plot for two prediction structures.
-- `setfig*.m`: Figure layout helpers.
-- `pg32.mat`, `pg34.mat`: Saved JP/Cauchy-style fit assets from the team.
-- `pgp2.mat`, `pgp4.mat`: Saved POP fit assets from the team.
-- `Paul26a.mat`: Team dataset asset.
-- `DazSecondTranche.txt`: Team notes and example commands/results.
-- `totalmassDemo1.m`: Local demonstration script for checking C linear indexing.
-
-## Data Mapping
-
-The team notes identify Paul's multirange replication data as:
-
-- `pga4`: small range experiment, corresponding to `M = [1, 2, 3, 4]`.
-- `pga6`: large range experiment, corresponding to `M = [1, 2, 4, 6]`.
-
-The likely wrappers are:
-
-- `pgpop1.m` fits POP to `pga4`.
-- `pgpop1a.m` fits POP to `pga6`.
-- `vwmjp61.m` fits JP/Cauchy-style JP front-end models to `pga4`.
-- `vwmjp61a.m` fits JP/Cauchy-style JP front-end models to `pga6`.
-
-The `.mat` files appear to store example fitted parameter vectors and predictions:
-
-- `pg32.mat`: JP/Cauchy constrained fit for small range.
-- `pg34.mat`: JP/Cauchy constrained or free-Psi fit for large range.
-- `pgp2.mat`: POP fit for small range.
-- `pgp4.mat`: POP fit for large range.
-
-This mapping should be verified by loading each `.mat` file and inspecting variable names before using these assets as templates.
-
-## C-Core Architecture Notes
-
-All three C cores share the same broad CDM architecture:
-
-1. Approximate the front-end angular distribution using `njsteps = 21` latent drift-angle grid points.
-2. Convert each latent angle into a 2D CDM drift vector.
-3. Evaluate the CDM over a response/error grid with `nw = 50` angular bins plus one wraparound row.
-4. Evaluate RT over `sz = 300` time bins.
-5. Mix the CDM predictions across the 21 weighted latent drift directions.
-
-The 21 latent drift-angle points are not random samples and are not the same as the 50 response-angle bins. They are an evenly spaced quadrature-like approximation to the front-end distribution.
-
-The response grid has `nw + 1` stored rows because the final row duplicates the first row to close the circular domain for interpolation. This duplicate row should not be double-counted when integrating over unique angular bins.
-
-## Important Numerical Clarifications
-
-### `noise`
-
-The `noise` argument in `bessel2` is not a psychological Gumbel/noise parameter. It is a numerical threshold for stitching together two approximations to the zero-drift first-passage-time density:
-
-- `dhamana`: Bessel/eigenvalue-series solution.
-- `dserafin`: short-time asymptotic approximation.
-
-The code uses `dserafin` while the Bessel-series density is below the threshold, then switches to `dhamana`.
-
-### `sz`
-
-`sz` is the number of RT/time bins in the C core. In these files, `sz = 300`.
-
-## Potential C-Core Issues To Revisit
-
-### Total-Mass Indexing
-
-The C code writes `Gt` as a matrix with `(nw + 1)` rows and `sz` columns:
-
-```c
-Gt[(nw + 1) * k + i] = ...
-```
-
-But in the `totalmass` block, it currently reads:
-
-```c
-Gt[nw * k + i]
-```
-
-The team correctly noted that the wraparound row should not be double-counted. That is handled by looping only over `i < nw`. The separate issue is the column stride. Since each stored time column has `nw + 1` rows, the column offset should still use `(nw + 1) * k` even when integrating only the first `nw` unique rows.
-
-This should be clarified with the team before editing the model cores.
-
-### Bounds Check In `while`
-
-The current pattern:
-
-```c
-while (Gth[i] < noise && i < sz)
-```
-
-is not ideal because `Gth[i]` is evaluated before checking `i < sz`. A defensive version would be:
-
-```c
-while (i < sz && Gth[i] < noise)
-```
-
-This is probably not an active fitting problem if `noise` is tiny and `Gth` crosses it normally, but it is safer C.
-
-## Wrapper Lessons For Daz Implementation
-
-When writing the new Daz POPCDM wrapper:
-
-- Keep parameter order explicit.
-- Unpack named parameters immediately after building each condition vector.
-- Preserve comparable condition structure across POP, JP, and Cauchy.
-- Make sure `delta`, `Ter`, and `st` are read from their intended positions.
-- Keep set-size-based RT parameterization in view, because earlier diagnostics showed RT is better organized by set size than by cue type or unique colour count.
-- Treat team POP wrappers as useful learning examples, but do not copy their parameter indexing without checking.
-
-## Suggested Learning Path
-
-The best starting point for learning is `pgpop1.m`, because it is the POP wrapper for the simpler small-range case and has the same overall likelihood structure as `pgpop1a.m`.
-
-After understanding `pgpop1.m`, compare it with `vwmjp61.m` to see which parts are generic CDM wrapper structure and which parts are POP-specific. Then adapt the pattern to the Daz dataset.
-
-
-## 2026-09-14: current H1 direction and review record
-
-H0 has already been fitted. Current runner/wrapper inconsistencies reflect an interrupted H1 edit and do not establish a fault in the saved H0 fits. The next substantive test is a shared redundancy increment in Ter, fitted jointly across all nine conditions with baseline as the zero-increment case. Prioritize the team-Cauchy core and preserve its dispersion convention. The C2/C4+ eta extension is deferred as an exploratory benchmark. No model code or fit was changed during this documentation update.
-
-The full staged plan, evidence qualifications, saved-H0 verification versus refitting criteria, future latent-information model specification, POP-rule clarification, and latent-grid timing/convergence guidance are recorded in the [master work note](../POPCDM_CauchyCDM_master_work_note.md), entry “2026-09-14: staged H1 plan following review of the team-core fits”. That entry supersedes earlier next-step priorities where they conflict.
-
-
-## 2026-09-14: H1 redundancy-Ter implementation completed
-
-Implemented in all four test_yl wrappers and test_fit_re2024. H1 now appends one parameter, deltaTerRed, to each unchanged H0 vector (including after psi in free JP). The condition-specific timing parameter is TerC = Ter + deltaTerRed * (S > C). The indicator is [0,1,1,0,1,1,1,1,0], so R and NR share the same increment. Eta remains shared. deltaTerRed has hard bounds [0,1] seconds, no additional soft penalty within those bounds, and initial value 0.05 s. This is a nonnegative extra-delay hypothesis: zero nests H0; negative redundancy effects are not estimated. The baseline Ter bounds are unchanged; the derived redundant Ter is their sum, not independently capped at the old baseline upper bound.
-
-The interrupted eta-C2/C4+ extension is replaced. H0 is still the default when the optional hypothesis argument is omitted. H0's latent grid remains 21 directions; C sources/MEX files, response/time grids, existing parameters and their bounds, timing convolution, RT selection, numerical likelihood, optimizer settings, and existing diagnostics were not changed. The incomplete scalar-eta H0 indexing in the Cauchy wrapper was restored to shared eta.
-
-Run team Cauchy with `output = test_fit_re2024("H1", "cauchy");`, or all three default front ends with `output = test_fit_re2024("H1");`. Results default to TestFits/H1_redundancyTer_setsizeVnorm_sharedEta. Checkpoints and the CSV summary include TerBaseline, deltaTerRed, and TerRedundant in seconds. Other H1 parameters are jointly optimized as before; the existing 10-start initialization scheme is retained (no automatic loading of H0 starts).
-
-Validation in MATLAB R2024b, with existing MEX cores and Re2024 data: all four wrappers exactly reproduced H0 joint predictions/objectives at deltaTerRed=0; free H1 added the expected AIC/BIC penalty, while fixed zero increment reproduced H0 criteria. A 0.1 s increment shifted time coordinates by exactly 0.1 s in all six redundancy conditions and left baseline condition predictions unchanged. H0/H1 runner catalogs evaluated successfully. POP/JP/JP-Cauchy H0 matched pre-edit wrappers exactly. All five saved team-Cauchy H0 checkpoints reproduced raw NLL and penalized objective with zero difference. Code Analyzer reported zero messages for the five edited MATLAB files. No optimization or fitting was run; no saved fit artifacts were modified.
-
-## 2026-09-14: targeted Cauchy H0 boundary refit and H0/H1 quantile diagnostics
-
-The H1 Ter-redundancy fits placed deltaTerRed effectively at its lower bound for all participants (0.024–0.815 ms). To distinguish a genuine H1 benefit from an H0 local-minimum issue, each H1 solution was projected onto H0 by dropping deltaTerRed and then reoptimized with the same fmincon settings. All five H0 boundary refits converged with exit flag 2. H0 NLL was lower than H1 for every participant: AQ 2929.662627 versus 2929.748714, ES 1026.309393 versus 1026.417581, HC 1162.866527 versus 1162.968731, PG 2791.295630 versus 2791.377573, and YL 2324.917721 versus 2325.002272. Thus the prior H1 improvements relative to older H0 outputs reflected different H0 optimization basins, not support for a positive redundancy-specific Ter increment.
-
-The targeted boundary-refit results are retained under their canonical route name, `TestFits/H1_vnorm_sn/`. The temporary H0/H1 conditional-quantile comparison confirmed that their curves were nearly superimposed, as expected from the boundary result; it was then removed in favour of the team-style figures below.
-
-The temporary H0/H1 comparison figures were removed after review. `qvwm23.m` now retains its supplied four-condition route and adds a Re2024-only nine-condition branch using the team figure convention: five fitted quantiles (.1, .3, .5, .7, .9) as dash-dot black curves; empirical equal-mass signed-error-bin quantiles connected in black; and the original coloured markers. The Re2024 branch reads actual prediction time spacing rather than assuming the original example's 4 s grid. The retained fit can be plotted with `plot_cauchy_h1_vnorm_sn_qvwm23.m` into `Figures/Cauchy_H1_vnormSN_QVWM23/`.
-
-## 2026-09-14: Ter H1 retired; saturated conditional-eta H1 prepared
-
-The Ter-redundancy H1 is retired because its fitted increment was effectively zero and the targeted H0 refits yielded lower NLL for every participant. The whole `TestFits/H1_redundancyTer_setsizeVnorm_sharedEta/` directory was removed. Redundant per-participant checkpoint files were also removed from the historical fit directories; their aggregate `.mat` result files and CSV summaries remain. The H0 QVWM23 helper now reads the retained aggregate boundary-refit file, so it does not depend on deleted checkpoints.
-
-The next H1 is a saturated, descriptive diagnostic. It replaces H0's one shared eta with nine freely estimated eta parameters, one for each condition in the prepared-data order: `S2C2NR`, `S4C2NR`, `S4C2R`, `S4C4NR`, `S6C2NR`, `S6C2R`, `S6C4NR`, `S6C4R`, and `S6C6NR`. It therefore adds eight free parameters relative to H0. All other components remain exactly as in H0: the three set-size vnorm values, nine front-end dispersion values, boundary `a`, baseline `Ter`, `st`, the 21 latent drift directions, C/MEX cores, response/time grids, likelihood, bounds, optimizer settings, and multistart scheme. There is no R/NR-specific Ter term in this route.
-
-The H1 is useful for observing the empirical eta pattern before proposing a lower-dimensional, theory-led restriction. It does not by itself show that eta should vary by C, redundancy, or cue type. Equal eta values exactly nest H0; MATLAB checks confirmed exact equality of objective and predictions for POP, JP, JP-Cauchy, and team Cauchy under that constraint. Fit team Cauchy with `output = test_fit_re2024("H1", "cauchy");`. Results will be written to `TestFits/H1_cellwiseEta_setsizeVnorm/`.
-
-## 2026-09-14: YL saturated-eta H1 warm-start refit
-
-The original YL H1 fit was worse than the nested H0 because its ten starts did not include the exact H0 point. A targeted H1 refit therefore initialized all nine eta values at the targeted H0 eta and used that vector as an explicit start, alongside local perturbations and broad starts. This produced H1 NLL = 2319.383155, versus the targeted H0 NLL = 2324.917721: an improvement of 5.534566 NLL units. The H1 solution is therefore a valid nested-model improvement, not a numerical failure.
-
-However, H1 adds eight parameters. Its AIC is 4686.766 versus H0 AIC = 4681.835, and its BIC is 4840.634 versus H0 BIC = 4784.414. Thus saturated condition-specific eta is not selected for YL despite the improved likelihood. The eta profile is also not a simple high-colour or NR pattern: its largest value is `eta_S6C2R = 0.453`, while `eta_S6C2NR = 0.099` is near the lower-bound reporting threshold. This supports treating the saturated model as a diagnostic, not an explanatory specification.
-
-For future nested H1 fits, `test_fit_re2024` accepts an H0 aggregate result file and participant selector. It maps shared H0 eta into all H1 eta slots, guaranteeing that H1 includes the H0 solution among its starts. H1 now uses 24 starts: one exact H0 start when supplied, four local perturbations, and 19 broad starts. H0 remains at 10 starts. The current fmincon settings are retained; the issue was initialization and a multi-modal objective surface rather than failure to satisfy stopping criteria.
-
-## 2026-09-14: Cauchy response-component audit
-
-Three 22-parameter Cauchy diagnostic routes were fitted with 24 starts each. All retain nine condition-specific front-end `kappa_mu` values. `H0_ETA` has nine eta values with one shared vnorm and Ter; `H0_VNORM` has nine vnorm values with shared eta and Ter; `H0_TER` has nine Ter values with shared vnorm and eta. These are component audits, not final theory models: they ask which response-stage component can improve the joint angle-RT fit when the memory front end remains free by condition.
-
-`H0_ETA` fit worse than the targeted 16-parameter H0 for every participant (NLL increases AQ +14.52, ES +62.86, HC +65.93, PG +10.89, YL +124.05). Thus condition-specific eta cannot compensate for removing the established set-size vnorm structure. This reinforces that eta is not the primary source of the unexplained condition-level joint fit structure.
-
-Both `H0_VNORM` and `H0_TER` improved NLL and AIC for every participant. `H0_VNORM` NLL improvements versus targeted H0 were AQ 23.22, ES 136.43, HC 69.70, PG 32.16, and YL 91.04. `H0_TER` improvements were AQ 24.24, ES 88.80, HC 98.03, PG 43.80, and YL 76.25. BIC selected `H0_VNORM` for ES, HC, PG, and YL, but not AQ; it selected `H0_TER` for ES, HC, PG, and YL, but not AQ (where BIC was about 2 points worse).
-
-The immediate conclusion is that the important remaining flexibility lies in condition-specific decision dynamics/timing, not a simple condition-specific eta account of slow errors. The preferred next modelling step should be a lower-dimensional, theory-led parameterization of vnorm and/or Ter, informed by their fitted condition patterns, while preserving Cauchy `kappa_mu` for the planned attention-weighted sample-size analysis.
-
-## 2026-09-15: canonical Cauchy route taxonomy
-
-The Cauchy fit routes were renamed so that `H0` now denotes the true baseline: nine condition-specific `kappa_mu` values and one shared value each for `vnorm`, `eta`, `a`, `Ter`, and `st` (14 free parameters). This baseline has been implemented but not yet fitted.
-
-The fitted component-audit routes are now named `H1_eta` (cellwise eta), `H1_vnorm` (cellwise vnorm), and `H1_ter` (cellwise Ter); each has cellwise `kappa_mu` and 22 free parameters. The established 16-parameter model with set-size-specific vnorm is now `H1_vnorm_sn`. It is the retained targeted boundary-refit solution, formerly labelled H0. The saturated, cellwise-eta plus set-size-vnorm result is retained as `Legacy_etaCell_vnormSN`, with the YL warm-start recovery retained separately as `Legacy_etaCell_vnormSN_YL_warmstart`.
-
-All result directories and aggregate filenames use these canonical labels. Existing aggregate MAT files retain their historical `hypothesis` field, so that the original run context is auditable without changing fitted values. Per-participant checkpoint files are redundant because the aggregate files contain all `allResults`; they were removed during this cleanup. The superseded initial `H0_teamCauchy_refit` aggregate and the one-off boundary-refit helper were removed; the retained targeted solution contains the results needed for future comparison.
+# POPvJPvCauchy Current Work Note
+
+## Note Map And Immediate Priorities
+
+The [master work note](../POPCDM_CauchyCDM_master_work_note.md) is the current
+manuscript outline and ordered modelling plan (updated 23 September 2026).
+Its R1-R7 issue assessments and M0-M7 work steps supersede historical next-step
+proposals. This file retains the operational assets and recorded fit state.
+
+Before additional large fits, complete the source/MEX and saved-vector audit,
+then check circular closure, normalization, RT conditioning/convolution,
+diagnostic summaries, and latent-angle convergence. Source inspection has
+identified potential differences between the fitted joint density and saved
+angular/conditional summaries; impact on the compiled fits is not yet measured.
+Clarify the POP selection rule for matched front-end fits, and explicitly
+justify this project's resource-to-dispersion law before constrained fits.
+The team draft is a separate theory publication: its derivations and data
+provide external background, not Re2024 results. Questions about its equations
+are source clarifications if we adopt them, not a requirement to revise or
+complete that publication. Our core audits concern the Re2024 implementation.
+No C edits or refits were performed during the documentation reorganization.
+
+## Purpose
+
+This is a VWM continuous-recall model-comparison project. POP, free-Psi
+Jones-Pewsey (JP), and team wrapped-Cauchy front ends are compared while
+sharing a circular diffusion model (CDM) decision layer. Cauchy is the active
+route for RT specification work; POP and JP remain first-class comparison
+routes and will be updated to the eventual successful Cauchy specification.
+
+## Active Assets
+
+- `prepareRe2024Data.m` prepares the five Re2024 participants and nine
+  conditions. Response error is radians; RT is seconds.
+- `test_fit_re2024.m`, `test_ylcauchy.m`, and
+  `re2024_cauchy_hypothesis_spec.m` are the active Cauchy fit pipeline.
+- `test_ylpop.m`, `test_yljp.m`, and `test_yljpcau.m` are retained for the
+  later matched POP/JP comparison.
+- `vcau300rot.c`, `vjp300rot.c`, and `vpop300rot.c`, plus their MEX files,
+  are the active model cores. `vjp300rot.c` uses `atan2` for drift-angle
+  rotation. No further C-core change is currently authorized.
+- `Re2024_POPvJPvCauchy_prepared.mat` is the prepared participant-by-condition
+  data asset.
+
+## Canonical Cauchy Fits
+
+All canonical results live in `TestFits` at their existing paths. Do not move
+these directories without updating the fitting and plotting scripts.
+
+| Route | Free parameters | Decision-stage structure |
+|---|---:|---|
+| `H0` | 14 | Shared `vnorm`, `eta`, `a`, `Ter`, `st`; nine cellwise `kappa_mu` values. |
+| `H1_eta` | 22 | Nine cellwise `eta`; shared `vnorm` and `Ter`; nine cellwise `kappa_mu` values. |
+| `H1_vnorm` | 22 | Nine cellwise `vnorm`; shared `eta` and `Ter`; nine cellwise `kappa_mu` values. |
+| `H1_ter` | 22 | Nine cellwise `Ter`; shared `vnorm` and `eta`; nine cellwise `kappa_mu` values. |
+| `H_satDecision` | 38 | Nine cellwise values each for `vnorm`, `eta`, and `Ter`; nine cellwise `kappa_mu` values; shared `a` and `st`. Diagnostic upper bound only. |
+| `H2_factorial` | 20 | Set-size vnorm, colour-count eta, Base/R/NR Ter; nine cellwise kappa_mu and shared a/st. |
+| `H2_tsensitive` | 20 | Set-size vnorm, shared eta, colour-count Ter plus signed R/NR offsets; nine cellwise kappa_mu and shared a/st. |
+
+Canonical aggregate files:
+
+- `TestFits/H0_kappaCell_sharedDecision/H0_kappaCell_sharedDecision_20260915_130513.mat`
+- `TestFits/H1_eta/H1_eta_20260914_165156.mat`
+- `TestFits/H1_vnorm/H1_vnorm_20260914_174346.mat`
+- `TestFits/H1_ter/H1_ter_20260914_193853.mat`
+- `TestFits/H_satDecision/H_satDecision_20260922_114249.mat` (diagnostic only)
+- `TestFits/H2_factorial/H2_factorial_20260922_143302.mat`
+- `TestFits/H2_tsensitive/H2_tsensitive_20260922_152336.mat`
+
+## Current Results And RT Interpretation
+
+Cellwise eta can improve raw likelihood for some participants but generally
+does not earn its eight-parameter complexity cost. Cellwise vnorm and cellwise
+Ter improve BIC over H0 for all participants, with their relative advantage
+varying by participant. This identifies residual condition-level decision/RT
+structure, but does not yet license a saturated final model.
+
+Empirically, slow tail responses are clearest in high-colour-load conditions
+and are often more pronounced in redundancy-related cells. The completed H2
+comparison tested a small set of theory-led RT-factor parameterizations. Preserve nine cellwise Cauchy `kappa_mu`
+values throughout this work so the front-end memory account remains available
+for later attention-weighted sample-size scaling tests.
+
+`H_satDecision` was fitted as the pre-H2 diagnostic from the
+projected canonical H0, H1_eta, H1_vnorm, and H1_ter solutions, plus six broad
+random starts. Its purpose is to determine the remaining joint-fit headroom
+and parameter trade-offs before choosing a lower-dimensional H2 RT-factor
+model. It is not a candidate final specification.
+
+The completed saturated fit exactly reproduced the four source-route NLLs at
+its first four starts, confirming correct nesting. It improved NLL beyond the
+best 22-parameter H1 for every participant (AQ 17.19, ES 30.77, HC 23.74,
+PG 21.69, YL 35.12), and also improved AIC. Its BIC was worse for every
+participant because it adds 16 parameters beyond those H1s (BIC costs: AQ
++100.18, ES +73.01, HC +87.09, PG +91.18, YL +64.34 relative to the best H1).
+The saturated parameter profiles are highly route- and condition-dependent;
+therefore they are evidence of residual headroom and component trade-off, not
+evidence for a cellwise final decision architecture. A descriptive three-region
+RT check found no consistent additional reduction in slow-tail RT error beyond
+the best single-component H1.
+
+## H2 RT-Factor Routes
+
+Both H2 routes retain nine cellwise Cauchy `kappa_mu` values, three
+set-size-specific `vnorm` values (`S2`, `S4`, `S6`), shared `a` and `st`, and
+20 free parameters in total. Each automatically includes the canonical H0
+solution as its first start, followed by four local perturbations and 19 broad
+random starts.
+
+- `H2_factorial`: eta is grouped by unique colour count (`C2`, `C4`, `C6`);
+  Ter is grouped by task state (`Base`, `R`, `NR`). This is the primary
+  psychologically factorized candidate.
+- `H2_tsensitive`: eta is shared; Ter has `C2`, `C4`, and `C6` baseline terms
+  plus additive `R` and `NR` timing offsets. The offsets may be positive or
+  negative, but linear constraints ensure that every derived condition Ter is
+  between 0 and 1 seconds. This is the timing-sensitive rival in which colour
+  count is assigned to non-decision timing rather than eta.
+
+These routes compare two mechanistic allocations of the same experimental
+structure. They should be evaluated against each other by BIC and, critically,
+by whether their QVWM diagnostics reduce the persistent slow-tail RT miss.
+
+The completed comparison favours `H2_tsensitive` over `H2_factorial` by BIC
+for every participant. `H2_factorial` is not preferred over the best prior H1
+for any participant. `H2_tsensitive` is the best BIC route currently fitted
+for AQ (5969.80), HC (2310.36), PG (5671.95), and YL (4633.33); ES instead
+retains the cellwise-vnorm H1 (1964.76 versus 2019.78). This supports a
+colour-count-dependent baseline timing process plus small cue-state timing
+offsets, with individual differences in whether those offsets are primarily
+R or NR. Only AQ and YL improve both NLL and BIC over their best H1; HC
+and PG improve BIC with slightly worse NLL. The fitted C2/C4/C6 Ter baselines
+increase monotonically for every participant. Eta remains near its H0 value in the timing-sensitive route.
+
+Neither H2 route consistently improves the descriptive slow-tail median-RT
+error beyond the best single-component H1. Thus `H2_tsensitive` is the current
+parsimonious global joint-fit leader for four participants, but the unresolved
+tail RT mismatch remains an explicit diagnostic target rather than solved.
+
+### ES Strategy Note
+
+ES has the largest absolute Ter values in the H1 and H2 timing-sensitive
+solutions, while its Ter pattern is comparatively stable relative to its large
+condition-specific vnorm changes. In `H2_tsensitive`, ES has a high baseline
+timing profile (C2 507 ms, C4 567 ms, C6 580 ms), a modest R offset (+64 ms),
+and a near-zero NR offset (+7 ms). This is consistent with an interpretation
+in which ES responds slowly but with relatively stable non-decision timing,
+while condition/cue differences are expressed more strongly through decision
+evidence dynamics. It is also consistent with the independently observed
+strategy of reversing R and NR. Treat this as a participant-level strategy
+hypothesis to be checked against trial behaviour and task records, not as a
+deduction from Ter alone. Small across-condition Ter differences do not
+establish small trial-level timing variability; inspect st and RT distributions.
+
+## Primary Figures
+
+- `Figures/Re2024_QVWM`: participant-level equal-mass RT-by-signed-error
+  diagnostics for canonical H0/H1 and H2_tsensitive routes.
+- `Figures/Re2024_BestH1_H2ts_marginals`: per-participant best-H1/H2 marginal
+  comparisons. Prediction provenance for final figures is pending the R7 audit.
+- `Figures/Re2024_RT_regions`: empirical central/shoulder/tail RT summaries.
+- `Figures/KappaShift_H0_H1`: how H1 decision flexibility shifts fitted
+  front-end dispersion.
+- `Figures/KappaRhoScale_H0_H1`: exploratory kappa/rho scaling plots. Scaling
+  is paused pending the next theory step.
+
+## C-Core Caveat
+
+The shared cores store an `(nw + 1)` by `sz` response-time matrix to duplicate
+the circular wraparound response row. A potential total-mass column-stride
+inconsistency is present in the inspected source: the write path uses
+`(nw + 1) * k + i`, whereas one normalization read uses `nw * k + i`.
+The empirical impact remains unmeasured. This mass feeds Ptheta and mixture
+weights for returned moments; the joint Gt likelihood is separately normalized
+in the wrapper. Do not assume identical effects on all outputs. The outer
+mixture's Gt endpoint closure, source/MEX agreement, retained-RT summaries,
+Ter/st convention, and quadrature also need validation. See master R7 for
+isolated-build checks and refit criteria. Leave production C cores unchanged
+until the team discussion and audit are complete.
+
+## Records Outside The Live Workflow
+
+- `Notes/POPCDM_stage_history_20260914-15.md` retains the detailed dated
+  development record and superseded route terminology.
+- `TestFits/Archive/InitialFrontEndComparison` contains early POP/JP/JP-Cauchy
+  comparison runs. Consult it only when explicitly reviewing that stage.
+- `Examples` contains the supplied team examples and datasets; `Examples/LocalLearning`
+  contains `DazPOP1.m`.
+- `Investigations/Ccore` holds the standalone C indexing demonstration.
+
+## 23 September 2026 Documentation Consolidation
+
+The prior master is preserved in `Notes/CDM_master_history_through_20260923.md`.
+The new master records the Introduction outline, primary literature, seven
+retained-issue action plans, and ordered manuscript completion steps. Historical
+fit rankings remain recorded; no fitting, core, or plotting code changed.

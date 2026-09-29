@@ -1,14 +1,15 @@
 function output = test_fit_re2024(hypothesis, requestedModels, runLabel, warmStartFile, requestedParticipants)
 %TEST_FIT_RE2024 Fit named team-Cauchy hypothesis variants to Re2024.
-%   Uses fmincon with an 8-worker parpool. H0 uses 10 starts; H1 and
-%   legacy diagnostic routes use 24 starts.
+%   Uses fmincon with an 8-worker parpool. H0 uses 10 starts; H1 routes
+%   use 24 starts.
 %
 %   output = TEST_FIT_RE2024() fits H0: cellwise kappa_mu with one shared
 %   vnorm, eta, a, Ter, and st.
 %
 %   H1_ETA, H1_VNORM, and H1_TER make eta, vnorm, or Ter cellwise while
-%   retaining cellwise kappa_mu. H1_VNORM_SN is the set-size-vnorm model.
-%   LEGACY_ETA_CELL_VNORM_SN preserves the earlier cellwise-eta result.
+%   retaining cellwise kappa_mu. H_SATDECISION makes all three components
+%   cellwise and is an upper-bound diagnostic, not a final theory model.
+%   H2_FACTORIAL and H2_TSENSITIVE are theory-led grouped RT-factor routes.
 %
 %   For a nested route refit, provide an H0 aggregate result file and, if
 %   needed, one participant. Its H0 solution becomes an exact H1 start:
@@ -19,7 +20,7 @@ function output = test_fit_re2024(hypothesis, requestedModels, runLabel, warmSta
     end
     hypothesis = upper(string(hypothesis));
     validHypotheses = ["H0", "H1_ETA", "H1_VNORM", "H1_TER", ...
-        "H1_VNORM_SN", "LEGACY_ETA_CELL_VNORM_SN"];
+        "H_SATDECISION", "H2_FACTORIAL", "H2_TSENSITIVE"];
     if ~isscalar(hypothesis) || ~ismember(hypothesis, validHypotheses)
         error('test_fit_re2024:UnknownHypothesis', ...
             'Unknown hypothesis: %s.', hypothesis);
@@ -38,10 +39,12 @@ function output = test_fit_re2024(hypothesis, requestedModels, runLabel, warmSta
                 runLabel = "H1_vnorm";
             case "H1_TER"
                 runLabel = "H1_ter";
-            case "H1_VNORM_SN"
-                runLabel = "H1_vnorm_sn";
-            case "LEGACY_ETA_CELL_VNORM_SN"
-                runLabel = "Legacy_etaCell_vnormSN";
+            case "H_SATDECISION"
+                runLabel = "H_satDecision";
+            case "H2_FACTORIAL"
+                runLabel = "H2_factorial";
+            case "H2_TSENSITIVE"
+                runLabel = "H2_tsensitive";
             otherwise
                 error('test_fit_re2024:UnknownHypothesis', 'Unknown hypothesis.');
         end
@@ -105,6 +108,9 @@ function output = test_fit_re2024(hypothesis, requestedModels, runLabel, warmSta
     nStarts = 10;
     if hypothesis ~= "H0"
         nStarts = 24;
+    end
+    if hypothesis == "H_SATDECISION"
+        nStarts = 10;
     end
     maxIter = 2000;
     maxFunEvals = 100000;
@@ -187,9 +193,19 @@ function output = test_fit_re2024(hypothesis, requestedModels, runLabel, warmSta
             lbFree = cat.lb(cat.Sel);
             ubFree = cat.ub(cat.Sel);
 
-            warmStart = local_warm_start(cat, hypothesis, warmStartResults, ...
-                uid, modelName);
-            starts = local_build_starts(Pvar0, lbFree, ubFree, nStarts, warmStart);
+            seedSource = warmStartFile;
+            if hypothesis == "H_SATDECISION"
+                [warmStarts, seedSource] = local_satdecision_warm_starts( ...
+                    thisDir, cat, uid, modelName);
+            elseif startsWith(hypothesis, "H2_")
+                [warmStarts, seedSource] = local_h2_h0_warm_start( ...
+                    thisDir, cat, uid, modelName);
+            else
+                warmStarts = local_warm_start(cat, hypothesis, warmStartResults, ...
+                    uid, modelName);
+            end
+            starts = local_build_starts(Pvar0, lbFree, ubFree, nStarts, ...
+                warmStarts, cat.A, cat.b);
             fitFunc = cat.fitFunc;
 
             jobTimer = tic;
@@ -208,7 +224,7 @@ function output = test_fit_re2024(hypothesis, requestedModels, runLabel, warmSta
 
             [allPvar, allNLL, allExitflag, allIterations, allFuncCount] = ...
                 local_fit_starts(fitFunc, starts, startNLL, Pfix, cat.Sel, ...
-                lbFree, ubFree, Data, opts, useParallel, uid, modelName);
+                lbFree, ubFree, cat.A, cat.b, Data, opts, useParallel, uid, modelName);
 
             [bestNLL, bestIdx] = min(allNLL);
             bestPvar = allPvar(bestIdx, :);
@@ -229,6 +245,7 @@ function output = test_fit_re2024(hypothesis, requestedModels, runLabel, warmSta
             result.hypothesis = hypothesis;
             result.layoutVersion = cat.layoutVersion;
             result.warmStartFile = warmStartFile;
+            result.seedSource = seedSource;
             result.Pfit = Pfit;
             result.Pvar = bestPvar;
             result.Pfix = Pfix;
@@ -304,10 +321,10 @@ function catalogs = local_model_catalogs(condLevels, hypothesis)
     catalogs.cauchy = local_catalog( ...
         @(varargin) test_ylcauchy(varargin{:}, spec), ...
         spec.paramNames, spec.P0, spec.lb, spec.ub, true(size(spec.P0)), ...
-        spec.layoutVersion);
+        spec.layoutVersion, spec.A, spec.b);
 end
 
-function cat = local_catalog(fitFunc, paramNames, P0, lb, ub, Sel, layoutVersion)
+function cat = local_catalog(fitFunc, paramNames, P0, lb, ub, Sel, layoutVersion, A, b)
     cat.fitFunc = fitFunc;
     cat.paramNames = paramNames;
     cat.P0 = P0;
@@ -316,28 +333,95 @@ function cat = local_catalog(fitFunc, paramNames, P0, lb, ub, Sel, layoutVersion
     cat.Sel = Sel;
     cat.np = numel(P0);
     cat.layoutVersion = layoutVersion;
+    cat.A = A;
+    cat.b = b;
 end
 
-function starts = local_build_starts(Pvar0, lbFree, ubFree, nStarts, warmStart)
+function starts = local_build_starts(Pvar0, lbFree, ubFree, nStarts, warmStarts, A, b)
     if nargin < 5
-        warmStart = [];
+        warmStarts = [];
+    end
+    if nargin < 6
+        A = zeros(0, numel(Pvar0));
+        b = zeros(0, 1);
     end
     nFree = numel(Pvar0);
     starts = zeros(nStarts, nFree);
-    starts(1, :) = min(max(Pvar0, lbFree), ubFree);
-    if ~isempty(warmStart)
-        starts(1, :) = min(max(warmStart, lbFree), ubFree);
+    if isempty(warmStarts)
+        warmStarts = Pvar0;
     end
-
-    nLocal = min(5, nStarts);
-    for s = 2:nLocal
-        jitter = starts(1, :) .* (1 + 0.25 * randn(1, nFree));
-        starts(s, :) = min(max(jitter, lbFree), ubFree);
+    if isvector(warmStarts)
+        warmStarts = reshape(warmStarts, 1, []);
+    end
+    if size(warmStarts, 2) ~= nFree || size(warmStarts, 1) > nStarts
+        error('test_fit_re2024:InvalidStartMatrix', ...
+            'Warm starts must have at most %d rows and exactly %d columns.', ...
+            nStarts, nFree);
+    end
+    nSeed = size(warmStarts, 1);
+    starts(1:nSeed, :) = min(max(warmStarts, lbFree), ubFree);
+    if any(~local_is_feasible(starts(1:nSeed, :), A, b))
+        error('test_fit_re2024:InfeasibleWarmStart', ...
+            'A supplied warm start violates the route''s linear constraints.');
+    end
+    if nSeed == 1
+        nLocal = min(5, nStarts);
+        for s = 2:nLocal
+            starts(s, :) = local_random_feasible_start( ...
+                starts(1, :) .* (1 + 0.25 * randn(1, nFree)), lbFree, ubFree, A, b);
+        end
+    else
+        nLocal = nSeed;
     end
     for s = (nLocal + 1):nStarts
-        u = rand(1, nFree);
-        starts(s, :) = lbFree + u .* (ubFree - lbFree);
+        starts(s, :) = local_random_feasible_start([], lbFree, ubFree, A, b);
     end
+end
+
+function [warmStarts, seedSource] = local_satdecision_warm_starts(thisDir, cat, uid, modelName)
+    seeds = struct( ...
+        'tag', {"H0", "H1_eta", "H1_vnorm", "H1_ter"}, ...
+        'file', { ...
+            fullfile(thisDir, 'TestFits', 'H0_kappaCell_sharedDecision', ...
+                'H0_kappaCell_sharedDecision_20260915_130513.mat'), ...
+            fullfile(thisDir, 'TestFits', 'H1_eta', 'H1_eta_20260914_165156.mat'), ...
+            fullfile(thisDir, 'TestFits', 'H1_vnorm', 'H1_vnorm_20260914_174346.mat'), ...
+            fullfile(thisDir, 'TestFits', 'H1_ter', 'H1_ter_20260914_193853.mat')});
+    warmStarts = zeros(numel(seeds), sum(cat.Sel));
+    fieldName = matlab.lang.makeValidName(char(uid + "_" + modelName));
+    seedFiles = strings(1, numel(seeds));
+    for s = 1:numel(seeds)
+        if ~isfile(seeds(s).file)
+            error('test_fit_re2024:SatDecisionSeedMissing', ...
+                'Missing %s seed file: %s.', seeds(s).tag, seeds(s).file);
+        end
+        loaded = load(seeds(s).file, 'allResults');
+        if ~isfield(loaded.allResults, fieldName)
+            error('test_fit_re2024:SatDecisionSeedMissingParticipant', ...
+                '%s is missing from the %s seed file.', fieldName, seeds(s).tag);
+        end
+        warmStarts(s, :) = local_map_result_to_catalog( ...
+            loaded.allResults.(fieldName), cat);
+        seedFiles(s) = string(seeds(s).file);
+    end
+    seedSource = strjoin(seedFiles, "; ");
+end
+
+function [warmStart, seedSource] = local_h2_h0_warm_start(thisDir, cat, uid, modelName)
+    seedFile = fullfile(thisDir, 'TestFits', 'H0_kappaCell_sharedDecision', ...
+        'H0_kappaCell_sharedDecision_20260915_130513.mat');
+    if ~isfile(seedFile)
+        error('test_fit_re2024:H2SeedMissing', ...
+            'Missing canonical H0 seed file: %s.', seedFile);
+    end
+    loaded = load(seedFile, 'allResults');
+    fieldName = matlab.lang.makeValidName(char(uid + "_" + modelName));
+    if ~isfield(loaded.allResults, fieldName)
+        error('test_fit_re2024:H2SeedMissingParticipant', ...
+            '%s is missing from the canonical H0 seed file.', fieldName);
+    end
+    warmStart = local_map_result_to_catalog(loaded.allResults.(fieldName), cat);
+    seedSource = string(seedFile);
 end
 
 function warmStart = local_warm_start(cat, hypothesis, warmStartResults, uid, modelName)
@@ -353,10 +437,12 @@ function warmStart = local_warm_start(cat, hypothesis, warmStartResults, uid, mo
         return
     end
     source = warmStartResults.(fieldName);
-    sourceNames = string(source.paramNames);
-    sourceP = source.Pfit;
-    targetP = cat.P0;
+    warmStart = local_map_result_to_catalog(source, cat);
+end
 
+function warmStart = local_map_result_to_catalog(source, cat)
+    sourceNames = string(source.paramNames);
+    targetP = cat.P0;
     for i = 1:numel(cat.paramNames)
         targetName = cat.paramNames(i);
         sourceIndex = find(sourceNames == targetName, 1);
@@ -364,21 +450,22 @@ function warmStart = local_warm_start(cat, hypothesis, warmStartResults, uid, mo
                 startsWith(targetName, "vnorm_") || startsWith(targetName, "Ter_"))
             sourceIndex = find(sourceNames == extractBefore(targetName, "_"), 1);
         end
-        if isempty(sourceIndex) && startsWith(targetName, "vnormS")
-            sourceIndex = find(sourceNames == "vnorm", 1);
+        if isempty(sourceIndex) && startsWith(targetName, "deltaTer_")
+            targetP(i) = 0;
+            continue
         end
         if isempty(sourceIndex)
             error('test_fit_re2024:WarmStartMappingFailed', ...
-                'Cannot map H0 parameter %s into %s.', targetName, hypothesis);
+                'Cannot map source parameter %s into the target layout.', targetName);
         end
-        targetP(i) = sourceP(sourceIndex);
+        targetP(i) = source.Pfit(sourceIndex);
     end
     warmStart = targetP(cat.Sel);
 end
 
 function [allPvar, allNLL, allExitflag, allIterations, allFuncCount] = ...
         local_fit_starts(fitFunc, starts, startNLL, Pfix, Sel, lbFree, ubFree, ...
-        Data, opts, useParallel, uid, modelName)
+        A, b, Data, opts, useParallel, uid, modelName)
     nStarts = size(starts, 1);
     nFree = size(starts, 2);
     allPvar = zeros(nStarts, nFree);
@@ -394,7 +481,7 @@ function [allPvar, allNLL, allExitflag, allIterations, allFuncCount] = ...
             [allPvar(s, :), allNLL(s), allExitflag(s), ...
                 allIterations(s), allFuncCount(s)] = local_fit_one( ...
                 fitFunc, starts(s, :), startNLL(s), Pfix, Sel, ...
-                lbFree, ubFree, Data, opts);
+                lbFree, ubFree, A, b, Data, opts);
         end
         fprintf('  Parallel starts returned for %s / %s.\n', uid, modelName);
     else
@@ -405,7 +492,7 @@ function [allPvar, allNLL, allExitflag, allIterations, allFuncCount] = ...
             [allPvar(s, :), allNLL(s), allExitflag(s), ...
                 allIterations(s), allFuncCount(s)] = local_fit_one( ...
                 fitFunc, starts(s, :), startNLL(s), Pfix, Sel, ...
-                lbFree, ubFree, Data, opts);
+                lbFree, ubFree, A, b, Data, opts);
             fprintf(['    done start %02d/%02d: NLL %.4f, exit %d, ', ...
                 'iters %d, fevals %d, %.1f min\n'], ...
                 s, nStarts, allNLL(s), allExitflag(s), ...
@@ -421,11 +508,11 @@ function [allPvar, allNLL, allExitflag, allIterations, allFuncCount] = ...
 end
 
 function [PvarFit, nllFit, exitflag, iterations, funcCount] = local_fit_one( ...
-        fitFunc, Pvar0, startNLL, Pfix, Sel, lbFree, ubFree, Data, opts)
+        fitFunc, Pvar0, startNLL, Pfix, Sel, lbFree, ubFree, A, b, Data, opts)
     obj = @(pvar) fitFunc(pvar, Pfix, Sel, Data, 0);
     try
         [PvarFit, nllFit, exitflag, optimOut] = fmincon( ...
-            obj, Pvar0, [], [], [], [], lbFree, ubFree, [], opts);
+            obj, Pvar0, A, b, [], [], lbFree, ubFree, [], opts);
         iterations = optimOut.iterations;
         funcCount = optimOut.funcCount;
     catch
@@ -438,6 +525,33 @@ function [PvarFit, nllFit, exitflag, iterations, funcCount] = local_fit_one( ...
     if ~(isfinite(nllFit)) || nllFit > startNLL
         PvarFit = Pvar0;
         nllFit = startNLL;
+    end
+end
+
+function start = local_random_feasible_start(candidate, lb, ub, A, b)
+    if nargin < 1 || isempty(candidate)
+        candidate = [];
+    end
+    for attempt = 1:500
+        if isempty(candidate) || attempt > 1
+            candidate = lb + rand(1, numel(lb)) .* (ub - lb);
+        end
+        candidate = min(max(candidate, lb), ub);
+        if local_is_feasible(candidate, A, b)
+            start = candidate;
+            return
+        end
+        candidate = [];
+    end
+    error('test_fit_re2024:FeasibleStartFailure', ...
+        'Could not generate a start satisfying the linear constraints.');
+end
+
+function feasible = local_is_feasible(starts, A, b)
+    if isempty(A)
+        feasible = true(size(starts, 1), 1);
+    else
+        feasible = all(A * starts' <= b + 1e-10, 1)';
     end
 end
 
