@@ -29,3 +29,39 @@ Data/Encoding 2025-26/**/*.rds
 Data/Encoding 2025-26/**/vm_stan/
 Data/Encoding 2025-26/**/stan/
 Data/Encoding 2025-26/**/matlab_logs/
+
+# Project layout (Data/Experiments paths above retained for legacy folders).
+# Local environments, editor/session state, and generated binaries.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.Rhistory
+.RData
+.RDataTmp
+*.RData
+*.Ruserdata
+~$*
+*.mex*
+*.o
+*.so
+*.dylib
+/Projects/**/matlab_logs/
+/Projects/**/*.log
+/Projects/**/Rplots.pdf
+/Projects/**/stim_captures/
+/Projects/**/StimulusSnaps/
+/Projects/**/screenCalibration.mat
+
+# Encoding fits and sampling output; retain Stan model source files.
+/Projects/Encoding2526/**/*.rds
+/Projects/Encoding2526/**/chains/
+/Projects/Encoding2526/**/stan/*
+!/Projects/Encoding2526/**/stan/*.stan
+/Projects/Encoding2526/**/vm_stan/*
+!/Projects/Encoding2526/**/vm_stan/*.stan
+
+# Generated Daz model fits/checkpoints; retain tables and figures.
+/Projects/Daz2026/JPCDMvsPOPCDM/POPvJPvCauchy/TestFits/**/*.mat
+/Projects/Daz2026/JPCDMvsPOPCDM/POPvJPvCauchy/Re2024_POPvJPvCauchy_prepared.mat
+/Projects/Daz2026/JPCDMvsPOPCDM/CauchyJP/Figures/RTByError/*_output.mat
