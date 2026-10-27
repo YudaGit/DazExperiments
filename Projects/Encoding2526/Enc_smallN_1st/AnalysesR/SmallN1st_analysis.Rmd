@@ -1,0 +1,184 @@
+---
+title: "Encoding study Small-N experiment 1: descriptives and signed-error analyses"
+author: "Yu Liu"
+date: "11th May 2026"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+Encoding study smallN 1st analysis notebook. Uses the preprocessed trial
+table from `S1dataProcessing.m`. The analyses below are: 1.
+
+# Setup
+
+```{r setup-and-load-data}
+library(dplyr)       # data wrangling
+library(tidyverse)   # data wrangling + ggplot2
+library(nlme)        # frequentist mixed models (Appendix)
+library(bayesplot)   # posterior predictive checks
+library(tidybayes)   # gather posterior draws from emmeans
+library(emmeans)     # estimated marginal means / contrasts
+library(patchwork)   # combine ggplot panels
+library(loo)         # LOO / WAIC model comparison
+library(cmdstanr)    # Stan VM mixture ladder (Section 3)
+library(posterior)   # Stan draw summaries
+library(circular)    # circular SD for signed colour errors
+
+theme_set(theme_bw())
+options(mc.cores = parallel::detectCores())
+set.seed(1234)  # reproducible bootstrap / Stan seeds
+
+d <- read_csv("S1_smallN_model_ready.csv", show_col_types = FALSE)
+required_col <- c("ID", "CueType", "Duration", "Session", "RT", "AbsErr", "SignedErr")
+missing_col <- setdiff(required_col, names(d))
+
+stopifnot(nrow(d)>0)
+if (length(missing_col) > 0){
+  stop(
+    "Missing columns:",
+  paste(missing_col, collapse = ", ")
+  )
+}
+```
+
+```{r prepare-factors}
+id_raw <- c(unique(d$ID))
+id_pub <- c("P01","P02","P03","P04")
+names(id_pub) <- id_raw
+participants <- unname(id_pub)
+
+d <- d %>%
+  mutate(
+    ID = factor(id_pub[as.character(ID)], levels = participants),
+    CueType = factor(CueType, levels = c("NR", "R")),
+    DurationF = factor(
+      Duration,
+      levels = c("50ms", "100ms", "150ms", "200ms", "250ms", "300ms", "350ms")
+    ),
+    #Grouping = factor(Grouping),
+    SessionF = factor(Session)
+    #SessionPhase = factor(SessionPhase, levels = c("Early", "Middle", "Late")),
+    #logRT = log(RT)
+  )
+
+d_AQ <- droplevels(filter(d, ID == "P01"))
+d_HC <- droplevels(filter(d, ID == "P02"))
+d_YILIU <- droplevels(filter(d, ID == "P03"))
+d_YDL <- droplevels(filter(d, ID == "P04"))
+```
+
+# Descriptive Figures
+
+Four vertically stacked panels (one participant each), shared
+encoding-duration axis. **Circular SD:** pooled cell estimate (diamond)
+with bootstrap 95% CI; semi-transparent **AbsErr** trial points behind.
+**RT:** cell median with bootstrap 95% CI; trial-level RT points behind.
+
+```{r }
+# 定义角度制转弧度制函数
+deg2rad <- function(deg) deg * pi / 180
+# 定义弧度制转角度制函数
+rad2deg <- function(rad) rad * 180 / pi
+
+bootstrapCnd <- function(data, colID) {
+
+  pbootn <- 1000
+  ibootn <- 5000
+
+  uid <- unique(data$ID)
+  idn <- length(uid)
+
+  ncnd <- length(unique(data$Cnd))
+
+  pm <- matrix(NA_real_, nrow = pbootn, ncol = ncnd)
+  hdi <- matrix(NA_real_, nrow = ncnd, ncol = 4)
+
+  for (cnd in 1:ncnd) {
+
+    # Randomly select participants for the outer bootstrap
+    pidx <- sample.int(idn, pbootn, replace = TRUE)
+
+    for (ii in seq_len(pbootn)) {
+
+      # Extract trials for selected participant × condition
+      x <- data[
+        data$ID == uid[pidx[ii]] &
+          data$Cnd == cnd,
+        colID,
+        drop = TRUE
+      ]
+
+      x <- x[is.finite(x)]
+      n <- length(x)
+
+      # Generate all bootstrap indices at once:
+      # n rows × ibootn columns
+      idx <- matrix(
+        sample.int(n, n * ibootn, replace = TRUE),
+        nrow = n,
+        ncol = ibootn
+      )
+
+      # Convert bootstrap indices directly into bootstrap data matrix
+      xb <- matrix(
+        x[idx],
+        nrow = n,
+        ncol = ibootn
+      )
+
+      if (colID == "RT") {
+
+        # One mean for each of the 5000 bootstrap samples
+        boots <- colMeans(xb)
+
+      } else if (colID == "SignedErr") {
+
+        # Convert all bootstrap samples to radians
+        xb <- xb * pi / 180
+
+        # Circular SD for all 5000 bootstrap samples simultaneously
+        C <- colSums(cos(xb))
+        S <- colSums(sin(xb))
+        R <- sqrt(C^2 + S^2) / n
+
+        boots <- sqrt(-2 * log(R))
+      }
+
+      # Mean across the 5000 inner bootstrap estimates
+      pm[ii, cnd] <- mean(boots)
+    }
+
+    # 95% shortest bootstrap interval
+    width <- floor(0.95 * pbootn)
+
+    d_boot <- sort(pm[, cnd])
+
+    span <- d_boot[(width + 1):pbootn] -
+      d_boot[1:(pbootn - width)]
+
+    ix <- which.min(span)
+
+    hdi[cnd, ] <- c(
+      d_boot[ix],
+      d_boot[ix + width],
+      mean(d_boot),
+      median(d_boot)
+    )
+  }
+
+  # Convert circular SD from radians back to degrees
+  if (colID == "SignedErr") {
+    hdi <- hdi * 180 / pi
+  }
+
+  colnames(hdi) <- c("lower", "upper", "mean", "median")
+
+  return(hdi)
+}
+```

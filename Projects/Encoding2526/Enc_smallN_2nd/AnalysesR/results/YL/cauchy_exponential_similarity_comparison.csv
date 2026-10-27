@@ -1,0 +1,3 @@
+"signal","negative_ll","parameter_count","trial_count","sensitivity","similarity_decay_per_radian","BIC"
+"cosine",4710.28916653424,15,4893,15.4074553592568,NA,9548.01174643781
+"exponential",4721.81755828944,16,4893,14.0431970703034,1e-06,9579.56409083951

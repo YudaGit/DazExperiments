@@ -1,0 +1,11 @@
+---
+title: "Study 2 analysis notebooks"
+output: html_document
+---
+
+The current YL comparison of the consolidated-angle Cauchy model and the
+MaxGumbel model is in
+[cauchy_maxgumbel_comparison.Rmd](cauchy_maxgumbel_comparison.Rmd).
+
+The earlier Cauchy-signal and fixed-sensitivity comparisons have been retired
+from the active analysis notebook.

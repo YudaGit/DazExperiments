@@ -1,0 +1,4 @@
+"model","starts","converged","near_best","boundary_hits","worst_ll_gap"
+"Cauchy signal",100,100,100,0,4.05807440984063e-07
+"Latent Cauchy angle",100,100,100,0,5.5077180149965e-07
+"Sensitivity fixed at 1",100,100,100,0,8.15646671981085e-07

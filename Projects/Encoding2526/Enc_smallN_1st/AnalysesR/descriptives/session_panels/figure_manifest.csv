@@ -1,0 +1,9 @@
+ID,DisplayID,measure,y_min,y_max,raw_fraction_clipped,file
+YDL,YDL,cirSD,0,150,0.05048821147892355,YDL_circular_sd_by_session.png
+YDL,YDL,RT,650,1400,0.07835198856870683,YDL_median_rt_by_session.png
+YILIU,YIL,cirSD,0,130,0.04262919742795904,YIL_circular_sd_by_session.png
+YILIU,YIL,RT,800,1750,0.04667778042391046,YIL_median_rt_by_session.png
+HC,HC,cirSD,0,90,0.054285714285714284,HC_circular_sd_by_session.png
+HC,HC,RT,600,1250,0.06285714285714286,HC_median_rt_by_session.png
+AQ,AQ,cirSD,0,120,0.04380952380952381,AQ_circular_sd_by_session.png
+AQ,AQ,RT,950,1750,0.08785714285714286,AQ_median_rt_by_session.png

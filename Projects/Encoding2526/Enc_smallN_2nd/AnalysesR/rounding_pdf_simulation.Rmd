@@ -1,0 +1,206 @@
+---
+title: "Does rounding angular errors change the fitted PDF?"
+output: html_document
+---
+
+This simulation uses YL's 14 condition sizes and fitted parameter ranges. Each
+synthetic error is recorded to 0.01 degrees. The same errors are fitted twice:
+once at their recorded values, and once after rounding to the nearest degree.
+Signal strength is held at its YL estimate so this check isolates the effect of
+rounding on the fitted shape parameter. Both Cauchy-memory and von Mises-signal
+models are checked.
+
+```{r setup}
+source("cauchy_model.R")
+source("cauchy_runner.R")
+source("MaxGumbelModel.R")
+library(ggplot2)
+
+set.seed(20261008)
+n_simulations <- 200L
+fit_grid_n <- 360L       # One-degree response grid used by the fitted models
+sampling_grid_n <- 36000L  # 0.01-degree grid for generating synthetic errors
+comparison_grid_n <- 3600L # 0.1-degree grid for comparing fitted PDFs
+
+trials <- read.csv("../Daz25EncodingData/PreliminaryReview/YL_model_trials.csv")
+cauchy_fit <- fit_cauchy_cells(trials, fit_grid_n)
+vm_fit <- fit_max_gumbel_cells(trials, fit_grid_n)
+stopifnot(identical(cauchy_fit$cells$cell, vm_fit$cells$cell),
+          identical(cauchy_fit$cells$trials, vm_fit$cells$trials))
+
+cases <- rbind(
+  data.frame(model = "Cauchy memory", cell = cauchy_fit$cells$cell,
+             trials = cauchy_fit$cells$trials,
+             shape = cauchy_fit$cells$kappa,
+             signal_strength = cauchy_fit$sensitivity),
+  data.frame(model = "von Mises signal", cell = vm_fit$cells$cell,
+             trials = vm_fit$cells$trials,
+             shape = vm_fit$cells$kappa,
+             signal_strength = vm_fit$amplitude)
+)
+
+predict_pdf <- function(model, shape, signal_strength, n) {
+  if (model == "Cauchy memory") {
+    caureport(c(shape, signal_strength), n)
+  } else {
+    max_gumbel_report(c(signal_strength, shape), n)
+  }
+}
+
+# Precompute one high-resolution sampling distribution for each model and cell.
+samplers <- lapply(seq_len(nrow(cases)), function(i) {
+  prediction <- with(cases[i, ],
+                     predict_pdf(model, shape, signal_strength, sampling_grid_n))
+  mass <- prediction$ptheta / sum(prediction$ptheta)
+  list(angle_deg = prediction$theta * 180 / pi,
+       cdf = c(0, cumsum(mass)))
+})
+
+draw_errors <- function(sampler, count) {
+  index <- findInterval(runif(count), sampler$cdf, rightmost.closed = TRUE)
+  index <- pmax(1L, pmin(index, length(sampler$angle_deg)))
+  round(sampler$angle_deg[index], 2)
+}
+
+interpolated_ll <- function(prediction, errors_deg) {
+  n <- length(prediction$theta)
+  h <- 2 * pi / n
+  position <- ((errors_deg * pi / 180 + pi) %% (2 * pi)) / h
+  lower <- floor(position) + 1L
+  upper <- (lower %% n) + 1L
+  fraction <- position - floor(position)
+  density <- (1 - fraction) * prediction$ptheta[lower] +
+    fraction * prediction$ptheta[upper]
+  -sum(log(pmax(density, .Machine$double.xmin)))
+}
+
+fit_shape <- function(errors_deg, model, signal_strength, rounded) {
+  if (rounded) {
+    index <- ((round(errors_deg) + 180) %% 360) + 1L
+    objective <- function(shape) {
+      prediction <- predict_pdf(model, shape, signal_strength, fit_grid_n)
+      -sum(log(pmax(prediction$ptheta[index], .Machine$double.xmin)))
+    }
+  } else {
+    objective <- function(shape) {
+      prediction <- predict_pdf(model, shape, signal_strength, fit_grid_n)
+      interpolated_ll(prediction, errors_deg)
+    }
+  }
+  optimize(objective, interval = c(0.02, 10), tol = 1e-5)$minimum
+}
+
+pdf_misfit <- function(model, signal_strength, shape_original, shape_rounded) {
+  original <- predict_pdf(model, shape_original, signal_strength,
+                          comparison_grid_n)$ptheta
+  rounded <- predict_pdf(model, shape_rounded, signal_strength,
+                         comparison_grid_n)$ptheta
+  h <- 2 * pi / comparison_grid_n
+  c(total_variation = 0.5 * sum(abs(original - rounded)) * h,
+    max_density_difference_per_degree = max(abs(original - rounded)) * pi / 180)
+}
+```
+
+## Repeated simulations
+
+Total variation is the main PDF misfit measure. It ranges from 0 to 1: for
+example, 0.01 means the two curves differ by one percentage point of total
+probability mass after accounting for their overlap. The maximum density
+difference records the largest pointwise gap anywhere around the circle.
+
+```{r simulate}
+results <- vector("list", nrow(cases) * n_simulations)
+row_number <- 0L
+for (case_index in seq_len(nrow(cases))) {
+  case <- cases[case_index, ]
+  for (simulation in seq_len(n_simulations)) {
+    errors_deg <- draw_errors(samplers[[case_index]], case$trials)
+    shape_original <- fit_shape(errors_deg, case$model,
+                                case$signal_strength, rounded = FALSE)
+    shape_rounded <- fit_shape(errors_deg, case$model,
+                               case$signal_strength, rounded = TRUE)
+    misfit <- pdf_misfit(case$model, case$signal_strength,
+                         shape_original, shape_rounded)
+    row_number <- row_number + 1L
+    results[[row_number]] <- data.frame(
+      model = case$model, cell = case$cell, simulation = simulation,
+      shape_original = shape_original, shape_rounded = shape_rounded,
+      total_variation = unname(misfit["total_variation"]),
+      max_density_difference_per_degree =
+        unname(misfit["max_density_difference_per_degree"])
+    )
+  }
+}
+results <- do.call(rbind, results)
+
+summarize_misfit <- function(x) {
+  c(median = median(x), p95 = unname(quantile(x, 0.95)),
+    p99 = unname(quantile(x, 0.99)), maximum = max(x))
+}
+overall <- do.call(rbind, lapply(split(results, results$model), function(part) {
+  data.frame(model = part$model[1], simulations = nrow(part),
+             t(summarize_misfit(part$total_variation)), row.names = NULL)
+}))
+overall
+
+by_cell <- do.call(rbind, lapply(split(results, list(results$model, results$cell),
+                                      drop = TRUE), function(part) {
+  data.frame(model = part$model[1], cell = part$cell[1],
+             t(summarize_misfit(part$total_variation)), row.names = NULL)
+}))
+by_cell[order(by_cell$model, by_cell$cell), ]
+```
+
+## Distribution of PDF misfit
+
+```{r misfit-distribution, fig.width=10, fig.height=4}
+ggplot(results, aes(x = total_variation)) +
+  geom_histogram(bins = 35, fill = "grey60", colour = "white") +
+  facet_wrap(~ model, ncol = 2, scales = "free_y") +
+  labs(x = "Total variation between fitted PDFs",
+       y = "Simulation count") +
+  theme_bw(base_size = 12)
+```
+
+## Largest observed PDF difference
+
+This is the most different pair among the simulated fits, not a typical pair.
+
+```{r largest-misfit, fig.width=10, fig.height=4}
+worst <- results[which.max(results$total_variation), ]
+case <- cases[cases$model == worst$model & cases$cell == worst$cell, ]
+curve_original <- predict_pdf(worst$model, worst$shape_original,
+                              case$signal_strength, comparison_grid_n)
+curve_rounded <- predict_pdf(worst$model, worst$shape_rounded,
+                             case$signal_strength, comparison_grid_n)
+curves <- rbind(
+  data.frame(error_deg = curve_original$theta * 180 / pi,
+             density_deg = curve_original$ptheta * pi / 180,
+             fit = "Original 0.01-degree errors"),
+  data.frame(error_deg = curve_rounded$theta * 180 / pi,
+             density_deg = curve_rounded$ptheta * pi / 180,
+             fit = "Rounded whole-degree errors")
+)
+print(worst)
+ggplot(curves, aes(error_deg, density_deg, colour = fit, linetype = fit)) +
+  geom_line(linewidth = 0.9) +
+  coord_cartesian(xlim = c(-180, 180)) +
+  labs(x = "Signed error (degrees)", y = "Density per degree",
+       title = paste(worst$model, worst$cell, "simulation", worst$simulation)) +
+  theme_bw(base_size = 12)
+```
+
+```{r largest-misfit-difference, fig.width=10, fig.height=3}
+difference_curve <- data.frame(
+  error_deg = curve_original$theta * 180 / pi,
+  density_difference_per_degree =
+    (curve_original$ptheta - curve_rounded$ptheta) * pi / 180
+)
+ggplot(difference_curve, aes(error_deg, density_difference_per_degree)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_line(colour = "#C13C32", linewidth = 0.8) +
+  coord_cartesian(xlim = c(-180, 180)) +
+  labs(x = "Signed error (degrees)",
+       y = "Original minus rounded\ndensity per degree") +
+  theme_bw(base_size = 12)
+```

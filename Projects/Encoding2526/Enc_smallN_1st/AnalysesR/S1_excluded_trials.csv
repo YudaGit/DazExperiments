@@ -1,0 +1,3 @@
+ID,Session,SourceFile,SourceRow,RT,SignedErr,MissingPrecision,MissingResponse,MissingRT,RTOver3000,RTUnder300,InvalidTargetHue,InvalidItemHue
+YDL,6,EncodingData_YDL_sess6_2025-08-18_15-06-44.mat,54,10000,NaN,1,1,0,1,0,0,0
+YILIU,1,EncodingData_YILIU_sess1_2025-07-10_12-26-38.mat,101,3012.98099999985,41.3350796302086,0,0,0,1,0,0,0
