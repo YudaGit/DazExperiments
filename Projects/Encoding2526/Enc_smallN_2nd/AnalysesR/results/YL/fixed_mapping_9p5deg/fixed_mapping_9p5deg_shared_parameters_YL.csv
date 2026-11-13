@@ -1,0 +1,7 @@
+"parameter","Cauchy","MaxGumbel","role"
+"attended single-colour quality",0.0968337487390141,71.9320879264056,"fitted dispersion / fitted amplitude"
+"unattended single-colour quality",0.524613137474127,8.61922897758243,"fitted dispersion / fitted amplitude"
+"signal tuning kappa",NA,0.884993441137121,"not applicable / fitted"
+"R-selection bias 50 ms",1,0.669330005371845,"fitted / fitted"
+"R-selection bias 250 ms",0.997457041126111,0.696102680937173,"fitted / fitted"
+"response mapping SD",9.5,9.5,"fixed / fixed"

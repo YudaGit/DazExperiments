@@ -2,23 +2,11 @@
 
 ## Note Map And Immediate Priorities
 
-The [master work note](../POPCDM_CauchyCDM_master_work_note.md) is the current
-manuscript outline and ordered modelling plan (updated 23 September 2026).
-Its R1-R7 issue assessments and M0-M7 work steps supersede historical next-step
-proposals. This file retains the operational assets and recorded fit state.
+Updated for organization on 13 November 2026. The [project overview](../README.md) replaces the master note and governs current scientific evidence and priorities. This stage note retains operational detail and the development record. Use the [model dictionary](../docs/model_dictionary.md), [canonical manifest](results_manifest.csv), [numerical audit](../docs/numerical_audit.md), and [decision log](../docs/decisions.md) rather than duplicating project-level narratives here.
 
-Before additional large fits, complete the source/MEX and saved-vector audit,
-then check circular closure, normalization, RT conditioning/convolution,
-diagnostic summaries, and latent-angle convergence. Source inspection has
-identified potential differences between the fitted joint density and saved
-angular/conditional summaries; impact on the compiled fits is not yet measured.
-Clarify the POP selection rule for matched front-end fits, and explicitly
-justify this project's resource-to-dispersion law before constrained fits.
-The team draft is a separate theory publication: its derivations and data
-provide external background, not Re2024 results. Questions about its equations
-are source clarifications if we adopt them, not a requirement to revise or
-complete that publication. Our core audits concern the Re2024 implementation.
-No C edits or refits were performed during the documentation reorganization.
+H labels and saved fit paths are retained as stable aliases. Resolve canonical files with `re2024_result_file`, which explicitly selects the corrected AQ-merged H2 aggregate. The runner currently registers Cauchy only; retained POP/JP wrappers are not yet matched final routes. New fits should use a new run label. Source/MEX agreement, circular closure, normalization, RT selection/convolution and grid accuracy remain pending measured validation; no production core was changed during cleanup.
+
+Existing figure directories have moved under `Figures/Exploratory/`; their generators were updated. Curated saved-BIC candidates and source tables live under `Figures/ManuscriptCandidates/`. Existing prediction figures remain provisional. Earlier sibling implementations now live under `../Legacy/` and should not be added recursively to MATLAB's path.
 
 ## Purpose
 
@@ -179,10 +167,10 @@ model. It is not a candidate final specification.
 
 The completed saturated fit exactly reproduced the four source-route NLLs at
 its first four starts, confirming correct nesting. It improved NLL beyond the
-best 22-parameter H1 for every participant (AQ 17.19, ES 30.77, HC 23.74,
+best 22-parameter H1 for every participant (AQ 17.19 at the original H1 milestone (4.64 against corrected H1_ter), ES 30.77, HC 23.74,
 PG 21.69, YL 35.12), and also improved AIC. Its BIC was worse for every
 participant because it adds 16 parameters beyond those H1s (BIC costs: AQ
-+100.18, ES +73.01, HC +87.09, PG +91.18, YL +64.34 relative to the best H1).
++100.18 at the original milestone (+125.26 against corrected H1_ter), ES +73.01, HC +87.09, PG +91.18, YL +64.34 relative to the best H1).
 The saturated parameter profiles are highly route- and condition-dependent;
 therefore they are evidence of residual headroom and component trade-off, not
 evidence for a cellwise final decision architecture. A descriptive three-region
@@ -244,14 +232,14 @@ establish small trial-level timing variability; inspect st and RT distributions.
 
 ## Primary Figures
 
-- `Figures/Re2024_QVWM`: participant-level equal-mass RT-by-signed-error
+- `Figures/Exploratory/Re2024_QVWM`: participant-level equal-mass RT-by-signed-error
   diagnostics for canonical H0/H1 and H2_tsensitive routes.
-- `Figures/Re2024_BestH1_H2ts_marginals`: per-participant best-H1/H2 marginal
+- `Figures/Exploratory/Re2024_BestH1_H2ts_marginals`: per-participant best-H1/H2 marginal
   comparisons. Prediction provenance for final figures is pending the R7 audit.
-- `Figures/Re2024_RT_regions`: empirical central/shoulder/tail RT summaries.
-- `Figures/KappaShift_H0_H1`: how H1 decision flexibility shifts fitted
+- `Figures/Exploratory/Re2024_RT_regions`: empirical central/shoulder/tail RT summaries.
+- `Figures/Exploratory/KappaShift_H0_H1`: how H1 decision flexibility shifts fitted
   front-end dispersion.
-- `Figures/KappaRhoScale_H0_H1`: exploratory kappa/rho scaling plots. Scaling
+- `Figures/Exploratory/KappaRhoScale_H0_H1`: exploratory kappa/rho scaling plots. Scaling
   is paused pending the next theory step.
 
 ## C-Core Caveat
@@ -264,7 +252,7 @@ The empirical impact remains unmeasured. This mass feeds Ptheta and mixture
 weights for returned moments; the joint Gt likelihood is separately normalized
 in the wrapper. Do not assume identical effects on all outputs. The outer
 mixture's Gt endpoint closure, source/MEX agreement, retained-RT summaries,
-Ter/st convention, and quadrature also need validation. See master R7 for
+Ter/st convention, and quadrature also need validation. See the numerical audit for
 isolated-build checks and refit criteria. Leave production C cores unchanged
 until the team discussion and audit are complete.
 
@@ -281,6 +269,12 @@ until the team discussion and audit are complete.
 ## 23 September 2026 Documentation Consolidation
 
 The prior master is preserved in `Notes/CDM_master_history_through_20260923.md`.
-The new master records the Introduction outline, primary literature, seven
+That now-archived master recorded the Introduction outline, primary literature, seven
 retained-issue action plans, and ordered manuscript completion steps. Historical
 fit rankings remain recorded; no fitting, core, or plotting code changed.
+
+## 13 November 2026 Organization Update
+
+The overview supersedes the archived master's current-state passages. H3 results and corrected AQ H1/H2 fits are reflected in the canonical manifest and generated 55-record comparison. Original fit files and numerical cores are preserved. The older saturated-fit improvements above are explicitly historical where AQ's later H1 correction changes the reference. The remaining YL H1_ter nesting miss is still pending.
+
+Figure generators now resolve manifest paths and write provenance records; previous exports are preserved in Exploratory. The new H3/H2 BIC candidate is a saved-scalar comparison, not a numerical validation. Parameter-comparison spreadsheets/CSVs and their derived plots retain historical provenance until regenerated from canonical vectors; do not assume they incorporate AQ's correction.

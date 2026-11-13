@@ -42,7 +42,7 @@ function output = assess_h1_rt_parameter_contrasts()
     matched = local_matched(base, h1, participants, conditions, parameterNames, pairNames, pairNR, pairR);
     largest = local_largest(base, h1, participants, conditions, parameterNames);
 
-    outDir = fullfile(thisDir, 'Figures', 'H2_RT_factor_diagnostics');
+    outDir = fullfile(thisDir, 'Figures', 'Exploratory', 'H2_RT_factor_diagnostics');
     if ~isfolder(outDir), mkdir(outDir); end
     displacementFile = fullfile(thisDir, 'TestFits', 'H2_RT_parameter_displacements.csv');
     matchedFile = fullfile(thisDir, 'TestFits', 'H2_RT_matched_R_NR_contrasts.csv');

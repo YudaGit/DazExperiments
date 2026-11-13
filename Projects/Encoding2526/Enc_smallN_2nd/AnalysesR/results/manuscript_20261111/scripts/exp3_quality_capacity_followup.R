@@ -1,0 +1,15 @@
+p <- '/Users/prefabteam_ysl/Developer/DazExperiments/Projects/Encoding2526/Enc_smallN_2nd/AnalysesR/results/manuscript_20261111'
+library(ggplot2)
+file.copy('/tmp/exp3_quality_capacity_followup.R',file.path(p,'scripts'),overwrite=TRUE)
+w<-read.csv(file.path(p,'weights.csv'))
+w<-subset(w,Variant %in% c('shared_bias','duration_bias'))
+w$Display<-factor(sub('_[0-9]+ms$','',w$W_group),levels=c('S2C2','S4C2','S4C4','S6C4','S6C6'))
+w$Duration<-factor(sub('^.*_([0-9]+ms)$','\\1',w$W_group),levels=c('50ms','250ms'))
+w$Model<-ifelse(w$Family=='cauchy','Cauchy','MaxGumbel')
+w$Structure<-factor(w$Variant,levels=c('shared_bias','duration_bias'),labels=c('Shared state quality','Duration-specific state quality'))
+q<-ggplot(w,aes(Display,Kn_est,colour=Model,shape=Duration,group=interaction(Model,Duration)))+geom_line(linewidth=.5)+geom_point(size=2.7)+facet_grid(Structure~ID)+scale_colour_manual(values=c(Cauchy='#C13C32',MaxGumbel='#2C7FB8'))+labs(x='Array context (S = physical items; C = unique colours)',y='Expected better-state capacity',title='Capacity estimates depend on the quality constraints')+theme_bw(base_size=11)+theme(legend.position='bottom',panel.grid.minor=element_blank())
+ggsave(file.path(p,'figures','capacity_quality_comparison.png'),q,width=11,height=8,dpi=180)
+z<-reshape(w[c('ID','Family','Variant','Display','Duration','W','Kn_est','W_R','W_NR')],idvar=c('ID','Family','Variant','Display'),timevar='Duration',direction='wide')
+z$DeltaK<-z$Kn_est.250ms-z$Kn_est.50ms
+write.csv(z,file.path(p,'capacity_duration_changes_all_quality_structures.csv'),row.names=FALSE)
+cat('\n## Interpretation of refreshed results\n\nThe shared-quality bias comparison supports bias by BIC in both Cauchy fits and YL MaxGumbel, but favours no bias for FP MaxGumbel. The duration-specific-quality comparison favours shared quality for YL Cauchy and duration-specific quality for the other three fits.\n\nCapacity increases with duration in the shared-quality fits except ceiling-level S2C2. This conclusion is conditional on shared quality: freeing state quality reverses the direction of FP capacity estimates in the larger arrays. Use capacity_quality_comparison.png and capacity_duration_changes_all_quality_structures.csv alongside expected_capacity_both.png; do not report a general increase in capacity as a model-invariant result.\n\nThe no-bias comparison is matched within the shared-quality structure. A duration-specific no-bias variant was not included in this pass. Sample-size and repetition exponents were fixed in every fitted variant, so these comparisons assess fit under those constraints rather than testing those exponents against free alternatives.\n',file=file.path(p,'README.md'),append=TRUE)

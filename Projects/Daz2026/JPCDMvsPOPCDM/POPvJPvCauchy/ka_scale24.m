@@ -48,7 +48,7 @@ function out = ka_scale24(scaleName)
     participantIDs = participantIDs(~ismissing(participantIDs) & participantIDs ~= "");
     participantIDs = unique(participantIDs, 'stable');
 
-    figureDir = fullfile(thisDir, 'Figures', 'KappaRhoScale_H0_H1');
+    figureDir = fullfile(thisDir, 'Figures', 'Exploratory', 'KappaRhoScale_H0_H1');
     if ~exist(figureDir, 'dir')
         mkdir(figureDir);
     end

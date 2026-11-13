@@ -1,0 +1,9 @@
+"Check","Passed"
+"Unique-colour count and target repetition derived identically",TRUE
+"Same two-state mixture weights and R-bias redistribution",TRUE
+"Common 10 display-duration W groups",TRUE
+"Dispersion scales sqrt(N/r); amplitude scales sqrt(r/N)",TRUE
+"Both no-bias models fix R-bias to zero",TRUE
+"Quality comparison retains duration-specific bias",TRUE
+"All predicted densities normalised",TRUE
+"Re-evaluated cell likelihoods reproduce saved values",TRUE

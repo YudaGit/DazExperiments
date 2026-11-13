@@ -22,7 +22,7 @@ function out = ka_shift24()
     participantIDs = participantIDs(~ismissing(participantIDs) & participantIDs ~= "");
     participantIDs = unique(participantIDs, 'stable');
 
-    figureDir = fullfile(thisDir, 'Figures', 'KappaShift_H0_H1');
+    figureDir = fullfile(thisDir, 'Figures', 'Exploratory', 'KappaShift_H0_H1');
     if ~exist(figureDir, 'dir')
         mkdir(figureDir);
     end

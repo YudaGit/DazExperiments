@@ -1,0 +1,30 @@
+{
+  "version": "prepared_snapshot_20261113",
+  "prepared_file": "POPvJPvCauchy/Re2024_POPvJPvCauchy_prepared.mat",
+  "prepared_sha256": "c2df74be160681216aa4b5eaffa3c13fe63962b96ac979537d35a10db2e72655",
+  "raw_file": "/Users/prefabteam_ysl/Developer/DazExperiments/Data/Redundancy 2024/Modelling/POPCDM/DazPreprocessed.csv",
+  "raw_sha256": "cad217ffe7c180a2941806026498e2270f35ceb0cca94bf1d38ea045ff6c4a5f",
+  "units": {
+    "error": "radians",
+    "RT": "seconds"
+  },
+  "retained_RT_seconds": [
+    0.3,
+    3.0
+  ],
+  "participants": [
+    "AQ",
+    "ES",
+    "HC",
+    "PG",
+    "YL"
+  ],
+  "retained_trials": [
+    4488,
+    4488,
+    4495,
+    4492,
+    4497
+  ],
+  "status": "Prepared file frozen; raw/prepared equality checked separately in MATLAB validation"
+}

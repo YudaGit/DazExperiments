@@ -6,7 +6,7 @@ function output = plot_re2024_rt_regions_by_participant()
 
     thisDir = fileparts(mfilename('fullpath'));
     dataFile = fullfile(thisDir, 'Re2024_POPvJPvCauchy_prepared.mat');
-    outDir = fullfile(thisDir, 'Figures', 'Re2024_RT_regions');
+    outDir = fullfile(thisDir, 'Figures', 'Exploratory', 'Re2024_RT_regions');
     if ~isfolder(outDir)
         mkdir(outDir);
     end

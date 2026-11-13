@@ -1,0 +1,33 @@
+{
+  "status": "Current source snapshot; does not prove source/MEX agreement or fit-time provenance",
+  "files": {
+    "POPvJPvCauchy/assess_h1_rt_parameter_contrasts.m": "47ac19966e05e72133bd2e1a8290f10ae08fd7b7d56d6474472f5b7b5a4a34b1",
+    "POPvJPvCauchy/build_test_mex.m": "c1097184cb027d528a7c6ef023389e950ce382be7a571f6b109d8cd131535560",
+    "POPvJPvCauchy/ka_scale24.m": "78aa7bb70a15ce99c4cc1451bb7b47f01d7da411d4eff3bb5a4bc43ec22092d4",
+    "POPvJPvCauchy/ka_shift24.m": "cec01578cb2e904f978c5edc21d4d3f421fc1a427af3718a24f133224bc20452",
+    "POPvJPvCauchy/label.m": "c3d041e0cf5907f52a641dd8a7bd3b1b53dc0e9babf8e44b967d5698eabc89fa",
+    "POPvJPvCauchy/plot_re2024_besth1_h2ts_marginals.m": "4d89c267d96d864be8fd37fe3beec1b6b748393c6d7a57a823b9a5e8fcd52877",
+    "POPvJPvCauchy/plot_re2024_h1_marginals.m": "62916acebba2b140e9497c310aac5bbc73194b5219a7c449dcb5f9e7411c01af",
+    "POPvJPvCauchy/plot_re2024_qvwm.m": "8f2c14ed8d4f82b0b698e14d664468d34afad7fa9339dac1870558b773dcf40c",
+    "POPvJPvCauchy/plot_re2024_rt_regions_by_participant.m": "da6a92ed88c662aa96f875ef8647764d9f2971382682817999a774b700c51bd5",
+    "POPvJPvCauchy/prepareRe2024Data.m": "755383ee5ba356b68b6bf8887d9cfeb89d0d51bb9dd4590c5db7859f6bb583e0",
+    "POPvJPvCauchy/qvwm23.m": "a758e704a32c1affddae440cb9f91dc4567348fdac0868eb385dc0c8a8f7d90f",
+    "POPvJPvCauchy/qvwm_ydl26.m": "943c70a3285bc0c10f0f152d0713644e4f560a7c1c20c74ddb31a01be7e18afd",
+    "POPvJPvCauchy/re2024_cauchy_hypothesis_spec.m": "4b28ae721d9c8f24b224c8b1f8b55271e5a3679cd6ce0e2f742fbe098ecd0167",
+    "POPvJPvCauchy/re2024_figure_provenance.m": "d19688b6d0c8a152ddd3d885dd36d34e33e5681f237f31f1a553a73a93526356",
+    "POPvJPvCauchy/re2024_result_file.m": "5cfd8397862f6b1b791a88c7c5dcc8449f09802db611c85dd695c2193a4bbc6c",
+    "POPvJPvCauchy/setfig4.m": "dbdea14f5dfb26465d85aae04e4ca5d6fd8befbd4973ad1e8d29c2eec032bd6e",
+    "POPvJPvCauchy/simulate_cauchy_eta_rt_by_error.m": "e3ad3a6d157455c0e73f8752c43b1d366af4573a1aa4964ccf51e49e26824acb",
+    "POPvJPvCauchy/test_fit_re2024.m": "0a5cb07c2e9cf236ee80db1bd93665289529bb116285ca1c53635f76b9f7dae7",
+    "POPvJPvCauchy/test_ylcauchy.m": "07de86b4a7b0ab9c3588f8fee72eb8e6c1d032685785899b982735ce18fc7e6f",
+    "POPvJPvCauchy/test_yljp.m": "7ba46ab3f6408a1b041c539a385ad42dac3d3c05308e1da636243ea2040c7769",
+    "POPvJPvCauchy/test_yljpcau.m": "f0b9e99239746b9ee315f4c92b239cfd3be65447051ce6e781ffd3df48a3f45e",
+    "POPvJPvCauchy/test_ylpop.m": "0553f939ba1d582bf529657db97e98bfacdb2bf55c0e769b62491eece627e235",
+    "POPvJPvCauchy/vcau300rot.c": "b6f9c64be107de6c6674fcdb1fd59b9e644474aeca8fd9e090f9f6778e3f3f90",
+    "POPvJPvCauchy/vcau300rot.mexmaca64": "e1eaf4b7b52e5b63f09885bf1fa6f9bdf48495982d1399b4b590bf9f4fb16bb0",
+    "POPvJPvCauchy/vjp300rot.c": "a8ff02e96ec7f374027ac0ef3966b294e2dc087d5b72d4ff74e3bf6d6019f575",
+    "POPvJPvCauchy/vjp300rot.mexmaca64": "55ca0beeaeb5d46f2c5750e81c24ac7129301601651ac86fbd0ba6d5510d0112",
+    "POPvJPvCauchy/vpop300rot.c": "3627269feb6a7e39167c1a0e7339e105f19bb9847795d21fe45c828107ad1586",
+    "POPvJPvCauchy/vpop300rot.mexmaca64": "bd98848b48e1945c7c132ad76a4206ec865a41748cf47527982ba03343dc3ccf"
+  }
+}

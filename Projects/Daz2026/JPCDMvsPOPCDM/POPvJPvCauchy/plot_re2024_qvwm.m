@@ -1,4 +1,4 @@
-function output = plot_re2024_qvwm()
+function output = plot_re2024_qvwm(outDir)
 %PLOT_RE2024_QVWM Export participant-level QVWM plots for Cauchy H0/H1/H2.
 %   Uses saved Pred fields, so no model likelihoods are recomputed. Outputs
 %   H0_AQ.png, H1_eta_AQ.png, H1_vnorm_AQ.png, H1_ter_AQ.png, and
@@ -7,7 +7,10 @@ function output = plot_re2024_qvwm()
     thisDir = fileparts(mfilename('fullpath'));
     addpath(thisDir, '-begin');
     dataFile = fullfile(thisDir, 'Re2024_POPvJPvCauchy_prepared.mat');
-    outDir = fullfile(thisDir, 'Figures', 'Re2024_QVWM');
+    if nargin < 1 || isempty(outDir)
+        outDir = fullfile(thisDir, 'Figures', 'Exploratory', 'Replays', ...
+            char(datetime('now', 'Format', 'yyyyMMdd_HHmmss')), mfilename);
+    end
     if ~isfolder(outDir)
         mkdir(outDir);
     end
@@ -17,17 +20,12 @@ function output = plot_re2024_qvwm()
     participantIDs = string(prepared.participantIDs);
     condLevels = string(prepared.condLevels);
 
-    routes = struct( ...
-        'tag', {"H0", "H1_eta", "H1_vnorm", "H1_ter", "H2_tsensitive"}, ...
-        'folder', {"H0_kappaCell_sharedDecision", "H1_eta", ...
-                   "H1_vnorm", "H1_ter", "H2_tsensitive"}, ...
-        'pattern', {"H0_kappaCell_sharedDecision_*.mat", "H1_eta_*.mat", ...
-                    "H1_vnorm_*.mat", "H1_ter_*.mat", "H2_tsensitive_*.mat"});
+    routes = struct('tag', {"H0", "H1_eta", "H1_vnorm", ...
+        "H1_ter", "H2_tsensitive"});
 
     figureFiles = strings(0, 1);
     for r = 1:numel(routes)
-        fitDir = fullfile(thisDir, 'TestFits', routes(r).folder);
-        resultFile = local_one_result_file(fitDir, routes(r).pattern);
+        resultFile = re2024_result_file(routes(r).tag);
         loaded = load(resultFile, 'allResults');
 
         for p = 1:numel(participantIDs)
@@ -54,21 +52,11 @@ function output = plot_re2024_qvwm()
         end
     end
 
+    re2024_figure_provenance(outDir, string({routes.tag}), mfilename);
     output = struct();
     output.outputDirectory = string(outDir);
     output.figureFiles = figureFiles;
     output.routes = string({routes.tag});
     output.participantIDs = participantIDs;
     fprintf('Saved %d QVWM figures in:\n%s\n', numel(figureFiles), outDir);
-end
-
-function resultFile = local_one_result_file(fitDir, pattern)
-    files = dir(fullfile(fitDir, pattern));
-    files = files(~startsWith({files.name}, 'checkpoint_'));
-    if numel(files) ~= 1
-        error('plot_re2024_qvwm:ResultFile', ...
-            'Expected one aggregate result matching %s in %s; found %d.', ...
-            pattern, fitDir, numel(files));
-    end
-    resultFile = fullfile(files(1).folder, files(1).name);
 end

@@ -9,9 +9,26 @@ function [Data, condLevels, d, participantIDs, trialCounts, outFile] = prepareRe
 %   Dataj(:,3) against time, so these units must be radians and seconds.
 
     if nargin < 1 || isempty(dataFile)
-        dataFile = fullfile('/Users/prefabteam_ysl/Documents/GitHub/DazExperiments', ...
-            'Data', 'Redundancy 2024', 'Modelling', 'POPCDM', ...
-            'DazPreprocessed.csv');
+        dataFile = getenv('RE2024_DATA_FILE');
+        if isempty(dataFile)
+            % Locate the repository data without tying runs to a user home.
+            searchDir = fileparts(mfilename('fullpath'));
+            while true
+                candidate = fullfile(searchDir, 'Data', 'Redundancy 2024', ...
+                    'Modelling', 'POPCDM', 'DazPreprocessed.csv');
+                if isfile(candidate)
+                    dataFile = candidate;
+                    break
+                end
+                parentDir = fileparts(searchDir);
+                if strcmp(parentDir, searchDir)
+                    error('prepareRe2024Data:DataNotFound', ...
+                        ['Pass a CSV path or set RE2024_DATA_FILE. ', ...
+                         'Repository Re2024 data were not found.']);
+                end
+                searchDir = parentDir;
+            end
+        end
     end
     if nargin < 2 || isempty(participantIDs)
         participantIDs = ["AQ", "ES", "HC", "PG", "YL"];

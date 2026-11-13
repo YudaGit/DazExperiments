@@ -1,0 +1,195 @@
+% Local preview preamble. For the existing Overleaf manuscript, copy only
+% the section text between \begin{document} and \end{document}.
+\documentclass[a4paper,11pt]{article}
+\usepackage[margin=25mm]{geometry}
+\begin{document}
+
+\subsection{Experiment 3}
+
+\subsubsection{Descriptives}
+
+Redundant colours were recalled more precisely than the accompanying unique colours at both exposure durations. This advantage was present for both participants and in both mixed-array contexts (Table~\ref{tab:exp3_descriptive}). Longer exposure reduced circular SD in every condition, but its effects on R and NR recall differed between participants. For YL (P04 in Experiment 1), the duration-related reduction was larger for NR than R targets in both contexts. For FP, the reduction was slightly larger for R targets. Thus, the redundancy advantage was replicated, while its change with exposure duration was not identical across participants.
+
+\begin{table}[htbp]
+\centering
+\caption{Circular SD of recall errors in mixed arrays, in degrees.}
+\label{tab:exp3_descriptive}
+\begin{tabular}{llrrrr}
+\hline
+Participant & Array & R, 50 ms & NR, 50 ms & R, 250 ms & NR, 250 ms \\
+\hline
+YL & S4C2 & 19.51 & 37.97 & 17.12 & 27.62 \\
+YL & S6C4 & 35.09 & 92.81 & 30.12 & 74.19 \\
+FP & S4C2 & 20.94 & 27.06 & 17.99 & 25.74 \\
+FP & S6C4 & 27.47 & 56.00 & 18.54 & 48.15 \\
+\hline
+\end{tabular}
+\par\smallskip
+\begin{minipage}{0.95\linewidth}
+\small\textit{Note.} S denotes physical set size and C denotes unique-colour count. R and NR denote redundant- and nonredundant-colour targets, respectively. Lower circular SD indicates more precise recall. Values summarise the usable trials from all ten sessions per participant.
+\end{minipage}
+\end{table}
+
+% Insert the descriptive figures here. Refreshed source figures are
+% data/YL_preliminary_error_and_cirSD.png and
+% data/FP_preliminary_error_and_cirSD.png in the dated analysis folder.
+
+\subsubsection{Model Parameters and Comparisons}
+
+We fitted Cauchy and MaxGumbel models with the same load, repetition, and allocation constraints. Analyses included 4,893 trials for YL and 4,895 for FP. Both models used unique-colour count as memory load, sample-size constraints on load costs and repetition benefits, two representational states, and the same rule for preferential R membership. The sampling constraints acted on Cauchy dispersion and MaxGumbel signal amplitude, respectively. The Cauchy model combined a latent representation with Gaussian response-mapping variability. MaxGumbel instead generated reports through fixed-scale Gumbel noise and maximum-signal selection, implemented through Luce's choice rule.
+% Add the signal-discrimination model and Luce-choice citations using the
+% manuscript bibliography keys when this fragment is integrated into Overleaf.
+
+The comparisons distinguished changes in state quality from changes in membership. Table~\ref{tab:exp3_parameter_structure} identifies the parameters in each variant. The most general fitted variant allowed better- and worse-state quality to differ between durations. The shared-quality restriction held these two quality parameters constant, while retaining duration-specific membership and bias. A further restriction removed bias. We fitted each variant separately to each participant by maximum likelihood with 20 optimisation starts; the best solution converged in every fit. Lower negative log likelihood (NLL) indicates better fit, while lower BIC favours the balance of fit and parameter count.
+
+\begin{table}[htbp]
+\centering
+\caption{Parameters and restrictions in the two model families.}
+\label{tab:exp3_parameter_structure}
+\small
+\begin{tabular}{p{0.23\linewidth}p{0.31\linewidth}rrr}
+\hline
+Component & Parameters & Duration & Shared & No bias \\
+\hline
+State quality & Cauchy: $\kappa_{b0},\kappa_{w0}$; MaxGumbel: $A_{b0},A_{w0}$ & 4 & 2 & 2 \\
+Membership & $W$ for each array and duration & 10 & 10 & 10 \\
+Preferential membership & $b_{50},b_{250}$ & 2 & 2 & 0 \\
+Response or tuning & Cauchy: mapping width $\sigma$; MaxGumbel: tuning concentration $\kappa_{\mathrm{tune}}$ & 1 & 1 & 1 \\
+\hline
+Total free parameters & & 17 & 15 & 13 \\
+\hline
+\end{tabular}
+\par\smallskip
+\begin{minipage}{0.97\linewidth}
+\small\textit{Note.} Duration denotes duration-specific state quality with bias; Shared denotes shared state quality with bias; No bias denotes shared state quality with both bias parameters fixed to zero. Baseline state-quality parameters are scaled by the fixed load and repetition constraints. There are five array contexts at each of two durations. The response or tuning parameter is shared across all conditions. Expected capacity $K=NW$ and target-specific membership probabilities are derived quantities, not additional free parameters.
+\end{minipage}
+\end{table}
+
+\subsubsection{Can State Quality Be Shared Across Durations?}
+
+Shared state quality provides a simpler account in which duration changes how often a representation occupies each state. This restriction was motivated by Experiment 1, where the mixture analysis supported relatively stable target-report concentration alongside changes in guess-like responses. Experiment 3 tests the restriction across different memory loads; Experiment 1's von Mises concentration does not directly identify either latent Cauchy dispersion or MaxGumbel amplitude.
+
+Allowing duration-specific quality improved NLL in all four comparisons, but the BIC preference varied (Table~\ref{tab:exp3_model_comparison}). For YL's Cauchy model, the NLL improvement was 6.60 and BIC favoured shared quality by 3.79. For FP, NLL improved by 11.92 and BIC favoured duration-specific quality by 6.84. MaxGumbel favoured duration-specific quality for both participants: the NLL improvements were 15.62 and 12.14, with BIC advantages of 14.25 and 7.29 for YL and FP, respectively. The numerical preferences therefore differed across participants and model families.
+
+We retained shared quality as a common explanatory baseline for the subsequent comparisons. It uses two fewer parameters and allows a direct examination of the membership account motivated by Experiment 1. This is a theory-guided restriction, rather than the best-BIC choice in every case. The duration-specific variants describe additional changes that this restriction excludes, but do not by themselves establish why state quality would change. Their implications for the capacity interpretation are considered below.
+
+\begin{table}[htbp]
+\centering
+\caption{Fit of duration-specific and shared-quality models.}
+\label{tab:exp3_model_comparison}
+\small
+\begin{tabular}{lllrrr}
+\hline
+Participant & Family & Structure & $k$ & NLL & BIC \\
+\hline
+YL & Cauchy & Duration + bias & 17 & 4704.67 & 9553.77 \\
+YL & Cauchy & Shared + bias & 15 & 4711.27 & 9549.97 \\
+YL & Cauchy & Shared, no bias & 13 & 4834.93 & 9780.31 \\
+YL & MaxGumbel & Duration + bias & 17 & 4680.80 & 9506.03 \\
+YL & MaxGumbel & Shared + bias & 15 & 4696.43 & 9520.28 \\
+YL & MaxGumbel & Shared, no bias & 13 & 4744.42 & 9599.27 \\
+FP & Cauchy & Duration + bias & 17 & 3419.68 & 6983.79 \\
+FP & Cauchy & Shared + bias & 15 & 3431.59 & 6990.63 \\
+FP & Cauchy & Shared, no bias & 13 & 3478.61 & 7067.67 \\
+FP & MaxGumbel & Duration + bias & 17 & 3404.92 & 6954.27 \\
+FP & MaxGumbel & Shared + bias & 15 & 3417.06 & 6961.56 \\
+FP & MaxGumbel & Shared, no bias & 13 & 3420.19 & 6950.83 \\
+\hline
+\end{tabular}
+\par\smallskip
+\begin{minipage}{0.97\linewidth}
+\small\textit{Note.} Duration and Shared refer to state quality; $k$ is the number of free parameters. All variants retain the fixed sampling constraints and the ten array-by-duration membership parameters. The no-bias comparison is made within the shared-quality structure. Both models were fitted to the same trials for each participant. The comparison retains each family's distinct response mechanism.
+\end{minipage}
+\end{table}
+
+\subsubsection{Does Preferential Membership Improve the Account Beyond Repetition?}
+
+Removing bias tests whether the repetition factor alone explains the R advantage within the shared-quality structure. This restriction retains the load and repetition constraints but gives R and NR targets in the same array the same better-state probability. For Cauchy, removing bias increased NLL by 123.66 for YL and 47.02 for FP. BIC favoured including bias by 230.33 and 77.04, respectively. For YL's MaxGumbel model, including bias improved NLL by 47.99 and BIC by 78.99.
+
+FP's MaxGumbel comparison provided weaker support for preferential membership. Bias reduced NLL by 3.13, but BIC favoured the no-bias variant by 10.73. Thus, including bias improved raw fit in all four comparisons, while the complexity-adjusted comparison supported it in three. We retained the shared-quality models with bias for both participants and families to compare their parameter interpretations under the same structure. For FP's MaxGumbel fit, retaining bias preserves this common structure rather than following the BIC preference.
+
+Both retained models reproduced the narrow R distributions and the broader baseline and NR distributions. Their predictions were often similar, although MaxGumbel achieved lower NLL for both participants. With the same 15 parameters, MaxGumbel's BIC was lower than Cauchy's by 29.69 for YL and 29.07 for FP. Similar predicted distributions therefore need not imply identical estimates of the processes underlying them.
+
+% Insert figures/YL_shared_predictions.png and figures/FP_shared_predictions.png.
+% Optional bias comparisons: figures/YL_bias_comparison.png and
+% figures/FP_bias_comparison.png. Panel density scales vary.
+
+\subsubsection{What Do the Retained Parameter Estimates Indicate?}
+
+The retained models separated better- and worse-state quality, but expressed that separation on different scales (Table~\ref{tab:exp3_parameter_estimates}). Lower Cauchy dispersion indicates a more concentrated latent representation, whereas higher MaxGumbel amplitude indicates a stronger signal relative to its fixed Gumbel noise scale. MaxGumbel's tuning concentration is distinct from both these state-quality quantities. The numerical quality estimates should therefore be interpreted within each model, rather than directly compared across families.
+
+\begin{table}[htbp]
+\centering
+\caption{Parameter estimates for the retained shared-quality models with bias.}
+\label{tab:exp3_parameter_estimates}
+\begin{tabular}{lrrrrr}
+\hline
+\multicolumn{6}{l}{\textit{Cauchy: dispersion and mapping width}} \\
+Participant & $\kappa_{b0}$ & $\kappa_{w0}$ & $\sigma$ (degrees) & $b_{50}$ & $b_{250}$ \\
+YL & 0.0380 & 0.5172 & 14.648 & 1.000 & 0.843 \\
+FP & 0.0252 & 0.2652 & 15.086 & 0.569 & 1.000 \\
+\hline
+\multicolumn{6}{l}{\textit{MaxGumbel: amplitude and tuning concentration}} \\
+Participant & $A_{b0}$ & $A_{w0}$ & $\kappa_{\mathrm{tune}}$ & $b_{50}$ & $b_{250}$ \\
+YL & 20.153 & 4.380 & 1.328 & 0.629 & 0.701 \\
+FP & 16.912 & 6.756 & 1.722 & 0.075 & 0.390 \\
+\hline
+\end{tabular}
+\par\smallskip
+\begin{minipage}{0.97\linewidth}
+\small\textit{Note.} Estimates are maximum-likelihood point estimates; uncertainty intervals have not yet been estimated. State-quality parameters refer to baseline load and repetition before applying the sampling constraints. Cauchy $\kappa$ is a dispersion parameter; the mapping width $\sigma$ is converted from radians to degrees. MaxGumbel amplitude and tuning concentration are model-scale quantities. Bias coefficients range from zero to one; one means the maximum redistribution allowed by the rule, not necessarily certain R membership. Mapping width was freely estimated, not fixed by independent matching data.
+\end{minipage}
+\end{table}
+
+Preferential membership was estimated more strongly in Cauchy than MaxGumbel for FP. Cauchy's bias increased from 0.569 to the upper bound of 1.000, whereas MaxGumbel's increased from 0.075 to 0.390. YL's estimates were positive at both durations in both families, although their duration trends differed. The coefficients describe redistribution of better-state membership between R and NR features, not additional total capacity. Estimates at the upper bound describe the fitted solution; they do not establish that the bias is known without uncertainty.
+
+Cauchy's fitted response-mapping widths were approximately $14.65^\circ$ for YL and $15.09^\circ$ for FP. These values distinguish the fitted response component from latent representational dispersion, but remain freely estimated from recall data in this pass. YL's independent matching session can subsequently constrain this component; FP's matching data are not yet available. MaxGumbel's tuning concentration is not an equivalent mapping-error estimate.
+
+\subsubsection{How Do Membership and Expected Capacity Change With Duration?}
+
+Longer exposure increased estimated better-state membership in the retained shared-quality models, except where the two-colour baseline was already near ceiling. Table~\ref{tab:exp3_membership_capacity} reports the array-level mean membership probability $W$ and expected capacity $K=NW$ for each context. The same load can yield different estimates across array contexts because $W$ was estimated separately for each context and duration. These are expected counts, rather than an independently estimated hard capacity limit.
+
+\begin{table}[htbp]
+\centering
+\caption{Membership and expected capacity in the shared-quality models with bias.}
+\label{tab:exp3_membership_capacity}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{llrrrrrrrr}
+\hline
+ & & \multicolumn{4}{c}{Cauchy} & \multicolumn{4}{c}{MaxGumbel} \\
+ & & \multicolumn{2}{c}{50 ms} & \multicolumn{2}{c}{250 ms} & \multicolumn{2}{c}{50 ms} & \multicolumn{2}{c}{250 ms} \\
+Participant & Array & $W$ & $K$ & $W$ & $K$ & $W$ & $K$ & $W$ & $K$ \\
+\hline
+YL & S2C2 & 0.995 & 1.99 & 0.995 & 1.99 & 0.988 & 1.98 & 0.983 & 1.97 \\
+YL & S4C2 & 0.787 & 1.57 & 0.944 & 1.89 & 0.752 & 1.50 & 0.914 & 1.83 \\
+YL & S4C4 & 0.377 & 1.51 & 0.544 & 2.18 & 0.453 & 1.81 & 0.628 & 2.51 \\
+YL & S6C4 & 0.175 & 0.70 & 0.393 & 1.57 & 0.229 & 0.92 & 0.406 & 1.62 \\
+YL & S6C6 & 0.151 & 0.91 & 0.341 & 2.04 & 0.202 & 1.21 & 0.377 & 2.26 \\
+FP & S2C2 & 0.942 & 1.88 & 0.995 & 1.99 & 0.666 & 1.33 & 0.879 & 1.76 \\
+FP & S4C2 & 0.817 & 1.63 & 0.894 & 1.79 & 0.277 & 0.55 & 0.306 & 0.61 \\
+FP & S4C4 & 0.668 & 2.67 & 0.825 & 3.30 & 0.546 & 2.18 & 0.725 & 2.90 \\
+FP & S6C4 & 0.427 & 1.71 & 0.572 & 2.29 & 0.204 & 0.82 & 0.379 & 1.52 \\
+FP & S6C6 & 0.266 & 1.59 & 0.429 & 2.57 & 0.126 & 0.75 & 0.356 & 2.14 \\
+\hline
+\end{tabular}
+\par\smallskip
+\begin{minipage}{0.97\linewidth}
+\small\textit{Note.} $N$ is unique-colour count; S denotes physical set size and C denotes unique-colour count. In mixed arrays, $W$ is the mean across unique-colour representations before preferential redistribution, not the R- or NR-specific membership probability. Redistribution preserves $K$: $W_R+(N-1)W_{NR}=NW$. Entries are point estimates from the retained models, without uncertainty intervals. An estimated $W=0.995$ is the optimisation upper bound.
+\end{minipage}
+\end{table}
+
+The duration-related capacity increase was present in both model families, but its magnitude differed. In S6C4, Cauchy estimated an increase from 0.70 to 1.57 for YL and from 1.71 to 2.29 for FP; MaxGumbel estimated increases from 0.92 to 1.62 and from 0.82 to 1.52. For FP's S4C2 array, however, Cauchy estimated capacities of 1.63 and 1.79, compared with MaxGumbel's 0.55 and 0.61. These differences show that the inferred number of better-state representations depends on the quality and response assumptions even when the predicted error distributions are similar.
+
+\subsubsection{Interim Discussion}
+
+The retained shared-quality models explain duration-related improvements through changes in state membership and explain additional R advantages through preferential allocation. The bias comparison strongly supported this additional contribution in both Cauchy fits and YL's MaxGumbel fit; FP's MaxGumbel model required less bias and favoured omitting it by BIC. We retained bias uniformly to compare the models under the same explanatory structure, while preserving this empirical distinction.
+
+The capacity interpretation remains conditional on shared state quality. When quality was allowed to change, YL's larger-array capacity estimates still increased with duration, but FP's decreased while both states improved in quality. For example, FP's Cauchy S6C6 estimate changed from 3.66 to 0.84 under duration-specific quality, compared with an increase from 1.59 to 2.57 under shared quality. The extra quality parameters therefore alter the interpretation of the duration effect, rather than merely improving the predicted curves. Experiment 1 motivates the shared-quality account, but the present fits do not establish a model-independent increase in better-state capacity.
+
+% Optional alternative-structure figure:
+% figures/capacity_quality_comparison.png.
+
+The sample-size and repetition constraints were fixed across all fitted variants. These comparisons consequently assess allocation and quality under those constraints, rather than independently testing their exponents. Independent response calibration and uncertainty estimation will further inform the interpretation of the retained parameter values.
+
+\end{document}

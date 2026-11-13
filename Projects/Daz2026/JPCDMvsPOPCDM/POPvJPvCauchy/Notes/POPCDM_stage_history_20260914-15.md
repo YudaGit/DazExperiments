@@ -138,7 +138,7 @@ After understanding `pgpop1.m`, compare it with `vwmjp61.m` to see which parts a
 
 H0 has already been fitted. Current runner/wrapper inconsistencies reflect an interrupted H1 edit and do not establish a fault in the saved H0 fits. The next substantive test is a shared redundancy increment in Ter, fitted jointly across all nine conditions with baseline as the zero-increment case. Prioritize the team-Cauchy core and preserve its dispersion convention. The C2/C4+ eta extension is deferred as an exploratory benchmark. No model code or fit was changed during this documentation update.
 
-The full staged plan, evidence qualifications, saved-H0 verification versus refitting criteria, future latent-information model specification, POP-rule clarification, and latent-grid timing/convergence guidance are recorded in the [master work note](../POPCDM_CauchyCDM_master_work_note.md), entry “2026-09-14: staged H1 plan following review of the team-core fits”. That entry supersedes earlier next-step priorities where they conflict.
+The full staged plan, evidence qualifications, saved-H0 verification versus refitting criteria, future latent-information model specification, POP-rule clarification, and latent-grid timing/convergence guidance are recorded in the [historical master](CDM_master_history_through_20260923.md), entry “2026-09-14: staged H1 plan following review of the team-core fits”. That entry supersedes earlier next-step priorities where they conflict.
 
 
 ## 2026-09-14: H1 redundancy-Ter implementation completed

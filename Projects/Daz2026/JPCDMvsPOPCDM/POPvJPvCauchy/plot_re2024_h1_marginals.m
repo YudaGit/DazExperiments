@@ -1,4 +1,4 @@
-function output = plot_re2024_h1_marginals()
+function output = plot_re2024_h1_marginals(outDir)
 %PLOT_RE2024_H1_MARGINALS Compare H0, H1_vnorm, and H1_ter marginals.
 %   Produces one 18-panel figure per participant. Each condition occupies
 %   an adjacent pair: response-error PDF then RT PDF. Grey bars are data;
@@ -10,22 +10,21 @@ function output = plot_re2024_h1_marginals()
         'Data', 'participantIDs', 'condLevels');
     participantIDs = string(prepared.participantIDs);
     condLevels = string(prepared.condLevels);
-    outDir = fullfile(thisDir, 'Figures', 'Re2024_H1_marginals');
+    if nargin < 1 || isempty(outDir)
+        outDir = fullfile(thisDir, 'Figures', 'Exploratory', 'Replays', ...
+            char(datetime('now', 'Format', 'yyyyMMdd_HHmmss')), mfilename);
+    end
     if ~isfolder(outDir)
         mkdir(outDir);
     end
 
     routes = struct( ...
         'tag', {"H0", "H1_vnorm", "H1_ter"}, ...
-        'folder', {"H0_kappaCell_sharedDecision", "H1_vnorm", "H1_ter"}, ...
-        'pattern', {"H0_kappaCell_sharedDecision_*.mat", "H1_vnorm_*.mat", ...
-                    "H1_ter_*.mat"}, ...
         'color', {[0 0 0], [0.88 0.27 0.52], [0.30 0.70 0.90]}, ...
         'lineStyle', {'-', '--', '--'});
     routeResults = cell(1, numel(routes));
     for r = 1:numel(routes)
-        resultFile = local_one_result_file( ...
-            fullfile(thisDir, 'TestFits', routes(r).folder), routes(r).pattern);
+        resultFile = re2024_result_file(routes(r).tag);
         routeResults{r} = load(resultFile, 'allResults');
     end
 
@@ -101,6 +100,7 @@ function output = plot_re2024_h1_marginals()
         figureFiles(end + 1, 1) = string(outputFile); %#ok<AGROW>
     end
 
+    re2024_figure_provenance(outDir, string({routes.tag}), mfilename);
     output = struct('outputDirectory', string(outDir), ...
         'figureFiles', figureFiles, 'participantIDs', participantIDs);
     fprintf('Saved %d marginal-comparison figures in:\n%s\n', ...
@@ -155,15 +155,4 @@ function [t, ft] = local_rt_pdf(Pred, conditionIndex)
     rtPrediction = Pred{1}{1, conditionIndex};
     t = rtPrediction(1, :);
     ft = rtPrediction(2, :);
-end
-
-function resultFile = local_one_result_file(fitDir, pattern)
-    files = dir(fullfile(fitDir, pattern));
-    files = files(~startsWith({files.name}, 'checkpoint_'));
-    if numel(files) ~= 1
-        error('plot_re2024_h1_marginals:ResultFile', ...
-            'Expected one aggregate result matching %s in %s; found %d.', ...
-            pattern, fitDir, numel(files));
-    end
-    resultFile = fullfile(files(1).folder, files(1).name);
 end

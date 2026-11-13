@@ -1,4 +1,4 @@
-function output = plot_re2024_besth1_h2ts_marginals()
+function output = plot_re2024_besth1_h2ts_marginals(outDir)
 %PLOT_RE2024_BESTH1_H2TS_MARGINALS Compare each best H1 with H2_tsensitive.
 %   Exports one 18-panel figure per participant: observed PDFs in grey,
 %   the participant's BIC-leading H1 in black, and H2_tsensitive in green.
@@ -8,19 +8,18 @@ function output = plot_re2024_besth1_h2ts_marginals()
         'Data', 'participantIDs', 'condLevels');
     participantIDs = string(prepared.participantIDs);
     condLevels = string(prepared.condLevels);
-    outDir = fullfile(thisDir, 'Figures', 'Re2024_BestH1_H2ts_marginals');
+    if nargin < 1 || isempty(outDir)
+        outDir = fullfile(thisDir, 'Figures', 'Exploratory', 'Replays', ...
+            char(datetime('now', 'Format', 'yyyyMMdd_HHmmss')), mfilename);
+    end
     if ~isfolder(outDir)
         mkdir(outDir);
     end
 
     bestH1 = struct( ...
         'uid', {"AQ", "ES", "HC", "PG", "YL"}, ...
-        'tag', {"H1_ter", "H1_vnorm", "H1_ter", "H1_ter", "H1_vnorm"}, ...
-        'folder', {"H1_ter", "H1_vnorm", "H1_ter", "H1_ter", "H1_vnorm"}, ...
-        'pattern', {"H1_ter_*.mat", "H1_vnorm_*.mat", "H1_ter_*.mat", ...
-                    "H1_ter_*.mat", "H1_vnorm_*.mat"});
-    h2File = local_one_result_file(fullfile(thisDir, 'TestFits', 'H2_tsensitive'), ...
-        'H2_tsensitive_*.mat');
+        'tag', {"H1_ter", "H1_vnorm", "H1_ter", "H1_ter", "H1_vnorm"});
+    h2File = re2024_result_file('H2_tsensitive');
     h2Loaded = load(h2File, 'allResults');
     angleEdges = linspace(-pi, pi, 51);
     rtEdges = linspace(0.3, 3.0, 51);
@@ -29,9 +28,7 @@ function output = plot_re2024_besth1_h2ts_marginals()
     for p = 1:numel(participantIDs)
         uid = participantIDs(p);
         routeIndex = find(string({bestH1.uid}) == uid, 1);
-        h1File = local_one_result_file( ...
-            fullfile(thisDir, 'TestFits', bestH1(routeIndex).folder), ...
-            bestH1(routeIndex).pattern);
+        h1File = re2024_result_file(bestH1(routeIndex).tag);
         h1Loaded = load(h1File, 'allResults');
         fieldName = matlab.lang.makeValidName(char(uid + "_cauchy"));
         h1Pred = local_prediction(h1Loaded.allResults, fieldName, uid, bestH1(routeIndex).tag);
@@ -84,6 +81,7 @@ function output = plot_re2024_besth1_h2ts_marginals()
         close(fig);
         figureFiles(end + 1, 1) = string(outputFile); %#ok<AGROW>
     end
+    re2024_figure_provenance(outDir, ["H1_ter", "H1_vnorm", "H2_tsensitive"], mfilename);
     output = struct('outputDirectory', string(outDir), 'figureFiles', figureFiles);
     fprintf('Saved %d best-H1/H2 marginal figures in:\n%s\n', numel(figureFiles), outDir);
 end
@@ -119,15 +117,4 @@ end
 function [t, ft] = local_rt_pdf(Pred, conditionIndex)
     values = Pred{1}{1, conditionIndex};
     t = values(1, :); ft = values(2, :);
-end
-
-function resultFile = local_one_result_file(fitDir, pattern)
-    files = dir(fullfile(fitDir, pattern));
-    files = files(~startsWith({files.name}, 'checkpoint_'));
-    if numel(files) ~= 1
-        error('plot_re2024_besth1_h2ts_marginals:ResultFile', ...
-            'Expected one aggregate result matching %s in %s; found %d.', ...
-            pattern, fitDir, numel(files));
-    end
-    resultFile = fullfile(files(1).folder, files(1).name);
 end
